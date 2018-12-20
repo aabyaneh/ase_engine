@@ -53,6 +53,7 @@ void init_sase() {
   zero_bv     = boolector_unsigned_int(btor, 0, bv_sort);
   one_bv      = boolector_unsigned_int(btor, 1, bv_sort);
   boolector_set_opt(btor, BTOR_OPT_INCREMENTAL, 1);
+  boolector_set_opt(btor, BTOR_OPT_MODEL_GEN, 1);
 
   sase_regs     = malloc(sizeof(BoolectorNode*) * NUMBEROFREGISTERS);
   sase_regs_typ = malloc(sizeof(uint64_t)       * NUMBEROFREGISTERS);
