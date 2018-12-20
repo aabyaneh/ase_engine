@@ -158,6 +158,14 @@ void restore_registers_fp_sp_rd(uint64_t tr_cnt, uint64_t rd_reg) {
   *(registers + REG_FP) = *(tcs    + tr_cnt);
   *(registers + REG_SP) = *(values + tr_cnt);
   *(registers + rd_reg) = 0;
+
+  sase_regs[REG_FP] = Z3_mk_unsigned_int64(ctx, *(registers + REG_FP), bv_sort);
+  sase_regs[REG_SP] = Z3_mk_unsigned_int64(ctx, *(registers + REG_SP), bv_sort);
+  sase_regs[rd_reg] = zero_bv;
+
+  sase_regs_typ[REG_FP] = CONCRETE_T;
+  sase_regs_typ[REG_SP] = CONCRETE_T;
+  sase_regs_typ[rd_reg] = CONCRETE_T;
 }
 
 uint8_t check_next_1_instrs() {
