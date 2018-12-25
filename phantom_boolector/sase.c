@@ -7,14 +7,17 @@
 char           var_buffer[100]; // a buffer for automatic variable name generation
 Btor*          btor;
 BoolectorSort  bv_sort;
+BoolectorSort  bv_sort_32;
 BoolectorNode* zero_bv;
 BoolectorNode* one_bv;
+BoolectorNode* twelve_bv;
 uint64_t       sase_symbolic = 0;
 uint64_t       mrif = 0;        // most recent conditional
 uint64_t       b = 0;           // counting total number of backtracking
 uint64_t       SASE = 8;        // Solver Aided Symbolic Execution
 uint64_t       CONCRETE_T = 0;
 uint64_t       SYMBOLIC_T = 1;
+uint64_t       two_to_the_power_of_32;
 
 // symbolic registers
 BoolectorNode**   sase_regs;         // array of pointers to SMT expressions
@@ -50,10 +53,14 @@ uint64_t        read_buffer     = 0;
 void init_sase() {
   btor        = boolector_new();
   bv_sort     = boolector_bitvec_sort(btor, 64);
+  bv_sort_32  = boolector_bitvec_sort(btor, 32);
   zero_bv     = boolector_unsigned_int(btor, 0, bv_sort);
   one_bv      = boolector_unsigned_int(btor, 1, bv_sort);
+  twelve_bv   = boolector_unsigned_int(btor, 12, bv_sort);
   boolector_set_opt(btor, BTOR_OPT_INCREMENTAL, 1);
   boolector_set_opt(btor, BTOR_OPT_MODEL_GEN, 1);
+
+  two_to_the_power_of_32 = two_to_the_power_of(32);
 
   sase_regs     = malloc(sizeof(BoolectorNode*) * NUMBEROFREGISTERS);
   sase_regs_typ = malloc(sizeof(uint64_t)       * NUMBEROFREGISTERS);
@@ -80,6 +87,16 @@ void init_sase() {
   constrained_reads     = malloc(sizeof(BoolectorNode*) * sase_trace_size);
 }
 
+BoolectorNode* boolector_unsigned_int_64(uint64_t value) {
+  uint64_t lower_bits;
+  uint64_t upper_bits;
+
+  lower_bits = get_bits(value, 0, 32);
+  upper_bits = get_bits(value, 32, 32);
+
+  return boolector_concat(btor, boolector_unsigned_int(btor, lower_bits, bv_sort_32), boolector_unsigned_int(btor, upper_bits, bv_sort_32));
+}
+
 void store_registers_fp_sp_rd() {
   tc++;
   *(tcs             + tc) = *(registers + REG_FP);
@@ -94,7 +111,9 @@ void restore_registers_fp_sp_rd(uint64_t tr_cnt, uint64_t rd_reg) {
   *(registers + REG_SP) = *(values + tr_cnt);
   *(registers + rd_reg) = 0;
 
+  // assert: *(registers + REG_FP) < 2^32
   sase_regs[REG_FP] = boolector_unsigned_int(btor, *(registers + REG_FP), bv_sort);
+  // assert: *(registers + REG_SP) < 2^32
   sase_regs[REG_SP] = boolector_unsigned_int(btor, *(registers + REG_SP), bv_sort);
   sase_regs[rd_reg] = zero_bv;
 
@@ -201,14 +220,22 @@ uint8_t check_next_3_instrs() {
 
 void sase_lui() {
   if (rd != REG_ZR) {
-    sase_regs[rd] = boolector_unsigned_int(btor, imm << 12, bv_sort);
+    if (imm < two_to_the_power_of_32)
+      sase_regs[rd] = boolector_sll(btor, boolector_unsigned_int(btor, imm, bv_sort), twelve_bv);
+    else
+      sase_regs[rd] = boolector_unsigned_int_64(imm << 12);
+
     sase_regs_typ[rd] = CONCRETE_T;
   }
 }
 
 void sase_addi() {
   if (rd != REG_ZR) {
-    sase_regs[rd] = boolector_add(btor, sase_regs[rs1], boolector_unsigned_int(btor, imm, bv_sort));
+    if (imm < two_to_the_power_of_32) {
+      sase_regs[rd] = boolector_add(btor, sase_regs[rs1], boolector_unsigned_int(btor, imm, bv_sort));
+    } else {
+      sase_regs[rd] = boolector_add(btor, sase_regs[rs1], boolector_unsigned_int_64(imm));
+    }
 
     sase_regs_typ[rd] = sase_regs_typ[rs1];
   }
@@ -413,7 +440,16 @@ void sase_ld() {
 
         if (*(is_symbolics + mrv) == CONCRETE_T) {
           sase_regs_typ[rd] = CONCRETE_T;
-          sase_regs[rd]     = boolector_unsigned_int(btor, *(values + mrv), bv_sort);
+          if (*(symbolic_values + mrv) == 0) {
+            if (*(values + mrv) < two_to_the_power_of_32)
+              sase_regs[rd]     = boolector_unsigned_int(btor, *(values + mrv), bv_sort);
+            else {
+              // printf("large load pc: %llx mrv: %llu val: %llu\n", pc-entry_point, mrv, *(values + mrv));
+              sase_regs[rd]     = boolector_unsigned_int_64(*(values + mrv));
+            }
+          } else {
+            sase_regs[rd]     = *(symbolic_values + mrv);
+          }
         } else {
           sase_regs_typ[rd] = SYMBOLIC_T;
           sase_regs[rd]     = *(symbolic_values + mrv);
@@ -438,7 +474,7 @@ void sase_sd() {
     if (is_virtual_address_mapped(pt, vaddr)) {
 
       if (sase_regs_typ[rs2] == CONCRETE_T) {
-        sase_store_memory(pt, vaddr, CONCRETE_T, *(registers + rs2), 0);
+        sase_store_memory(pt, vaddr, CONCRETE_T, *(registers + rs2), sase_regs[rs2]);
       } else {
         sase_store_memory(pt, vaddr, SYMBOLIC_T, *(registers + rs2), sase_regs[rs2]);
       }
@@ -452,6 +488,7 @@ void sase_sd() {
 
 void sase_jal_jalr() {
   if (rd != REG_ZR) {
+    // assert: pc + INSTRUCTIONSIZE < 2^32
     sase_regs[rd] = boolector_unsigned_int(btor, pc + INSTRUCTIONSIZE, bv_sort);
 
     sase_regs_typ[rd] = CONCRETE_T;

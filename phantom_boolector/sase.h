@@ -57,6 +57,8 @@ uint64_t get_rd(uint64_t instruction);
 uint64_t get_rs1(uint64_t instruction);
 uint64_t get_rs2(uint64_t instruction);
 uint64_t get_immediate_i_format(uint64_t instruction);
+uint64_t two_to_the_power_of(uint64_t p);
+uint64_t get_bits(uint64_t n, uint64_t i, uint64_t b);
 
 // -----------------------------------------------------------------
 // ----------------------- BUILTIN PROCEDURES ----------------------
@@ -83,6 +85,7 @@ extern uint64_t       b;               // counting total number of backtracking
 extern uint64_t       SASE;            // Solver Aided Symbolic Execution
 extern uint64_t       CONCRETE_T;
 extern uint64_t       SYMBOLIC_T;
+extern uint64_t       two_to_the_power_of_32;
 
 // symbolic registers
 extern BoolectorNode**   sase_regs;           // array of pointers to SMT expressions
