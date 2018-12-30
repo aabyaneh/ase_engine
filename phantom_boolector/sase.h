@@ -124,6 +124,7 @@ uint8_t match_sub(uint64_t prev_instr_rd);
 uint8_t match_addi();
 uint8_t check_next_1_instrs();
 uint8_t check_next_3_instrs();
+BoolectorNode* boolector_unsigned_int_64(uint64_t value);
 
 void init_sase();
 void sase_lui();

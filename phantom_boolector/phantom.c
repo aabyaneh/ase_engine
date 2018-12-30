@@ -490,6 +490,8 @@ void     implement_open(uint64_t* context);
 
 void implement_brk(uint64_t* context);
 
+void implement_symbolic_input(uint64_t* context);
+
 // ------------------------ GLOBAL CONSTANTS -----------------------
 
 uint64_t debug_read  = 0;
@@ -502,6 +504,9 @@ uint64_t SYSCALL_READ  = 63;
 uint64_t SYSCALL_WRITE = 64;
 uint64_t SYSCALL_OPEN  = 1024;
 uint64_t SYSCALL_BRK   = 214;
+uint64_t SYSCALL_SYMPOLIC_INPUT = 42;
+
+uint64_t symbolic_input_cnt = 0;
 
 // *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~
 // -----------------------------------------------------------------
@@ -2485,6 +2490,45 @@ void implement_read(uint64_t* context) {
     print((uint64_t*) " -> ");
     print_register_value(REG_A0);
     println();
+  }
+}
+
+void implement_symbolic_input(uint64_t* context) {
+  uint64_t lo;
+  uint64_t up;
+  uint64_t step;
+  BoolectorNode* in;
+
+  lo   = *(get_regs(context) + REG_A0);
+  up   = *(get_regs(context) + REG_A1);
+  step = *(get_regs(context) + REG_A2);
+
+  if (sase_symbolic) {
+    printf("symbolic input: lo: %llu, up: %llu, step: %llu, cnt: %llu, tc: %llu\n", lo, up, step, symbolic_input_cnt, sase_tc);
+
+    sprintf(var_buffer, "in_%llu", symbolic_input_cnt++);
+    in = boolector_var(btor, bv_sort, var_buffer);
+    // <= up
+    if (up < two_to_the_power_of_32)
+      boolector_assert(btor, boolector_ulte(btor, in, boolector_unsigned_int(btor, up, bv_sort)));
+    else
+      boolector_assert(btor, boolector_ulte(btor, in, boolector_unsigned_int_64(up)));
+    // >= lo
+    if (lo < two_to_the_power_of_32)
+      boolector_assert(btor, boolector_ugte(btor, in, boolector_unsigned_int(btor, lo, bv_sort)));
+    else
+      boolector_assert(btor, boolector_ulte(btor, in, boolector_unsigned_int_64(lo)));
+
+    sase_regs[REG_A0]     = in;
+    sase_regs_typ[REG_A0] = SYMBOLIC_T;
+
+    set_pc(context, get_pc(context) + INSTRUCTIONSIZE);
+
+  } else {
+    print(exe_name);
+    print((uint64_t*) ": symbolic input syscall during concrete execution ");
+    println();
+    exit(EXITCODE_SYMBOLICEXECUTIONERROR);
   }
 }
 
@@ -5124,6 +5168,8 @@ uint64_t handle_system_call(uint64_t* context) {
     implement_write(context);
   else if (a7 == SYSCALL_OPEN)
     implement_open(context);
+  else if (a7 == SYSCALL_SYMPOLIC_INPUT)
+    implement_symbolic_input(context);
   else if (a7 == SYSCALL_EXIT) {
     implement_exit(context);
 
