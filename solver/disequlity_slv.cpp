@@ -44,7 +44,7 @@ class disjoint_set {
     void add_element(interval);
     int  find(int);
     void union_sets(int, int);
-    void create_disjoint_sets(int);
+    void create_disjoint_sets();
     void destroy_disjoint_sets();
 };
 
@@ -85,10 +85,14 @@ void disjoint_set::union_sets(int i, int j) {
   }
 }
 
-void disjoint_set::create_disjoint_sets(int cnt) {
+void disjoint_set::create_disjoint_sets() {
   int j;
   int prev_j;
+  int cnt;
   ds_num = 0;
+
+  cnt = sets->elements->size();
+
   std::vector<std::vector<interval> >* dsets = new std::vector<std::vector<interval> > [cnt];
 
   for (size_t i = 0; i < cnt; i++) {
@@ -213,7 +217,7 @@ int main(int argc, char** argv) {
     }
   }
 
-  ds.create_disjoint_sets(cnt);
+  ds.create_disjoint_sets();
   std::cout << "number of disjoint sets: " << ds.ds_num << '\n';
   std::cout << "query_1 edf: " << '\n';
 
