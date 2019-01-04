@@ -20,7 +20,7 @@ class compare_interval_start {
   public:
   bool operator() (const interval& lhs, const interval& rhs) const
   {
-    return (lhs.start < rhs.start);
+    return (lhs.start > rhs.start);
   }
 };
 
@@ -28,7 +28,7 @@ class compare_interval_end {
   public:
   bool operator() (const interval& lhs, const interval& rhs) const
   {
-    return (lhs.end < rhs.end);
+    return (lhs.end > rhs.end);
   }
 };
 
