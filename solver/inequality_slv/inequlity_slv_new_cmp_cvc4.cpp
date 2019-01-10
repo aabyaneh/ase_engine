@@ -270,7 +270,7 @@ int main(int argc, char** argv) {
     for (unsigned int k = 0; k < i; k++) {
       if (strings.at(i).size() == strings.at(k).size()) {
         for (unsigned int l = 0; l < strings.at(i).size(); l++) {
-          smt.assertFormula(em.mkExpr(kind::BITVECTOR_ULT, strings_bv[k][l], strings_bv[i][l]));
+          smt.assertFormula(em.mkExpr(kind::BITVECTOR_ULT, strings_bv[i][l], strings_bv[k][l]));
           cnt++;
         }
       }
