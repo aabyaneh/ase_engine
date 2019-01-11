@@ -8,8 +8,8 @@
 #include <string>
 #include <algorithm>
 
-#include <cvc4/cvc4.h>
-using namespace CVC4;
+#include "z3++.h"
+using namespace z3;
 
 struct timeval tv_begin;
 struct timeval tv_end;
@@ -233,33 +233,22 @@ int main(int argc, char** argv) {
   std::cout << "time: " << time_elapsed_in_mcseconds/1000000 << '\n';
 
   // ---------------------------------
-  // using cvc4 smt solver
+  // using z3 smt solver
   // ---------------------------------
 
   std::cout << "=========================" << '\n';
-
-  ExprManager em;
-  SmtEngine smt(&em);
-  smt.setLogic("QF_BV");                         // Set the logic
-  smt.setOption("produce-models", true);         // Produce Models
-  smt.setOption("incremental", true);
-  smt.setOption("bitblast", SExpr("lazy"));      // default is lazy
-  smt.setOption("bv-eq-solver", true);           // default is true
-  smt.setOption("bv-inequality-solver", true);   // default is true
-  Type bitvector32 = em.mkBitVectorType(32);
-
+  context c;
+  solver s(c);
   cnt = 0;
-  std::vector<std::vector<Expr> > strings_bv;
-  for (unsigned int i = 0; i < strings.size(); i++) {
-    std::vector<Expr> x;
-    for (unsigned int j = 0; j < strings.at(i).size(); j++) {
+  std::vector<std::vector<expr> > strings_bv;
+  for (size_t i = 0; i < strings.size(); i++) {
+    std::vector<expr> x;
+    for (size_t j = 0; j < strings.at(i).size(); j++) {
       std::stringstream x_name;
       x_name << "x_" << cnt++;
-      x.push_back(em.mkVar(x_name.str().c_str(), bitvector32));
-      Expr e1 = em.mkConst(BitVector(32, Integer(strings.at(i).at(j) - fuzz)));
-      Expr e2 = em.mkConst(BitVector(32, Integer(strings.at(i).at(j) + fuzz)));
-      smt.assertFormula(em.mkExpr(kind::BITVECTOR_UGE, x.back(), e1));
-      smt.assertFormula(em.mkExpr(kind::BITVECTOR_ULE, x.back(), e2));
+      x.push_back(c.bv_const(x_name.str().c_str(), 32));
+      s.add(uge(x.back(), strings.at(i).at(j) - fuzz));
+      s.add(ule(x.back(), strings.at(i).at(j) + fuzz));
     }
     strings_bv.push_back(x);
   }
@@ -270,7 +259,7 @@ int main(int argc, char** argv) {
     for (size_t k = 0; k < i; k++) {
       if (strings.at(i).size() == strings.at(k).size()) {
         for (size_t l = 0; l < strings.at(i).size(); l++) {
-          smt.assertFormula(em.mkExpr(kind::BITVECTOR_ULT, strings_bv[i][l], strings_bv[k][l]));
+          s.add(ult(strings_bv[i][l], strings_bv[k][l]));
           cnt++;
         }
       }
@@ -279,12 +268,12 @@ int main(int argc, char** argv) {
 
   std::cout << "number of inequality constraints: " << cnt << '\n';
 
-  std::cout << "query_2 cvc4 smt: " << '\n';
+  std::cout << "query_2 z3 smt: " << '\n';
   gettimeofday(&tv_begin,NULL);
-  std::cout << smt.checkSat() << "\n";
+  std::cout << s.check() << "\n";
   gettimeofday(&tv_end,NULL);
   time_elapsed_in_mcseconds = (tv_end.tv_sec - tv_begin.tv_sec) * 1000000 + (tv_end.tv_usec- tv_begin.tv_usec);
-  std::cout << "time cvc4: " << time_elapsed_in_mcseconds/1000000 << '\n';
+  std::cout << "time z3: " << time_elapsed_in_mcseconds/1000000 << '\n';
 
   return 0;
 }
