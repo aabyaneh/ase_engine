@@ -79,6 +79,9 @@ extern Btor*          btor;
 extern BoolectorSort  bv_sort;
 extern BoolectorNode* zero_bv;
 extern BoolectorNode* one_bv;
+extern BoolectorNode* eight_bv;
+extern BoolectorNode* meight_bv;
+extern BoolectorNode* twelve_bv;
 extern uint64_t       sase_symbolic;
 extern uint64_t       mrif;            // most recent conditional
 extern uint64_t       b;               // counting total number of backtracking

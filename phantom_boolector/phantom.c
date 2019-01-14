@@ -5011,7 +5011,10 @@ void map_and_store(uint64_t* context, uint64_t vaddr, uint64_t data) {
         exit(EXITCODE_OUTOFTRACEMEMORY);
       }
     } else {
-      sase_store_memory(get_pt(context), vaddr, CONCRETE_T, data, 0);
+      if (data < two_to_the_power_of_32)
+        sase_store_memory(get_pt(context), vaddr, CONCRETE_T, data, boolector_unsigned_int(btor, data, bv_sort));
+      else
+        sase_store_memory(get_pt(context), vaddr, CONCRETE_T, data, boolector_unsigned_int_64(data));
     }
   } else
     store_virtual_memory(get_pt(context), vaddr, data);

@@ -10,6 +10,8 @@ BoolectorSort  bv_sort;
 BoolectorSort  bv_sort_32;
 BoolectorNode* zero_bv;
 BoolectorNode* one_bv;
+BoolectorNode* eight_bv;
+BoolectorNode* meight_bv;
 BoolectorNode* twelve_bv;
 uint64_t       sase_symbolic = 0;
 uint64_t       mrif = 0;        // most recent conditional
@@ -51,12 +53,17 @@ uint64_t        read_buffer     = 0;
 // ********************** engine functions ************************
 
 void init_sase() {
+  uint64_t t  = -8;
+
   btor        = boolector_new();
   bv_sort     = boolector_bitvec_sort(btor, 64);
   bv_sort_32  = boolector_bitvec_sort(btor, 32);
   zero_bv     = boolector_unsigned_int(btor, 0, bv_sort);
   one_bv      = boolector_unsigned_int(btor, 1, bv_sort);
   twelve_bv   = boolector_unsigned_int(btor, 12, bv_sort);
+  eight_bv    = boolector_unsigned_int(btor, 8, bv_sort);
+  meight_bv   = boolector_unsigned_int_64(t);
+  
   boolector_set_opt(btor, BTOR_OPT_INCREMENTAL, 1);
   boolector_set_opt(btor, BTOR_OPT_MODEL_GEN, 1);
 
@@ -99,26 +106,31 @@ BoolectorNode* boolector_unsigned_int_64(uint64_t value) {
 
 void store_registers_fp_sp_rd() {
   tc++;
-  *(tcs             + tc) = *(registers + REG_FP);
+  *(tcs             + tc) = 0;
+  *(is_symbolics    + tc) = 0;
+  *(values          + tc) = *(registers + REG_FP);
+  *(symbolic_values + tc) = sase_regs[REG_FP];
+  *(vaddrs + tc)          = rd;
+  tc++;
+  *(tcs             + tc) = 0;
   *(is_symbolics    + tc) = 0;
   *(values          + tc) = *(registers + REG_SP);
-  *(symbolic_values + tc) = 0;
+  *(symbolic_values + tc) = sase_regs[REG_SP];
   *(vaddrs + tc)          = rd;
 }
 
 void restore_registers_fp_sp_rd(uint64_t tr_cnt, uint64_t rd_reg) {
-  *(registers + REG_FP) = *(tcs    + tr_cnt);
-  *(registers + REG_SP) = *(values + tr_cnt);
-  *(registers + rd_reg) = 0;
-
-  // assert: *(registers + REG_FP) < 2^32
-  sase_regs[REG_FP] = boolector_unsigned_int(btor, *(registers + REG_FP), bv_sort);
-  // assert: *(registers + REG_SP) < 2^32
-  sase_regs[REG_SP] = boolector_unsigned_int(btor, *(registers + REG_SP), bv_sort);
-  sase_regs[rd_reg] = zero_bv;
-
-  sase_regs_typ[REG_FP] = CONCRETE_T;
+  registers[REG_SP]     = *(values + tr_cnt);
+  sase_regs[REG_SP]     = *(symbolic_values + tr_cnt);
   sase_regs_typ[REG_SP] = CONCRETE_T;
+  tr_cnt--;
+  tc--;
+  registers[REG_FP]     = *(values + tr_cnt);
+  sase_regs[REG_FP]     = *(symbolic_values + tr_cnt);
+  sase_regs_typ[REG_FP] = CONCRETE_T;
+
+  registers[rd_reg] = 0;
+  sase_regs[rd_reg] = zero_bv;
   sase_regs_typ[rd_reg] = CONCRETE_T;
 }
 
@@ -231,10 +243,20 @@ void sase_lui() {
 
 void sase_addi() {
   if (rd != REG_ZR) {
-    if (imm < two_to_the_power_of_32) {
-      sase_regs[rd] = boolector_add(btor, sase_regs[rs1], boolector_unsigned_int(btor, imm, bv_sort));
+    if (imm == 8) {
+      sase_regs[rd] = boolector_add(btor, sase_regs[rs1], eight_bv);
+    } else if (imm == 0) {
+      sase_regs[rd] = boolector_add(btor, sase_regs[rs1], zero_bv);
+    } else if (imm == -8) {
+      sase_regs[rd] = boolector_add(btor, sase_regs[rs1], meight_bv);
+    } else if (imm == 1) {
+      sase_regs[rd] = boolector_add(btor, sase_regs[rs1], one_bv);
     } else {
-      sase_regs[rd] = boolector_add(btor, sase_regs[rs1], boolector_unsigned_int_64(imm));
+      if (imm < two_to_the_power_of_32) {
+        sase_regs[rd] = boolector_add(btor, sase_regs[rs1], boolector_unsigned_int(btor, imm, bv_sort));
+      } else {
+        sase_regs[rd] = boolector_add(btor, sase_regs[rs1], boolector_unsigned_int_64(imm));
+      }
     }
 
     sase_regs_typ[rd] = sase_regs_typ[rs1];
@@ -440,7 +462,7 @@ void sase_ld() {
 
         if (*(is_symbolics + mrv) == CONCRETE_T) {
           sase_regs_typ[rd] = CONCRETE_T;
-          if (*(symbolic_values + mrv) == 0) {
+          if (!mrv) { //*(symbolic_values + mrv) == 0) {
             if (*(values + mrv) < two_to_the_power_of_32)
               sase_regs[rd]     = boolector_unsigned_int(btor, *(values + mrv), bv_sort);
             else {
