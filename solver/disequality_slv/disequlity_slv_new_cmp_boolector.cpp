@@ -79,23 +79,25 @@ void disjoint_set::union_sets(int i, int j) {
 
 void disjoint_set::create_disjoint_sets() {
   int j;
-  int prev_j;
   int cnt;
   ds_num = 0;
 
   cnt = sets->elements->size();
 
+  std::vector<int> is_visited (cnt, 0);
   std::vector<std::vector<interval> >* dsets = new std::vector<std::vector<interval> > [cnt];
 
   for (size_t i = 0; i < cnt; i++) {
-    if (sets->sets_linkedlist->at(i) >= 0) {
+    if (sets->sets_linkedlist->at(i) >= 0 && is_visited[i] == 0) {
       j = i;
       std::vector<interval> s;
       while (sets->sets_linkedlist->at(j) >= 0) {
-        s.push_back(sets->elements->at(j));
-        prev_j = j;
+        if (is_visited[j] == 0) {
+          s.push_back(sets->elements->at(j));
+          is_visited[j] = 1;
+        }
+
         j = sets->sets_linkedlist->at(j);
-        sets->sets_linkedlist->at(prev_j) = -2;
       }
 
       if (sets->sets_linkedlist->at(j) == -1) {
