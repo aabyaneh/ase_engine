@@ -91,28 +91,23 @@ void store_registers_fp_sp_rd() {
   *(tcs             + tc) = 0;
   *(is_symbolics    + tc) = 0;
   *(values          + tc) = *(registers + REG_FP);
-  *(symbolic_values + tc) = sase_regs[REG_FP];
   *(vaddrs + tc)          = rd;
   tc++;
   *(tcs             + tc) = 0;
   *(is_symbolics    + tc) = 0;
   *(values          + tc) = *(registers + REG_SP);
-  *(symbolic_values + tc) = sase_regs[REG_SP];
   *(vaddrs + tc)          = rd;
 }
 
 void restore_registers_fp_sp_rd(uint64_t tr_cnt, uint64_t rd_reg) {
   registers[REG_SP]     = *(values + tr_cnt);
-  sase_regs[REG_SP]     = *(symbolic_values + tr_cnt);
   sase_regs_typ[REG_SP] = CONCRETE_T;
   tr_cnt--;
   tc--;
   registers[REG_FP]     = *(values + tr_cnt);
-  sase_regs[REG_FP]     = *(symbolic_values + tr_cnt);
   sase_regs_typ[REG_FP] = CONCRETE_T;
 
   registers[rd_reg] = 0;
-  sase_regs[rd_reg] = zero_bv;
   sase_regs_typ[rd_reg] = CONCRETE_T;
 }
 
@@ -214,13 +209,16 @@ uint8_t check_next_3_instrs() {
 
 void sase_lui() {
   if (rd != REG_ZR) {
-    sase_regs[rd] = ctx.bv_val(imm << 12, 64);
-
     sase_regs_typ[rd] = CONCRETE_T;
   }
 }
 
 void sase_addi() {
+  if (sase_regs_typ[rs1] == CONCRETE_T) {
+    sase_regs_typ[rd] = CONCRETE_T;
+    return;
+  }
+
   if (rd != REG_ZR) {
     if (imm == 8) {
       sase_regs[rd] = sase_regs[rs1] + eight_bv;
@@ -233,86 +231,119 @@ void sase_addi() {
     } else
       sase_regs[rd] = sase_regs[rs1] + ctx.bv_val(imm, 64);
 
-    sase_regs_typ[rd] = sase_regs_typ[rs1];
+    sase_regs_typ[rd] = SYMBOLIC_T;
   }
 }
 
 void sase_add() {
   if (rd != REG_ZR) {
-    sase_regs[rd] = sase_regs[rs1] + sase_regs[rs2];
-
-    if (sase_regs_typ[rs1] == CONCRETE_T && sase_regs_typ[rs2] == CONCRETE_T)
+    if (sase_regs_typ[rs1] == CONCRETE_T && sase_regs_typ[rs2] == CONCRETE_T) {
       sase_regs_typ[rd] = CONCRETE_T;
-    else
-      sase_regs_typ[rd] = SYMBOLIC_T;
+      return;
+    }
+
+    if (sase_regs_typ[rs1] == CONCRETE_T)
+      sase_regs[rs1] = ctx.bv_val(*(registers + rs1), 64);
+
+    if (sase_regs_typ[rs2] == CONCRETE_T)
+      sase_regs[rs2] = ctx.bv_val(*(registers + rs2), 64);
+
+    sase_regs[rd] = sase_regs[rs1] + sase_regs[rs2];
+    sase_regs_typ[rd] = SYMBOLIC_T;
   }
 }
 
 void sase_sub() {
   if (rd != REG_ZR) {
-    sase_regs[rd] = sase_regs[rs1] - sase_regs[rs2];
-
-    if (sase_regs_typ[rs1] == CONCRETE_T && sase_regs_typ[rs2] == CONCRETE_T)
+    if (sase_regs_typ[rs1] == CONCRETE_T && sase_regs_typ[rs2] == CONCRETE_T) {
       sase_regs_typ[rd] = CONCRETE_T;
-    else
-      sase_regs_typ[rd] = SYMBOLIC_T;
+      return;
+    }
+
+    if (sase_regs_typ[rs1] == CONCRETE_T)
+      sase_regs[rs1] = ctx.bv_val(*(registers + rs1), 64);
+
+    if (sase_regs_typ[rs2] == CONCRETE_T)
+      sase_regs[rs2] = ctx.bv_val(*(registers + rs2), 64);
+
+    sase_regs[rd] = sase_regs[rs1] - sase_regs[rs2];
+    sase_regs_typ[rd] = SYMBOLIC_T;
   }
 }
 
 void sase_mul() {
   if (rd != REG_ZR) {
-    sase_regs[rd] = sase_regs[rs1] * sase_regs[rs2];
-
-    if (sase_regs_typ[rs1] == CONCRETE_T && sase_regs_typ[rs2] == CONCRETE_T)
+    if (sase_regs_typ[rs1] == CONCRETE_T && sase_regs_typ[rs2] == CONCRETE_T) {
       sase_regs_typ[rd] = CONCRETE_T;
-    else
-      sase_regs_typ[rd] = SYMBOLIC_T;
+      return;
+    }
+
+    if (sase_regs_typ[rs1] == CONCRETE_T)
+      sase_regs[rs1] = ctx.bv_val(*(registers + rs1), 64);
+
+    if (sase_regs_typ[rs2] == CONCRETE_T)
+      sase_regs[rs2] = ctx.bv_val(*(registers + rs2), 64);
+
+    sase_regs[rd] = sase_regs[rs1] * sase_regs[rs2];
+    sase_regs_typ[rd] = SYMBOLIC_T;
   }
 }
 
 void sase_divu() {
-  // check if divisor is zero?
-  slv.push();
-  slv.add(sase_regs[rs2] == zero_bv);
-  if (slv.check()) {
-    printf("%s\n", "SE division by zero!");
-    printf("pc: %llx\n", pc - entry_point);
-    std::cout << slv.get_model() << "\n";
-    // exit(EXITCODE_SYMBOLICEXECUTIONERROR);
-  }
-  slv.pop();
-
-  // divu semantics
   if (rd != REG_ZR) {
-    sase_regs[rd] = udiv(sase_regs[rs1], sase_regs[rs2]);
-
-    if (sase_regs_typ[rs1] == CONCRETE_T && sase_regs_typ[rs2] == CONCRETE_T)
+    if (sase_regs_typ[rs1] == CONCRETE_T && sase_regs_typ[rs2] == CONCRETE_T) {
       sase_regs_typ[rd] = CONCRETE_T;
-    else
-      sase_regs_typ[rd] = SYMBOLIC_T;
+      return;
+    }
+
+    if (sase_regs_typ[rs1] == CONCRETE_T)
+      sase_regs[rs1] = ctx.bv_val(*(registers + rs1), 64);
+
+    if (sase_regs_typ[rs2] == CONCRETE_T)
+      sase_regs[rs2] = ctx.bv_val(*(registers + rs2), 64);
+
+    // check if divisor is zero?
+    slv.push();
+    slv.add(sase_regs[rs2] == zero_bv);
+    if (slv.check()) {
+      printf("%s\n", "SE division by zero!");
+      printf("pc: %llx\n", pc - entry_point);
+      std::cout << slv.get_model() << "\n";
+      // exit(EXITCODE_SYMBOLICEXECUTIONERROR);
+    }
+    slv.pop();
+
+    sase_regs[rd] = udiv(sase_regs[rs1], sase_regs[rs2]);
+    sase_regs_typ[rd] = SYMBOLIC_T;
   }
 }
 
 void sase_remu() {
-  // check if divisor is zero?
-  slv.push();
-  slv.add(sase_regs[rs2] == zero_bv);
-  if (slv.check()) {
-    printf("%s\n", "SE division by zero!");
-    printf("pc: %llx\n", pc - entry_point);
-    std::cout << slv.get_model() << "\n";
-    // exit(EXITCODE_SYMBOLICEXECUTIONERROR);
-  }
-  slv.pop();
-
-  // remu semantics
   if (rd != REG_ZR) {
-    sase_regs[rd] = urem(sase_regs[rs1], sase_regs[rs2]);
-
-    if (sase_regs_typ[rs1] == CONCRETE_T && sase_regs_typ[rs2] == CONCRETE_T)
+    if (sase_regs_typ[rs1] == CONCRETE_T && sase_regs_typ[rs2] == CONCRETE_T) {
       sase_regs_typ[rd] = CONCRETE_T;
-    else
-      sase_regs_typ[rd] = SYMBOLIC_T;
+      return;
+    }
+
+    if (sase_regs_typ[rs1] == CONCRETE_T)
+      sase_regs[rs1] = ctx.bv_val(*(registers + rs1), 64);
+
+    if (sase_regs_typ[rs2] == CONCRETE_T)
+      sase_regs[rs2] = ctx.bv_val(*(registers + rs2), 64);
+
+    // check if divisor is zero?
+    slv.push();
+    slv.add(sase_regs[rs2] == zero_bv);
+    if (slv.check()) {
+      printf("%s\n", "SE division by zero!");
+      printf("pc: %llx\n", pc - entry_point);
+      std::cout << slv.get_model() << "\n";
+      // exit(EXITCODE_SYMBOLICEXECUTIONERROR);
+    }
+    slv.pop();
+
+    sase_regs[rd] = urem(sase_regs[rs1], sase_regs[rs2]);
+    sase_regs_typ[rd] = SYMBOLIC_T;
   }
 }
 
@@ -329,16 +360,20 @@ void sase_sltu() {
     if (sase_regs_typ[rs1] == CONCRETE_T && sase_regs_typ[rs2] == CONCRETE_T) {
       if (*(registers + rs1) < *(registers + rs2)) {
         *(registers + rd) = 1;
-        sase_regs[rd]     = one_bv;
       } else {
         *(registers + rd) = 0;
-        sase_regs[rd]     = zero_bv;
       }
 
       sase_regs_typ[rd] = CONCRETE_T;
       pc = pc + INSTRUCTIONSIZE;
       return;
     }
+
+    if (sase_regs_typ[rs1] == CONCRETE_T)
+      sase_regs[rs1] = ctx.bv_val(*(registers + rs1), 64);
+
+    if (sase_regs_typ[rs2] == CONCRETE_T)
+      sase_regs[rs2] = ctx.bv_val(*(registers + rs2), 64);
 
     is_branch = check_next_1_instrs();
     if (is_branch == 0) {
@@ -376,7 +411,6 @@ void sase_sltu() {
     sase_tc++;
 
     if (slv.check()) {
-      sase_regs[rd]     = one_bv;
       sase_regs_typ[rd] = CONCRETE_T;
       *(registers + rd) = 1;
     } else {
@@ -413,7 +447,6 @@ void sase_backtrack_sltu(int is_true_branch_unreachable) {
       sase_backtrack_sltu(0);
     }
   } else {
-    sase_regs[rd]     = zero_bv;
     sase_regs_typ[rd] = CONCRETE_T;
     *(registers + rd) = 0;
   }
@@ -436,17 +469,11 @@ void sase_ld() {
 
         if (*(is_symbolics + mrv) == CONCRETE_T) {
           sase_regs_typ[rd] = CONCRETE_T;
-          if (!mrv) { //*(symbolic_values + mrv) == 0) {
-            sase_regs[rd] = ctx.bv_val(*(values + mrv), 64);
-          } else {
-            sase_regs[rd] = *(symbolic_values + mrv);
-          }
+          *(registers + rd) = *(values + mrv);
         } else {
           sase_regs_typ[rd] = SYMBOLIC_T;
           sase_regs[rd]     = *(symbolic_values + mrv);
         }
-
-        *(registers + rd) = *(values + mrv);
 
         pc = pc + INSTRUCTIONSIZE;
       }
@@ -465,9 +492,9 @@ void sase_sd() {
     if (is_virtual_address_mapped(pt, vaddr)) {
 
       if (sase_regs_typ[rs2] == CONCRETE_T) {
-        sase_store_memory(pt, vaddr, CONCRETE_T, *(registers + rs2), sase_regs[rs2]);
+        sase_store_memory_concrete(pt, vaddr, *(registers + rs2));
       } else {
-        sase_store_memory(pt, vaddr, SYMBOLIC_T, *(registers + rs2), sase_regs[rs2]);
+        sase_store_memory_symbolic(pt, vaddr, sase_regs[rs2]);
       }
 
       pc = pc + INSTRUCTIONSIZE;
@@ -488,28 +515,50 @@ void sase_jal_jalr() {
   }
 }
 
-void sase_store_memory(uint64_t* pt, uint64_t vaddr, uint8_t is_symbolic, uint64_t value, expr sym_value) {
+void sase_store_memory_symbolic(uint64_t* pt, uint64_t vaddr, expr& sym_value) {
   uint64_t mrv;
 
   mrv = load_symbolic_memory(pt, vaddr);
 
   if (mrv != 0)
-    if (is_symbolic == *(is_symbolics + mrv))
-      if (value == *(values + mrv))
-        if (sym_value == *(symbolic_values + mrv))
-          return;
+    if (SYMBOLIC_T == *(is_symbolics + mrv))
+      if (sym_value == *(symbolic_values + mrv))
+        return;
 
   if (mrif < mrv && vaddr != read_buffer) {
-    *(is_symbolics    + mrv) = is_symbolic;
-    *(values          + mrv) = value;
+    *(is_symbolics    + mrv) = SYMBOLIC_T;
     *(symbolic_values + mrv) = sym_value;
   } else {
     tc++;
 
     *(tcs             + tc) = mrv;
-    *(is_symbolics    + tc) = is_symbolic;
-    *(values          + tc) = value;
+    *(is_symbolics    + tc) = SYMBOLIC_T;
     *(symbolic_values + tc) = sym_value;
+    *(vaddrs + tc) = vaddr;
+
+    store_virtual_memory(pt, vaddr, tc);
+  }
+}
+
+void sase_store_memory_concrete(uint64_t* pt, uint64_t vaddr, uint64_t value) {
+  uint64_t mrv;
+
+  mrv = load_symbolic_memory(pt, vaddr);
+
+  if (mrv != 0)
+    if (CONCRETE_T == *(is_symbolics + mrv))
+      if (value == *(values + mrv))
+        return;
+
+  if (mrif < mrv && vaddr != read_buffer) {
+    *(is_symbolics    + mrv) = CONCRETE_T;
+    *(values          + mrv) = value;
+  } else {
+    tc++;
+
+    *(tcs             + tc) = mrv;
+    *(is_symbolics    + tc) = CONCRETE_T;
+    *(values          + tc) = value;
     *(vaddrs + tc) = vaddr;
 
     store_virtual_memory(pt, vaddr, tc);

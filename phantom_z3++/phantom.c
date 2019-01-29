@@ -2338,7 +2338,7 @@ void implement_read(uint64_t* context) {
               slv.add(ule(constrained_reads[read_tc_current], ctx.bv_val(up, 64)));
               slv.add(uge(constrained_reads[read_tc_current], ctx.bv_val(lo, 64)));
 
-              sase_store_memory(get_pt(context), vbuffer, SYMBOLIC_T, value, constrained_reads[read_tc_current]);
+              sase_store_memory_symbolic(get_pt(context), vbuffer, constrained_reads[read_tc_current]);
               read_tc_current++;
 
               actually_read = bytes_to_read;
@@ -2369,13 +2369,11 @@ void implement_read(uint64_t* context) {
                 concrete_reads[read_tc] = value;
 
                 sprintf(var_buffer, "rv_%llu", read_tc);
-                // assert: up < 2^32
                 constrained_reads[read_tc] = ctx.bv_const(var_buffer, 64);
                 slv.add(ule(constrained_reads[read_tc], ctx.bv_val(up, 64)));
-                // assert: lo < 2^32
                 slv.add(uge(constrained_reads[read_tc], ctx.bv_val(lo, 64)));
 
-                sase_store_memory(get_pt(context), vbuffer, SYMBOLIC_T, value, constrained_reads[read_tc]);
+                sase_store_memory_symbolic(get_pt(context), vbuffer, constrained_reads[read_tc]);
                 read_tc++;
                 read_tc_current++;
               }
@@ -4997,7 +4995,7 @@ void map_and_store(uint64_t* context, uint64_t vaddr, uint64_t data) {
         exit((int) EXITCODE_OUTOFTRACEMEMORY);
       }
     } else {
-      sase_store_memory(get_pt(context), vaddr, CONCRETE_T, data, ctx.bv_val(data, 64));
+      sase_store_memory_concrete(get_pt(context), vaddr, data);
     }
   } else
     store_virtual_memory(get_pt(context), vaddr, data);

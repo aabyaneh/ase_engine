@@ -146,6 +146,7 @@ void sase_backtrack_sltu(int is_true_branch_unreachable);
 void sase_ld();
 void sase_sd();
 void sase_jal_jalr();
-void sase_store_memory(uint64_t* pt, uint64_t vaddr, uint8_t is_symbolic, uint64_t value, expr sym_value);
+void sase_store_memory_concrete(uint64_t* pt, uint64_t vaddr, uint64_t value);
+void sase_store_memory_symbolic(uint64_t* pt, uint64_t vaddr, expr& sym_value);
 void backtrack_branch_stores();
 void sase_backtrack_sltu(int is_true_branch_unreachable);
