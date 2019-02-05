@@ -214,12 +214,12 @@ void sase_lui() {
 }
 
 void sase_addi() {
-  if (sase_regs_typ[rs1] == CONCRETE_T) {
-    sase_regs_typ[rd] = CONCRETE_T;
-    return;
-  }
-
   if (rd != REG_ZR) {
+    if (sase_regs_typ[rs1] == CONCRETE_T) {
+      sase_regs_typ[rd] = CONCRETE_T;
+      return;
+    }
+    
     if (imm == 8) {
       sase_regs[rd] = sase_regs[rs1] + eight_bv;
     } else if (imm == 0) {
