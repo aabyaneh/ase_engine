@@ -2340,7 +2340,7 @@ void implement_read(uint64_t* context) {
               // assert: lo < 2^32
               boolector_assert(btor, boolector_ugte(btor, constrained_reads[read_tc_current], boolector_unsigned_int(btor, lo, bv_sort)));
 
-              sase_store_memory(get_pt(context), vbuffer, SYMBOLIC_T, value, constrained_reads[read_tc_current]);
+              sase_store_memory_symbolic(get_pt(context), vbuffer, constrained_reads[read_tc_current]);
               read_tc_current++;
 
               actually_read = bytes_to_read;
@@ -2377,7 +2377,7 @@ void implement_read(uint64_t* context) {
                 // assert: lo < 2^32
                 boolector_assert(btor, boolector_ugte(btor, constrained_reads[read_tc], boolector_unsigned_int(btor, lo, bv_sort)));
 
-                sase_store_memory(get_pt(context), vbuffer, SYMBOLIC_T, value, constrained_reads[read_tc]);
+                sase_store_memory_symbolic(get_pt(context), vbuffer, constrained_reads[read_tc]);
                 read_tc++;
                 read_tc_current++;
               }
@@ -2469,10 +2469,11 @@ void implement_read(uint64_t* context) {
 
   if (symbolic) {
     if (sase_symbolic) {
-      if (*(get_regs(context) + REG_A0) < two_to_the_power_of_32)
-        sase_regs[REG_A0] = boolector_unsigned_int(btor, *(get_regs(context) + REG_A0), bv_sort);
-      else
-        printf2((uint64_t*) "%s: big read in read syscall: %d\n", exe_name, (uint64_t*) *(get_regs(context) + REG_A0));
+      sase_regs[REG_A0] = boolector_unsigned_int_64(*(get_regs(context) + REG_A0));
+      // if (*(get_regs(context) + REG_A0) < two_to_the_power_of_32)
+      //   sase_regs[REG_A0] = boolector_unsigned_int(btor, *(get_regs(context) + REG_A0), bv_sort);
+      // else
+      //   printf2((uint64_t*) "%s: big read in read syscall: %d\n", exe_name, (uint64_t*) *(get_regs(context) + REG_A0));
     } else {
       *(reg_typ + REG_A0) = 0;
 
@@ -2508,16 +2509,11 @@ void implement_symbolic_input(uint64_t* context) {
 
     sprintf(var_buffer, "in_%llu", symbolic_input_cnt++);
     in = boolector_var(btor, bv_sort, var_buffer);
+
     // <= up
-    if (up < two_to_the_power_of_32)
-      boolector_assert(btor, boolector_ulte(btor, in, boolector_unsigned_int(btor, up, bv_sort)));
-    else
-      boolector_assert(btor, boolector_ulte(btor, in, boolector_unsigned_int_64(up)));
+    boolector_assert(btor, boolector_ulte(btor, in, boolector_unsigned_int_64(up)));
     // >= lo
-    if (lo < two_to_the_power_of_32)
-      boolector_assert(btor, boolector_ugte(btor, in, boolector_unsigned_int(btor, lo, bv_sort)));
-    else
-      boolector_assert(btor, boolector_ulte(btor, in, boolector_unsigned_int_64(lo)));
+    boolector_assert(btor, boolector_ugte(btor, in, boolector_unsigned_int_64(lo)));
 
     sase_regs[REG_A0]     = in;
     sase_regs_typ[REG_A0] = SYMBOLIC_T;
@@ -2622,10 +2618,11 @@ void implement_write(uint64_t* context) {
 
   if (symbolic) {
     if (sase_symbolic) {
-      if (*(get_regs(context) + REG_A0) < two_to_the_power_of_32)
-        sase_regs[REG_A0] = boolector_unsigned_int(btor, *(get_regs(context) + REG_A0), bv_sort);
-      else
-        printf2((uint64_t*) "%s: big write in write syscall: %d\n", exe_name, (uint64_t*) *(get_regs(context) + REG_A0));
+      sase_regs[REG_A0] = boolector_unsigned_int_64(*(get_regs(context) + REG_A0));
+      // if (*(get_regs(context) + REG_A0) < two_to_the_power_of_32)
+      //   sase_regs[REG_A0] = boolector_unsigned_int(btor, *(get_regs(context) + REG_A0), bv_sort);
+      // else
+      //   printf2((uint64_t*) "%s: big write in write syscall: %d\n", exe_name, (uint64_t*) *(get_regs(context) + REG_A0));
     } else {
       *(reg_typ + REG_A0) = 0;
 
@@ -5011,10 +5008,7 @@ void map_and_store(uint64_t* context, uint64_t vaddr, uint64_t data) {
         exit(EXITCODE_OUTOFTRACEMEMORY);
       }
     } else {
-      if (data < two_to_the_power_of_32)
-        sase_store_memory(get_pt(context), vaddr, CONCRETE_T, data, boolector_unsigned_int(btor, data, bv_sort));
-      else
-        sase_store_memory(get_pt(context), vaddr, CONCRETE_T, data, boolector_unsigned_int_64(data));
+      sase_store_memory_concrete(get_pt(context), vaddr, data);
     }
   } else
     store_virtual_memory(get_pt(context), vaddr, data);

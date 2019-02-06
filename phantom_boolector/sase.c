@@ -50,6 +50,9 @@ uint64_t        read_tc         = 0;
 uint64_t        read_tc_current = 0;
 uint64_t        read_buffer     = 0;
 
+uint64_t MASK_LO = 4294967295;
+uint64_t MASK_HI = 18446744069414584320;
+
 // ********************** engine functions ************************
 
 void init_sase() {
@@ -63,7 +66,7 @@ void init_sase() {
   twelve_bv   = boolector_unsigned_int(btor, 12, bv_sort);
   eight_bv    = boolector_unsigned_int(btor, 8, bv_sort);
   meight_bv   = boolector_unsigned_int_64(t);
-  
+
   boolector_set_opt(btor, BTOR_OPT_INCREMENTAL, 1);
   boolector_set_opt(btor, BTOR_OPT_MODEL_GEN, 1);
 
@@ -95,13 +98,13 @@ void init_sase() {
 }
 
 BoolectorNode* boolector_unsigned_int_64(uint64_t value) {
-  uint64_t lower_bits;
-  uint64_t upper_bits;
+  return boolector_concat(btor, boolector_unsigned_int(btor, value & MASK_HI, bv_sort_32), boolector_unsigned_int(btor, value & MASK_LO, bv_sort_32));
 
-  lower_bits = get_bits(value, 0, 32);
-  upper_bits = get_bits(value, 32, 32);
-
-  return boolector_concat(btor, boolector_unsigned_int(btor, lower_bits, bv_sort_32), boolector_unsigned_int(btor, upper_bits, bv_sort_32));
+  // if (value < two_to_the_power_of_32) {
+  //   return boolector_unsigned_int(btor, value, bv_sort);
+  // } else {
+  //   return boolector_concat(btor, boolector_unsigned_int(btor, value & MASK_HI, bv_sort_32), boolector_unsigned_int(btor, value & MASK_LO, bv_sort_32));
+  // }
 }
 
 void store_registers_fp_sp_rd() {
@@ -109,28 +112,23 @@ void store_registers_fp_sp_rd() {
   *(tcs             + tc) = 0;
   *(is_symbolics    + tc) = 0;
   *(values          + tc) = *(registers + REG_FP);
-  *(symbolic_values + tc) = sase_regs[REG_FP];
   *(vaddrs + tc)          = rd;
   tc++;
   *(tcs             + tc) = 0;
   *(is_symbolics    + tc) = 0;
   *(values          + tc) = *(registers + REG_SP);
-  *(symbolic_values + tc) = sase_regs[REG_SP];
   *(vaddrs + tc)          = rd;
 }
 
 void restore_registers_fp_sp_rd(uint64_t tr_cnt, uint64_t rd_reg) {
   registers[REG_SP]     = *(values + tr_cnt);
-  sase_regs[REG_SP]     = *(symbolic_values + tr_cnt);
   sase_regs_typ[REG_SP] = CONCRETE_T;
   tr_cnt--;
   tc--;
   registers[REG_FP]     = *(values + tr_cnt);
-  sase_regs[REG_FP]     = *(symbolic_values + tr_cnt);
   sase_regs_typ[REG_FP] = CONCRETE_T;
 
   registers[rd_reg] = 0;
-  sase_regs[rd_reg] = zero_bv;
   sase_regs_typ[rd_reg] = CONCRETE_T;
 }
 
@@ -232,17 +230,17 @@ uint8_t check_next_3_instrs() {
 
 void sase_lui() {
   if (rd != REG_ZR) {
-    if (imm < two_to_the_power_of_32)
-      sase_regs[rd] = boolector_sll(btor, boolector_unsigned_int(btor, imm, bv_sort), twelve_bv);
-    else
-      sase_regs[rd] = boolector_unsigned_int_64(imm << 12);
-
     sase_regs_typ[rd] = CONCRETE_T;
   }
 }
 
 void sase_addi() {
   if (rd != REG_ZR) {
+    if (sase_regs_typ[rs1] == CONCRETE_T) {
+      sase_regs_typ[rd] = CONCRETE_T;
+      return;
+    }
+
     if (imm == 8) {
       sase_regs[rd] = boolector_add(btor, sase_regs[rs1], eight_bv);
     } else if (imm == 0) {
@@ -252,93 +250,132 @@ void sase_addi() {
     } else if (imm == 1) {
       sase_regs[rd] = boolector_add(btor, sase_regs[rs1], one_bv);
     } else {
-      if (imm < two_to_the_power_of_32) {
-        sase_regs[rd] = boolector_add(btor, sase_regs[rs1], boolector_unsigned_int(btor, imm, bv_sort));
-      } else {
-        sase_regs[rd] = boolector_add(btor, sase_regs[rs1], boolector_unsigned_int_64(imm));
-      }
+      sase_regs[rd] = boolector_add(btor, sase_regs[rs1], boolector_unsigned_int_64(imm));
     }
 
-    sase_regs_typ[rd] = sase_regs_typ[rs1];
+    sase_regs_typ[rd] = SYMBOLIC_T;
   }
 }
 
 void sase_add() {
   if (rd != REG_ZR) {
-    sase_regs[rd] = boolector_add(btor, sase_regs[rs1], sase_regs[rs2]);
-
-    if (sase_regs_typ[rs1] == CONCRETE_T && sase_regs_typ[rs2] == CONCRETE_T)
+    if (sase_regs_typ[rs1] == CONCRETE_T && sase_regs_typ[rs2] == CONCRETE_T) {
       sase_regs_typ[rd] = CONCRETE_T;
-    else
-      sase_regs_typ[rd] = SYMBOLIC_T;
+      return;
+    }
+
+    if (sase_regs_typ[rs1] == CONCRETE_T) {
+      sase_regs[rs1] = boolector_unsigned_int_64(*(registers + rs1));
+    }
+
+    if (sase_regs_typ[rs2] == CONCRETE_T) {
+      sase_regs[rs2] = boolector_unsigned_int_64(*(registers + rs2));
+    }
+
+    sase_regs[rd] = boolector_add(btor, sase_regs[rs1], sase_regs[rs2]);
+    sase_regs_typ[rd] = SYMBOLIC_T;
   }
 }
 
 void sase_sub() {
   if (rd != REG_ZR) {
-    sase_regs[rd] = boolector_sub(btor, sase_regs[rs1], sase_regs[rs2]);
-
-    if (sase_regs_typ[rs1] == CONCRETE_T && sase_regs_typ[rs2] == CONCRETE_T)
+    if (sase_regs_typ[rs1] == CONCRETE_T && sase_regs_typ[rs2] == CONCRETE_T) {
       sase_regs_typ[rd] = CONCRETE_T;
-    else
-      sase_regs_typ[rd] = SYMBOLIC_T;
+      return;
+    }
+
+    if (sase_regs_typ[rs1] == CONCRETE_T) {
+      sase_regs[rs1] = boolector_unsigned_int_64(*(registers + rs1));
+    }
+
+    if (sase_regs_typ[rs2] == CONCRETE_T) {
+      sase_regs[rs2] = boolector_unsigned_int_64(*(registers + rs2));
+    }
+
+    sase_regs[rd] = boolector_sub(btor, sase_regs[rs1], sase_regs[rs2]);
+    sase_regs_typ[rd] = SYMBOLIC_T;
   }
 }
 
 void sase_mul() {
   if (rd != REG_ZR) {
-    sase_regs[rd] = boolector_mul(btor, sase_regs[rs1], sase_regs[rs2]);
-
-    if (sase_regs_typ[rs1] == CONCRETE_T && sase_regs_typ[rs2] == CONCRETE_T)
+    if (sase_regs_typ[rs1] == CONCRETE_T && sase_regs_typ[rs2] == CONCRETE_T) {
       sase_regs_typ[rd] = CONCRETE_T;
-    else
-      sase_regs_typ[rd] = SYMBOLIC_T;
+      return;
+    }
+
+    if (sase_regs_typ[rs1] == CONCRETE_T) {
+      sase_regs[rs1] = boolector_unsigned_int_64(*(registers + rs1));
+    }
+
+    if (sase_regs_typ[rs2] == CONCRETE_T) {
+      sase_regs[rs2] = boolector_unsigned_int_64(*(registers + rs2));
+    }
+
+    sase_regs[rd] = boolector_mul(btor, sase_regs[rs1], sase_regs[rs2]);
+    sase_regs_typ[rd] = SYMBOLIC_T;
   }
 }
 
 void sase_divu() {
-  // check if divisor is zero?
-  boolector_push(btor, 1);
-  boolector_assert(btor, boolector_eq(btor, sase_regs[rs2], zero_bv));
-  if (boolector_sat(btor) == BOOLECTOR_SAT) {
-    printf("%s\n", "SE division by zero!");
-    printf("pc: %llx\n", pc - entry_point);
-    boolector_print_model (btor, "smt2", stdout);
-    // exit(EXITCODE_SYMBOLICEXECUTIONERROR);
-  }
-  boolector_pop(btor, 1);
-
-  // divu semantics
   if (rd != REG_ZR) {
-    sase_regs[rd] = boolector_udiv(btor, sase_regs[rs1], sase_regs[rs2]);
-
-    if (sase_regs_typ[rs1] == CONCRETE_T && sase_regs_typ[rs2] == CONCRETE_T)
+    if (sase_regs_typ[rs1] == CONCRETE_T && sase_regs_typ[rs2] == CONCRETE_T) {
       sase_regs_typ[rd] = CONCRETE_T;
-    else
-      sase_regs_typ[rd] = SYMBOLIC_T;
+      return;
+    }
+
+    if (sase_regs_typ[rs1] == CONCRETE_T) {
+      sase_regs[rs1] = boolector_unsigned_int_64(*(registers + rs1));
+    }
+
+    if (sase_regs_typ[rs2] == CONCRETE_T) {
+      sase_regs[rs2] = boolector_unsigned_int_64(*(registers + rs2));
+    }
+
+    // check if divisor is zero?
+    boolector_push(btor, 1);
+    boolector_assert(btor, boolector_eq(btor, sase_regs[rs2], zero_bv));
+    if (boolector_sat(btor) == BOOLECTOR_SAT) {
+      printf("%s\n", "SE division by zero!");
+      printf("pc: %llx\n", pc - entry_point);
+      boolector_print_model (btor, "smt2", stdout);
+      // exit(EXITCODE_SYMBOLICEXECUTIONERROR);
+    }
+    boolector_pop(btor, 1);
+
+    sase_regs[rd] = boolector_udiv(btor, sase_regs[rs1], sase_regs[rs2]);
+    sase_regs_typ[rd] = SYMBOLIC_T;
   }
 }
 
 void sase_remu() {
-  // check if divisor is zero?
-  boolector_push(btor, 1);
-  boolector_assert(btor, boolector_eq(btor, sase_regs[rs2], zero_bv));
-  if (boolector_sat (btor) == BOOLECTOR_SAT) {
-    printf("%s\n", "SE division by zero!");
-    printf("pc: %llx\n", pc - entry_point);
-    boolector_print_model (btor, "smt2", stdout);
-    // exit(EXITCODE_SYMBOLICEXECUTIONERROR);
-  }
-  boolector_pop(btor, 1);
-
-  // remu semantics
   if (rd != REG_ZR) {
-    sase_regs[rd] = boolector_urem(btor, sase_regs[rs1], sase_regs[rs2]);
-
-    if (sase_regs_typ[rs1] == CONCRETE_T && sase_regs_typ[rs2] == CONCRETE_T)
+    if (sase_regs_typ[rs1] == CONCRETE_T && sase_regs_typ[rs2] == CONCRETE_T) {
       sase_regs_typ[rd] = CONCRETE_T;
-    else
-      sase_regs_typ[rd] = SYMBOLIC_T;
+      return;
+    }
+
+    if (sase_regs_typ[rs1] == CONCRETE_T) {
+      sase_regs[rs1] = boolector_unsigned_int_64(*(registers + rs1));
+    }
+
+    if (sase_regs_typ[rs2] == CONCRETE_T) {
+      sase_regs[rs2] = boolector_unsigned_int_64(*(registers + rs2));
+    }
+
+    // check if divisor is zero?
+    boolector_push(btor, 1);
+    boolector_assert(btor, boolector_eq(btor, sase_regs[rs2], zero_bv));
+    if (boolector_sat (btor) == BOOLECTOR_SAT) {
+      printf("%s\n", "SE division by zero!");
+      printf("pc: %llx\n", pc - entry_point);
+      boolector_print_model (btor, "smt2", stdout);
+      // exit(EXITCODE_SYMBOLICEXECUTIONERROR);
+    }
+    boolector_pop(btor, 1);
+
+    sase_regs[rd] = boolector_urem(btor, sase_regs[rs1], sase_regs[rs2]);
+    sase_regs_typ[rd] = SYMBOLIC_T;
   }
 }
 
@@ -364,6 +401,14 @@ void sase_sltu() {
       sase_regs_typ[rd] = CONCRETE_T;
       pc = pc + INSTRUCTIONSIZE;
       return;
+    }
+
+    if (sase_regs_typ[rs1] == CONCRETE_T) {
+      sase_regs[rs1] = boolector_unsigned_int_64(*(registers + rs1));
+    }
+
+    if (sase_regs_typ[rs2] == CONCRETE_T) {
+      sase_regs[rs2] = boolector_unsigned_int_64(*(registers + rs2));
     }
 
     is_branch = check_next_1_instrs();
@@ -402,7 +447,6 @@ void sase_sltu() {
     sase_tc++;
 
     if (boolector_sat(btor) == BOOLECTOR_SAT) {
-      sase_regs[rd]     = one_bv;
       sase_regs_typ[rd] = CONCRETE_T;
       *(registers + rd) = 1;
     } else {
@@ -439,7 +483,6 @@ void sase_backtrack_sltu(int is_true_branch_unreachable) {
       sase_backtrack_sltu(0);
     }
   } else {
-    sase_regs[rd]     = zero_bv;
     sase_regs_typ[rd] = CONCRETE_T;
     *(registers + rd) = 0;
   }
@@ -462,22 +505,11 @@ void sase_ld() {
 
         if (*(is_symbolics + mrv) == CONCRETE_T) {
           sase_regs_typ[rd] = CONCRETE_T;
-          if (!mrv) { //*(symbolic_values + mrv) == 0) {
-            if (*(values + mrv) < two_to_the_power_of_32)
-              sase_regs[rd]     = boolector_unsigned_int(btor, *(values + mrv), bv_sort);
-            else {
-              // printf("large load pc: %llx mrv: %llu val: %llu\n", pc-entry_point, mrv, *(values + mrv));
-              sase_regs[rd]     = boolector_unsigned_int_64(*(values + mrv));
-            }
-          } else {
-            sase_regs[rd]     = *(symbolic_values + mrv);
-          }
+          *(registers + rd) = *(values + mrv);
         } else {
           sase_regs_typ[rd] = SYMBOLIC_T;
           sase_regs[rd]     = *(symbolic_values + mrv);
         }
-
-        *(registers + rd) = *(values + mrv);
 
         pc = pc + INSTRUCTIONSIZE;
       }
@@ -496,9 +528,9 @@ void sase_sd() {
     if (is_virtual_address_mapped(pt, vaddr)) {
 
       if (sase_regs_typ[rs2] == CONCRETE_T) {
-        sase_store_memory(pt, vaddr, CONCRETE_T, *(registers + rs2), sase_regs[rs2]);
+        sase_store_memory_concrete(pt, vaddr, *(registers + rs2));
       } else {
-        sase_store_memory(pt, vaddr, SYMBOLIC_T, *(registers + rs2), sase_regs[rs2]);
+        sase_store_memory_symbolic(pt, vaddr, sase_regs[rs2]);
       }
 
       pc = pc + INSTRUCTIONSIZE;
@@ -510,35 +542,54 @@ void sase_sd() {
 
 void sase_jal_jalr() {
   if (rd != REG_ZR) {
-    // assert: pc + INSTRUCTIONSIZE < 2^32
-    sase_regs[rd] = boolector_unsigned_int(btor, pc + INSTRUCTIONSIZE, bv_sort);
-
     sase_regs_typ[rd] = CONCRETE_T;
   }
 }
 
-void sase_store_memory(uint64_t* pt, uint64_t vaddr, uint8_t is_symbolic, uint64_t value, BoolectorNode* sym_value) {
+void sase_store_memory_symbolic(uint64_t* pt, uint64_t vaddr, BoolectorNode* sym_value) {
   uint64_t mrv;
 
   mrv = load_symbolic_memory(pt, vaddr);
 
   if (mrv != 0)
-    if (is_symbolic == *(is_symbolics + mrv))
-      if (value == *(values + mrv))
-        if (sym_value == *(symbolic_values + mrv))
-          return;
+    if (SYMBOLIC_T == *(is_symbolics + mrv))
+      if (sym_value == *(symbolic_values + mrv))
+        return;
 
   if (mrif < mrv && vaddr != read_buffer) {
-    *(is_symbolics    + mrv) = is_symbolic;
-    *(values          + mrv) = value;
+    *(is_symbolics    + mrv) = SYMBOLIC_T;
     *(symbolic_values + mrv) = sym_value;
   } else {
     tc++;
 
     *(tcs             + tc) = mrv;
-    *(is_symbolics    + tc) = is_symbolic;
-    *(values          + tc) = value;
+    *(is_symbolics    + tc) = SYMBOLIC_T;
     *(symbolic_values + tc) = sym_value;
+    *(vaddrs + tc) = vaddr;
+
+    store_virtual_memory(pt, vaddr, tc);
+  }
+}
+
+void sase_store_memory_concrete(uint64_t* pt, uint64_t vaddr, uint64_t value) {
+  uint64_t mrv;
+
+  mrv = load_symbolic_memory(pt, vaddr);
+
+  if (mrv != 0)
+    if (CONCRETE_T == *(is_symbolics + mrv))
+      if (value == *(values + mrv))
+        return;
+
+  if (mrif < mrv && vaddr != read_buffer) {
+    *(is_symbolics    + mrv) = CONCRETE_T;
+    *(values          + mrv) = value;
+  } else {
+    tc++;
+
+    *(tcs             + tc) = mrv;
+    *(is_symbolics    + tc) = CONCRETE_T;
+    *(values          + tc) = value;
     *(vaddrs + tc) = vaddr;
 
     store_virtual_memory(pt, vaddr, tc);
