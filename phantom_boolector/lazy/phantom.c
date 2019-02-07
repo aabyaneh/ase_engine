@@ -2470,10 +2470,6 @@ void implement_read(uint64_t* context) {
   if (symbolic) {
     if (sase_symbolic) {
       sase_regs[REG_A0] = boolector_unsigned_int_64(*(get_regs(context) + REG_A0));
-      // if (*(get_regs(context) + REG_A0) < two_to_the_power_of_32)
-      //   sase_regs[REG_A0] = boolector_unsigned_int(btor, *(get_regs(context) + REG_A0), bv_sort);
-      // else
-      //   printf2((uint64_t*) "%s: big read in read syscall: %d\n", exe_name, (uint64_t*) *(get_regs(context) + REG_A0));
     } else {
       *(reg_typ + REG_A0) = 0;
 
@@ -2619,10 +2615,6 @@ void implement_write(uint64_t* context) {
   if (symbolic) {
     if (sase_symbolic) {
       sase_regs[REG_A0] = boolector_unsigned_int_64(*(get_regs(context) + REG_A0));
-      // if (*(get_regs(context) + REG_A0) < two_to_the_power_of_32)
-      //   sase_regs[REG_A0] = boolector_unsigned_int(btor, *(get_regs(context) + REG_A0), bv_sort);
-      // else
-      //   printf2((uint64_t*) "%s: big write in write syscall: %d\n", exe_name, (uint64_t*) *(get_regs(context) + REG_A0));
     } else {
       *(reg_typ + REG_A0) = 0;
 
