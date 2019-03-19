@@ -576,50 +576,38 @@ void print_lui();
 void print_lui_before();
 void print_lui_after();
 void do_lui();
-void constrain_lui();
 
 void print_addi();
 void print_addi_before();
 void print_addi_add_sub_mul_divu_remu_sltu_after();
 void do_addi();
-void constrain_addi();
 
 void print_add_sub_mul_divu_remu_sltu(uint64_t *mnemonics);
 void print_add_sub_mul_divu_remu_sltu_before();
 
 void do_add();
-void constrain_add();
 
 void do_sub();
-void constrain_sub();
 
 void do_mul();
-void constrain_mul();
 
 void record_divu_remu();
 void do_divu();
-void constrain_divu();
 
 void do_remu();
-void constrain_remu();
 
 void do_sltu();
-void constrain_sltu();
-void backtrack_sltu();
 
 void     print_ld();
 void     print_ld_before();
 void     print_ld_after(uint64_t vaddr);
 uint64_t do_ld();
-uint64_t constrain_ld();
 
 void     print_sd();
 void     print_sd_before();
 void     print_sd_after(uint64_t vaddr);
 uint64_t do_sd();
 void     undo_sd();
-uint64_t constrain_sd();
-void     backtrack_sd();
 
 void print_beq();
 void print_beq_before();
@@ -630,7 +618,6 @@ void print_jal();
 void print_jal_before();
 void print_jal_jalr_after();
 void do_jal();
-void constrain_jal_jalr();
 
 void print_jalr();
 void print_jalr_before();
@@ -638,7 +625,6 @@ void do_jalr();
 
 void print_ecall();
 void do_ecall();
-void backtrack_ecall();
 
 void print_data_line_number();
 void print_data_context(uint64_t data);
@@ -648,118 +634,12 @@ void print_data(uint64_t data);
 // ------------------- SYMBOLIC EXECUTION ENGINE -------------------
 // -----------------------------------------------------------------
 
-void init_symbolic_engine();
-
-void print_symbolic_memory(uint64_t svc);
-
-uint64_t cardinality(uint64_t lo, uint64_t up);
-uint64_t combined_cardinality(uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t up2);
-
-uint64_t is_symbolic_value(uint64_t type, uint64_t lo, uint64_t up);
-uint64_t is_safe_address(uint64_t vaddr, uint64_t reg);
-uint64_t load_symbolic_memory(uint64_t* pt, uint64_t vaddr);
-
-uint64_t is_trace_space_available();
-
-void ealloc();
-void efree();
-
-void store_symbolic_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, uint64_t type, uint64_t lo, uint64_t up, uint64_t trb);
-
-void store_constrained_memory(uint64_t vaddr, uint64_t lo, uint64_t up, uint64_t trb);
-void store_register_memory(uint64_t reg, uint64_t value);
-
-void constrain_memory(uint64_t reg, uint64_t lo, uint64_t up, uint64_t trb);
-
-void set_constraint(uint64_t reg, uint64_t hasco, uint64_t vaddr, uint64_t hasmn, uint64_t colos, uint64_t coups);
-
-void take_branch(uint64_t b, uint64_t how_many_more);
-void create_constraints(uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t up2, uint64_t trb, uint64_t how_many_more);
-
 uint64_t fuzz_lo(uint64_t value);
 uint64_t fuzz_up(uint64_t value);
-
-// ------------------------ GLOBAL CONSTANTS -----------------------
-
-uint64_t MAX_TRACE_LENGTH = 100000;
-
-uint64_t debug_symbolic = 0;
-
-// ------------------------ GLOBAL VARIABLES -----------------------
-
-// trace
-
-uint64_t tc = 0; // trace counter
-
-uint64_t* pcs    = (uint64_t*) 0; // trace of program counter values
-
-uint64_t* tcs = (uint64_t*) 0; // trace of trace counters to previous values
-
-uint64_t* values = (uint64_t*) 0; // trace of values
-
-uint64_t* types = (uint64_t*) 0; // memory range or integer interval
-
-uint64_t* los = (uint64_t*) 0; // trace of lower bounds on values
-uint64_t* ups = (uint64_t*) 0; // trace of upper bounds on values
-
-uint64_t* vaddrs = (uint64_t*) 0; // trace of virtual addresses
-
-// read history
-
-uint64_t rc = 0; // read counter
-
-uint64_t* read_values = (uint64_t*) 0;
-
-uint64_t* read_los = (uint64_t*) 0;
-uint64_t* read_ups = (uint64_t*) 0;
-
-// registers
-
-uint64_t* reg_typ = (uint64_t*) 0; // memory range or integer interval
-uint64_t* reg_los = (uint64_t*) 0; // lower bound on register value
-uint64_t* reg_ups = (uint64_t*) 0; // upper bound on register value
-
-// register constraints on memory
-
-uint64_t* reg_hasco = (uint64_t*) 0; // register has constraint
-uint64_t* reg_vaddr = (uint64_t*) 0; // vaddr of constrained memory
-uint64_t* reg_hasmn = (uint64_t*) 0; // constraint has minuend
-uint64_t* reg_colos = (uint64_t*) 0; // offset on lower bound
-uint64_t* reg_coups = (uint64_t*) 0; // offset on upper bound
-
-// trace counter of most recent constraint
-
-uint64_t mrcc = 0;
 
 // fuzzing
 
 uint64_t fuzz = 0; // power-of-two fuzzing factor for read calls
-
-// ------------------------- INITIALIZATION ------------------------
-
-void init_symbolic_engine() {
-  pcs    = zalloc(MAX_TRACE_LENGTH * SIZEOFUINT64);
-  tcs    = zalloc(MAX_TRACE_LENGTH * SIZEOFUINT64);
-  values = zalloc(MAX_TRACE_LENGTH * SIZEOFUINT64);
-  types  = zalloc(MAX_TRACE_LENGTH * SIZEOFUINT64);
-  los    = zalloc(MAX_TRACE_LENGTH * SIZEOFUINT64);
-  ups    = zalloc(MAX_TRACE_LENGTH * SIZEOFUINT64);
-  vaddrs = zalloc(MAX_TRACE_LENGTH * SIZEOFUINT64);
-
-  read_values = zalloc(MAX_TRACE_LENGTH * SIZEOFUINT64);
-  read_los    = zalloc(MAX_TRACE_LENGTH * SIZEOFUINT64);
-  read_ups    = zalloc(MAX_TRACE_LENGTH * SIZEOFUINT64);
-
-  reg_typ = zalloc(NUMBEROFREGISTERS * REGISTERSIZE);
-  reg_los = zalloc(NUMBEROFREGISTERS * REGISTERSIZE);
-  reg_ups = zalloc(NUMBEROFREGISTERS * REGISTERSIZE);
-
-  reg_hasco = zalloc(NUMBEROFREGISTERS * REGISTERSIZE);
-  reg_vaddr = zalloc(NUMBEROFREGISTERS * REGISTERSIZE);
-  reg_hasmn = zalloc(NUMBEROFREGISTERS * REGISTERSIZE);
-  reg_colos = zalloc(NUMBEROFREGISTERS * REGISTERSIZE);
-  reg_coups = zalloc(NUMBEROFREGISTERS * REGISTERSIZE);
-}
 
 // -----------------------------------------------------------------
 // -------------------------- INTERPRETER --------------------------
@@ -811,8 +691,6 @@ uint64_t record      = 0; // flag for recording code execution
 uint64_t undo        = 0; // flag for undoing code execution
 uint64_t redo        = 0; // flag for redoing code execution
 uint64_t disassemble = 0; // flag for disassembling code
-uint64_t symbolic    = 0; // flag for symbolically executing code
-uint64_t backtrack   = 0; // flag for backtracking symbolic execution
 
 uint64_t disassemble_verbose = 0; // flag for disassembling code in more detail
 
@@ -1037,7 +915,6 @@ void     map_unmapped_pages(uint64_t* context);
 uint64_t minster(uint64_t* to_context);
 uint64_t mobster(uint64_t* to_context);
 
-void     backtrack_trace(uint64_t* context);
 uint64_t engine(uint64_t* to_context);
 
 // uint64_t is_boot_level_zero();
@@ -2995,19 +2872,6 @@ void do_lui() {
   ic_lui = ic_lui + 1;
 }
 
-void constrain_lui() {
-  if (rd != REG_ZR) {
-    *(reg_typ + rd) = 0;
-
-    // interval semantics of lui
-    *(reg_los + rd) = left_shift(imm, 12);
-    *(reg_ups + rd) = left_shift(imm, 12);
-
-    // rd has no constraint
-    set_constraint(rd, 0, 0, 0, 0, 0);
-  }
-}
-
 void print_addi() {
   print_code_context_for_instruction(pc);
 
@@ -3046,43 +2910,6 @@ void do_addi() {
   ic_addi = ic_addi + 1;
 }
 
-void constrain_addi() {
-  if (rd != REG_ZR) {
-    if (*(reg_typ + rs1)) {
-      *(reg_typ + rd) = *(reg_typ + rs1);
-
-      *(reg_los + rd) = *(reg_los + rs1);
-      *(reg_ups + rd) = *(reg_ups + rs1);
-
-      // rd has no constraint if rs1 is memory range
-      set_constraint(rd, 0, 0, 0, 0, 0);
-
-      return;
-    }
-
-    *(reg_typ + rd) = 0;
-
-    // interval semantics of addi
-    *(reg_los + rd) = *(reg_los + rs1) + imm;
-    *(reg_ups + rd) = *(reg_ups + rs1) + imm;
-
-    if (*(reg_hasco + rs1)) {
-      if (*(reg_hasmn + rs1)) {
-        // rs1 constraint has already minuend and cannot have another addend
-        printf2((uint64_t*) "%s: detected invalid minuend expression in operand of addi at %x", exe_name, (uint64_t*) pc);
-        print_code_line_number_for_instruction(pc - entry_point);
-        println();
-
-        exit(EXITCODE_SYMBOLICEXECUTIONERROR);
-      } else
-        // rd inherits rs1 constraint
-        set_constraint(rd, *(reg_hasco + rs1), *(reg_vaddr + rs1), 0, *(reg_colos + rs1) + imm, *(reg_coups + rs1) + imm);
-    } else
-      // rd has no constraint if rs1 has none
-      set_constraint(rd, 0, 0, 0, 0, 0);
-  }
-}
-
 void print_add_sub_mul_divu_remu_sltu(uint64_t *mnemonics) {
   print_code_context_for_instruction(pc);
   printf4((uint64_t*) "%s %s,%s,%s", mnemonics, get_register_name(rd), get_register_name(rs1), get_register_name(rs2));
@@ -3107,82 +2934,6 @@ void do_add() {
   ic_add = ic_add + 1;
 }
 
-void constrain_add() {
-  if (rd != REG_ZR) {
-    if (*(reg_typ + rs1)) {
-      if (*(reg_typ + rs2)) {
-        // adding two pointers is undefined
-        printf2((uint64_t*) "%s: undefined addition of two pointers at %x", exe_name, (uint64_t*) pc);
-        print_code_line_number_for_instruction(pc - entry_point);
-        println();
-
-        exit(EXITCODE_SYMBOLICEXECUTIONERROR);
-      }
-
-      *(reg_typ + rd) = *(reg_typ + rs1);
-
-      *(reg_los + rd) = *(reg_los + rs1);
-      *(reg_ups + rd) = *(reg_ups + rs1);
-
-      // rd has no constraint if rs1 is memory range
-      set_constraint(rd, 0, 0, 0, 0, 0);
-
-      return;
-    } else if (*(reg_typ + rs2)) {
-      *(reg_typ + rd) = *(reg_typ + rs2);
-
-      *(reg_los + rd) = *(reg_los + rs2);
-      *(reg_ups + rd) = *(reg_ups + rs2);
-
-      // rd has no constraint if rs2 is memory range
-      set_constraint(rd, 0, 0, 0, 0, 0);
-
-      return;
-    }
-
-    *(reg_typ + rd) = 0;
-
-    // interval semantics of add
-    if (combined_cardinality(*(reg_los + rs1), *(reg_ups + rs1), *(reg_los + rs2), *(reg_ups + rs2)) == 0) {
-      *(reg_los + rd) = 0;
-      *(reg_ups + rd) = UINT64_MAX_T;
-    } else {
-      *(reg_los + rd) = *(reg_los + rs1) + *(reg_los + rs2);
-      *(reg_ups + rd) = *(reg_ups + rs1) + *(reg_ups + rs2);
-    }
-
-    if (*(reg_hasco + rs1)) {
-      if (*(reg_hasco + rs2))
-        // we cannot keep track of more than one constraint for add but
-        // need to warn about their earlier presence if used in comparisons
-        set_constraint(rd, *(reg_hasco + rs1) + *(reg_hasco + rs2), 0, 0, 0, 0);
-      else if (*(reg_hasmn + rs1)) {
-        // rs1 constraint has already minuend and cannot have another addend
-        printf2((uint64_t*) "%s: detected invalid minuend expression in left operand of add at %x", exe_name, (uint64_t*) pc);
-        print_code_line_number_for_instruction(pc - entry_point);
-        println();
-
-        exit(EXITCODE_SYMBOLICEXECUTIONERROR);
-      } else
-        // rd inherits rs1 constraint since rs2 has none
-        set_constraint(rd, *(reg_hasco + rs1), *(reg_vaddr + rs1), 0, *(reg_colos + rs1) + *(reg_los + rs2), *(reg_coups + rs1) + *(reg_ups + rs2));
-    } else if (*(reg_hasco + rs2)) {
-      if (*(reg_hasmn + rs2)) {
-        // rs2 constraint has already minuend and cannot have another addend
-        printf2((uint64_t*) "%s: detected invalid minuend expression in right operand of add at %x", exe_name, (uint64_t*) pc);
-        print_code_line_number_for_instruction(pc - entry_point);
-        println();
-
-        exit(EXITCODE_SYMBOLICEXECUTIONERROR);
-      } else
-        // rd inherits rs2 constraint since rs1 has none
-        set_constraint(rd, *(reg_hasco + rs2), *(reg_vaddr + rs2), 0, *(reg_los + rs1) + *(reg_colos + rs2), *(reg_ups + rs1) + *(reg_coups + rs2));
-    } else
-      // rd has no constraint if both rs1 and rs2 have no constraints
-      set_constraint(rd, 0, 0, 0, 0, 0);
-  }
-}
-
 void do_sub() {
   if (rd != REG_ZR)
     // semantics of sub
@@ -3191,100 +2942,6 @@ void do_sub() {
   pc = pc + INSTRUCTIONSIZE;
 
   ic_sub = ic_sub + 1;
-}
-
-void constrain_sub() {
-  uint64_t sub_los;
-  uint64_t sub_ups;
-
-  if (rd != REG_ZR) {
-    if (*(reg_typ + rs1)) {
-      if (*(reg_typ + rs2)) {
-        if (*(reg_los + rs1) == *(reg_los + rs2))
-          if (*(reg_ups + rs1) == *(reg_ups + rs2)) {
-            *(reg_typ + rd) = 0;
-
-            *(reg_los + rd) = *(registers + rd);
-            *(reg_ups + rd) = *(registers + rd);
-
-            // rd has no constraint if rs1 and rs2 are memory range
-            set_constraint(rd, 0, 0, 0, 0, 0);
-
-            return;
-          }
-
-        // subtracting incompatible pointers
-        throw_exception(EXCEPTION_INVALIDADDRESS, 0);
-
-        return;
-      } else {
-        *(reg_typ + rd) = *(reg_typ + rs1);
-
-        *(reg_los + rd) = *(reg_los + rs1);
-        *(reg_ups + rd) = *(reg_ups + rs1);
-
-        // rd has no constraint if rs1 is memory range
-        set_constraint(rd, 0, 0, 0, 0, 0);
-
-        return;
-      }
-    } else if (*(reg_typ + rs2)) {
-      *(reg_typ + rd) = *(reg_typ + rs2);
-
-      *(reg_los + rd) = *(reg_los + rs2);
-      *(reg_ups + rd) = *(reg_ups + rs2);
-
-      // rd has no constraint if rs2 is memory range
-      set_constraint(rd, 0, 0, 0, 0, 0);
-
-      return;
-    }
-
-    *(reg_typ + rd) = 0;
-
-    // interval semantics of sub
-    if (combined_cardinality(*(reg_los + rs1), *(reg_ups + rs1), *(reg_los + rs2), *(reg_ups + rs2)) == 0) {
-      *(reg_los + rd) = 0;
-      *(reg_ups + rd) = UINT64_MAX_T;
-    } else {
-      // use temporary variables since rd may be rs1 or rs2
-      sub_los = *(reg_los + rs1) - *(reg_ups + rs2);
-      sub_ups = *(reg_ups + rs1) - *(reg_los + rs2);
-
-      *(reg_los + rd) = sub_los;
-      *(reg_ups + rd) = sub_ups;
-    }
-
-    if (*(reg_hasco + rs1)) {
-      if (*(reg_hasco + rs2))
-        // we cannot keep track of more than one constraint for sub but
-        // need to warn about their earlier presence if used in comparisons
-        set_constraint(rd, *(reg_hasco + rs1) + *(reg_hasco + rs2), 0, 0, 0, 0);
-      else if (*(reg_hasmn + rs1)) {
-        // rs1 constraint has already minuend and cannot have another subtrahend
-        printf2((uint64_t*) "%s: detected invalid minuend expression in left operand of sub at %x", exe_name, (uint64_t*) pc);
-        print_code_line_number_for_instruction(pc - entry_point);
-        println();
-
-        exit(EXITCODE_SYMBOLICEXECUTIONERROR);
-      } else
-        // rd inherits rs1 constraint since rs2 has none
-        set_constraint(rd, *(reg_hasco + rs1), *(reg_vaddr + rs1), 0, *(reg_colos + rs1) - *(reg_ups + rs2), *(reg_coups + rs1) - *(reg_los + rs2));
-    } else if (*(reg_hasco + rs2)) {
-      if (*(reg_hasmn + rs2)) {
-        // rs2 constraint has already minuend and cannot have another minuend
-        printf2((uint64_t*) "%s: detected invalid minuend expression in right operand of sub at %x", exe_name, (uint64_t*) pc);
-        print_code_line_number_for_instruction(pc - entry_point);
-        println();
-
-        exit(EXITCODE_SYMBOLICEXECUTIONERROR);
-      } else
-        // rd inherits rs2 constraint since rs1 has none
-        set_constraint(rd, *(reg_hasco + rs2), *(reg_vaddr + rs2), 1, *(reg_los + rs1) - *(reg_coups + rs2), *(reg_ups + rs1) - *(reg_colos + rs2));
-    } else
-      // rd has no constraint if both rs1 and rs2 have no constraints
-      set_constraint(rd, 0, 0, 0, 0, 0);
-  }
 }
 
 void do_mul() {
@@ -3297,54 +2954,6 @@ void do_mul() {
   pc = pc + INSTRUCTIONSIZE;
 
   ic_mul = ic_mul + 1;
-}
-
-void constrain_mul() {
-  if (rd != REG_ZR) {
-    *(reg_typ + rd) = 0;
-
-    // interval semantics of mul
-    *(reg_los + rd) = *(reg_los + rs1) * *(reg_los + rs2);
-    *(reg_ups + rd) = *(reg_ups + rs1) * *(reg_ups + rs2);
-
-    if (*(reg_hasco + rs1)) {
-      if (*(reg_hasco + rs2)) {
-        // non-linear expressions are not supported
-        printf2((uint64_t*) "%s: detected non-linear expression in mul at %x", exe_name, (uint64_t*) pc);
-        print_code_line_number_for_instruction(pc - entry_point);
-        println();
-
-        exit(EXITCODE_SYMBOLICEXECUTIONERROR);
-      } else if (*(reg_hasmn + rs1)) {
-        // rs1 constraint has already minuend and cannot have another multiplier
-        printf2((uint64_t*) "%s: detected invalid minuend expression in left operand of mul at %x", exe_name, (uint64_t*) pc);
-        print_code_line_number_for_instruction(pc - entry_point);
-        println();
-
-        exit(EXITCODE_SYMBOLICEXECUTIONERROR);
-      } else
-        // rd inherits rs1 constraint since rs2 has none
-        // assert: rs2 interval is singleton
-        set_constraint(rd, *(reg_hasco + rs1), *(reg_vaddr + rs1), 0,
-          *(reg_colos + rs1) + *(reg_los + rs1) * (*(reg_los + rs2) - 1), *(reg_coups + rs1) + *(reg_ups + rs1) * (*(reg_ups + rs2) - 1));
-    } else if (*(reg_hasco + rs2)) {
-      if (*(reg_hasmn + rs2)) {
-        // rs2 constraint has already minuend and cannot have another multiplicand
-        printf2((uint64_t*) "%s: detected invalid minuend expression in right operand of mul at %x", exe_name, (uint64_t*) pc);
-        print_code_line_number_for_instruction(pc - entry_point);
-        println();
-
-        exit(EXITCODE_SYMBOLICEXECUTIONERROR);
-      } else
-        // rd inherits rs2 constraint since rs1 has none
-        // assert: rs1 interval is singleton
-        set_constraint(rd, *(reg_hasco + rs2), *(reg_vaddr + rs2), 0,
-          (*(reg_los + rs1) - 1) * *(reg_los + rs2) + *(reg_colos + rs2),
-          (*(reg_ups + rs1) - 1) * *(reg_ups + rs2) + *(reg_coups + rs2));
-    } else
-      // rd has no constraint if both rs1 and rs2 have no constraints
-      set_constraint(rd, 0, 0, 0, 0, 0);
-  }
 }
 
 void do_divu() {
@@ -3362,65 +2971,6 @@ void do_divu() {
     throw_exception(EXCEPTION_DIVISIONBYZERO, 0);
 }
 
-void constrain_divu() {
-  if (*(reg_los + rs2) != 0) {
-    if (*(reg_ups + rs2) >= *(reg_los + rs2)) {
-      // 0 is not in interval
-      if (rd != REG_ZR) {
-        *(reg_typ + rd) = 0;
-
-        // interval semantics of divu
-        *(reg_los + rd) = *(reg_los + rs1) / *(reg_los + rs2);
-        *(reg_ups + rd) = *(reg_ups + rs1) / *(reg_ups + rs2);
-
-        if (*(reg_hasco + rs1)) {
-          if (*(reg_hasco + rs2)) {
-            // non-linear expressions are not supported
-            printf2((uint64_t*) "%s: detected non-linear expression in divu at %x", exe_name, (uint64_t*) pc);
-            print_code_line_number_for_instruction(pc - entry_point);
-            println();
-
-            exit(EXITCODE_SYMBOLICEXECUTIONERROR);
-          } else if (*(reg_hasmn + rs1)) {
-            // rs1 constraint has already minuend and cannot have another divisor
-            printf2((uint64_t*) "%s: detected invalid minuend expression in left operand of divu at %x", exe_name, (uint64_t*) pc);
-            print_code_line_number_for_instruction(pc - entry_point);
-            println();
-
-            exit(EXITCODE_SYMBOLICEXECUTIONERROR);
-          } else
-            // rd inherits rs1 constraint since rs2 has none
-            // assert: rs2 interval is singleton
-            set_constraint(rd, *(reg_hasco + rs1), *(reg_vaddr + rs1), 0,
-              *(reg_colos + rs1) -
-                (*(reg_los + rs1) - *(reg_los + rs1) / *(reg_los + rs2)),
-              *(reg_coups + rs1) -
-                (*(reg_ups + rs1) - *(reg_ups + rs1) / *(reg_ups + rs2)));
-        } else if (*(reg_hasco + rs2)) {
-          if (*(reg_hasmn + rs2)) {
-            // rs2 constraint has already minuend and cannot have another dividend
-            printf2((uint64_t*) "%s: detected invalid minuend expression in right operand of divu at %x", exe_name, (uint64_t*) pc);
-            print_code_line_number_for_instruction(pc - entry_point);
-            println();
-
-            exit(EXITCODE_SYMBOLICEXECUTIONERROR);
-          } else
-            // rd inherits rs2 constraint since rs1 has none
-            // assert: rs1 interval is singleton
-            set_constraint(rd, *(reg_hasco + rs2), *(reg_vaddr + rs2), 0,
-              *(reg_colos + rs2) -
-                (*(reg_los + rs2) - *(reg_los + rs1) / *(reg_los + rs2)),
-              *(reg_coups + rs2) -
-                (*(reg_ups + rs2) - *(reg_ups + rs1) / *(reg_ups + rs2)));
-        } else
-          // rd has no constraint if both rs1 and rs2 have no constraints
-          set_constraint(rd, 0, 0, 0, 0, 0);
-      }
-    } else
-      throw_exception(EXCEPTION_DIVISIONBYZERO, 0);
-  }
-}
-
 void do_remu() {
   // remainder unsigned
 
@@ -3434,65 +2984,6 @@ void do_remu() {
     ic_remu = ic_remu + 1;
   } else
     throw_exception(EXCEPTION_DIVISIONBYZERO, 0);
-}
-
-void constrain_remu() {
-  if (*(reg_los + rs2) != 0) {
-    if (*(reg_ups + rs2) >= *(reg_los + rs2)) {
-      // 0 is not in interval
-      if (rd != REG_ZR) {
-        *(reg_typ + rd) = 0;
-
-        // interval semantics of remu
-        *(reg_los + rd) = *(reg_los + rs1) % *(reg_los + rs2);
-        *(reg_ups + rd) = *(reg_ups + rs1) % *(reg_ups + rs2);
-
-        if (*(reg_hasco + rs1)) {
-          if (*(reg_hasco + rs2)) {
-            // non-linear expressions are not supported
-            printf2((uint64_t*) "%s: detected non-linear expression in remu at %x", exe_name, (uint64_t*) pc);
-            print_code_line_number_for_instruction(pc - entry_point);
-            println();
-
-            exit(EXITCODE_SYMBOLICEXECUTIONERROR);
-          } else if (*(reg_hasmn + rs1)) {
-            // rs1 constraint has already minuend and cannot have another divisor
-            printf2((uint64_t*) "%s: detected invalid minuend expression in left operand of remu at %x", exe_name, (uint64_t*) pc);
-            print_code_line_number_for_instruction(pc - entry_point);
-            println();
-
-            exit(EXITCODE_SYMBOLICEXECUTIONERROR);
-          } else
-            // rd inherits rs1 constraint since rs2 has none
-            // assert: rs2 interval is singleton
-            set_constraint(rd, *(reg_hasco + rs1), *(reg_vaddr + rs1), 0,
-              *(reg_colos + rs1) -
-                (*(reg_los + rs1) - *(reg_los + rs1) % *(reg_los + rs2)),
-              *(reg_coups + rs1) -
-                (*(reg_ups + rs1) - *(reg_ups + rs1) % *(reg_ups + rs2)));
-        } else if (*(reg_hasco + rs2)) {
-          if (*(reg_hasmn + rs2)) {
-            // rs2 constraint has already minuend and cannot have another dividend
-            printf2((uint64_t*) "%s: detected invalid minuend expression in right operand of remu at %x", exe_name, (uint64_t*) pc);
-            print_code_line_number_for_instruction(pc - entry_point);
-            println();
-
-            exit(EXITCODE_SYMBOLICEXECUTIONERROR);
-          } else
-            // rd inherits rs2 constraint since rs1 has none
-            // assert: rs1 interval is singleton
-            set_constraint(rd, *(reg_hasco + rs2), *(reg_vaddr + rs2), 0,
-              *(reg_colos + rs2) -
-                (*(reg_los + rs2) - *(reg_los + rs1) % *(reg_los + rs2)),
-              *(reg_coups + rs2) -
-                (*(reg_ups + rs2) - *(reg_ups + rs1) % *(reg_ups + rs2)));
-        } else
-          // rd has no constraint if both rs1 and rs2 have no constraints
-          set_constraint(rd, 0, 0, 0, 0, 0);
-      }
-    } else
-      throw_exception(EXCEPTION_DIVISIONBYZERO, 0);
-  }
 }
 
 void do_sltu() {
@@ -3509,89 +3000,6 @@ void do_sltu() {
   pc = pc + INSTRUCTIONSIZE;
 
   ic_sltu = ic_sltu + 1;
-}
-
-void constrain_sltu() {
-  // interval semantics of sltu
-  if (rd != REG_ZR) {
-    if (*(reg_hasco + rs1)) {
-      if (*(reg_vaddr + rs1) == 0) {
-        // constrained memory at vaddr 0 means that there is more than
-        // one constrained memory location in the sltu operand
-        printf3((uint64_t*) "%s: %d constrained memory locations in left sltu operand at %x", exe_name, (uint64_t*) *(reg_hasco + rs1), (uint64_t*) pc);
-        print_code_line_number_for_instruction(pc - entry_point);
-        println();
-
-        exit(EXITCODE_SYMBOLICEXECUTIONERROR);
-      }
-    }
-
-    if (*(reg_hasco + rs2)) {
-      if (*(reg_vaddr + rs2) == 0) {
-        // constrained memory at vaddr 0 means that there is more than
-        // one constrained memory location in the sltu operand
-        printf3((uint64_t*) "%s: %d constrained memory locations in right sltu operand at %x", exe_name, (uint64_t*) *(reg_hasco + rs2), (uint64_t*) pc);
-        print_code_line_number_for_instruction(pc - entry_point);
-        println();
-
-        exit(EXITCODE_SYMBOLICEXECUTIONERROR);
-      }
-    }
-
-    // take local copy of mrcc to make sure that alias check considers old mrcc
-    if (*(reg_typ + rs1))
-      if (*(reg_typ + rs2))
-        create_constraints(*(registers + rs1), *(registers + rs1), *(registers + rs2), *(registers + rs2), mrcc, 0);
-      else
-        create_constraints(*(registers + rs1), *(registers + rs1), *(reg_los + rs2), *(reg_ups + rs2), mrcc, 0);
-    else if (*(reg_typ + rs2))
-      create_constraints(*(reg_los + rs1), *(reg_ups + rs1), *(registers + rs2), *(registers + rs2), mrcc, 0);
-    else
-      create_constraints(*(reg_los + rs1), *(reg_ups + rs1), *(reg_los + rs2), *(reg_ups + rs2), mrcc, 0);
-  }
-
-  pc = pc + INSTRUCTIONSIZE;
-
-  ic_sltu = ic_sltu + 1;
-}
-
-void backtrack_sltu() {
-  uint64_t vaddr;
-
-  if (debug_symbolic) {
-    printf1((uint64_t*) "%s: backtracking sltu ", exe_name);
-    print_symbolic_memory(tc);
-  }
-
-  vaddr = *(vaddrs + tc);
-
-  if (vaddr < NUMBEROFREGISTERS) {
-    if (vaddr > 0) {
-      // the register is identified by vaddr
-      *(registers + vaddr) = *(values + tc);
-
-      *(reg_typ + vaddr) = *(types + tc);
-
-      *(reg_los + vaddr) = *(los + tc);
-      *(reg_ups + vaddr) = *(ups + tc);
-
-      set_constraint(vaddr, 0, 0, 0, 0, 0);
-
-      // restoring mrcc
-      mrcc = *(tcs + tc);
-
-      if (vaddr != REG_FP)
-        if (vaddr != REG_SP) {
-          // stop backtracking and try next case
-          pc = pc + INSTRUCTIONSIZE;
-
-          ic_sltu = ic_sltu + 1;
-        }
-    }
-  } else
-    store_virtual_memory(pt, vaddr, *(tcs + tc));
-
-  efree();
 }
 
 void print_ld() {
@@ -3643,55 +3051,6 @@ uint64_t do_ld() {
       if (rd != REG_ZR)
         // semantics of ld
         *(registers + rd) = load_virtual_memory(pt, vaddr);
-
-      // keep track of instruction address for profiling loads
-      a = (pc - entry_point) / INSTRUCTIONSIZE;
-
-      pc = pc + INSTRUCTIONSIZE;
-
-      // keep track of number of loads in total
-      ic_ld = ic_ld + 1;
-
-      // and individually
-      *(loads_per_instruction + a) = *(loads_per_instruction + a) + 1;
-    } else
-      throw_exception(EXCEPTION_PAGEFAULT, get_page_of_virtual_address(vaddr));
-  } else
-    throw_exception(EXCEPTION_INVALIDADDRESS, vaddr);
-
-  return vaddr;
-}
-
-uint64_t constrain_ld() {
-  uint64_t vaddr;
-  uint64_t mrvc;
-  uint64_t a;
-
-  // load double word
-
-  vaddr = *(registers + rs1) + imm;
-
-  if (is_safe_address(vaddr, rs1)) {
-    if (is_virtual_address_mapped(pt, vaddr)) {
-      if (rd != REG_ZR) {
-        mrvc = load_symbolic_memory(pt, vaddr);
-
-        // interval semantics of ld
-        *(registers + rd) = *(values + mrvc);
-
-        *(reg_typ + rd) = *(types + mrvc);
-
-        *(reg_los + rd) = *(los + mrvc);
-        *(reg_ups + rd) = *(ups + mrvc);
-
-        // assert: vaddr == *(vaddrs + mrvc)
-
-        if (is_symbolic_value(*(reg_typ + rd), *(reg_los + rd), *(reg_ups + rd)))
-          // vaddr is constrained by rd if value interval is not singleton
-          set_constraint(rd, 1, vaddr, 0, 0, 0);
-        else
-          set_constraint(rd, 0, 0, 0, 0, 0);
-      }
 
       // keep track of instruction address for profiling loads
       a = (pc - entry_point) / INSTRUCTIONSIZE;
@@ -3776,60 +3135,6 @@ uint64_t do_sd() {
     throw_exception(EXCEPTION_INVALIDADDRESS, vaddr);
 
   return vaddr;
-}
-
-uint64_t constrain_sd() {
-  uint64_t vaddr;
-  uint64_t a;
-
-  // store double word
-
-  vaddr = *(registers + rs1) + imm;
-
-  if (is_safe_address(vaddr, rs1)) {
-    if (is_virtual_address_mapped(pt, vaddr)) {
-      // interval semantics of sd
-      if (*(reg_hasco + rs2)) {
-        if (*(reg_vaddr + rs2) == 0) {
-          // constrained memory at vaddr 0 means that there is more than
-          // one constrained memory location in the sd operand
-          printf3((uint64_t*) "%s: %d constrained memory locations in sd operand at %x", exe_name, (uint64_t*) *(reg_hasco + rs2), (uint64_t*) pc);
-          print_code_line_number_for_instruction(pc - entry_point);
-          println();
-
-          //exit(EXITCODE_SYMBOLICEXECUTIONERROR);
-        }
-      }
-
-      store_symbolic_memory(pt, vaddr, *(registers + rs2), *(reg_typ + rs2), *(reg_los + rs2), *(reg_ups + rs2), mrcc);
-
-      // keep track of instruction address for profiling stores
-      a = (pc - entry_point) / INSTRUCTIONSIZE;
-
-      pc = pc + INSTRUCTIONSIZE;
-
-      // keep track of number of stores in total
-      ic_sd = ic_sd + 1;
-
-      // and individually
-      *(stores_per_instruction + a) = *(stores_per_instruction + a) + 1;
-    } else
-      throw_exception(EXCEPTION_PAGEFAULT, get_page_of_virtual_address(vaddr));
-  } else
-    throw_exception(EXCEPTION_INVALIDADDRESS, vaddr);
-
-  return vaddr;
-}
-
-void backtrack_sd() {
-  if (debug_symbolic) {
-    printf1((uint64_t*) "%s: backtracking sd ", exe_name);
-    print_symbolic_memory(tc);
-  }
-
-  store_virtual_memory(pt, *(vaddrs + tc), *(tcs + tc));
-
-  efree();
 }
 
 void print_beq() {
@@ -3922,13 +3227,6 @@ void do_jal() {
   ic_jal = ic_jal + 1;
 }
 
-void constrain_jal_jalr() {
-  if (rd != REG_ZR) {
-    *(reg_los + rd) = *(registers + rd);
-    *(reg_ups + rd) = *(registers + rd);
-  }
-}
-
 void print_jalr() {
   print_code_context_for_instruction(pc);
   printf3((uint64_t*) "jalr %s,%d(%s)", get_register_name(rd), (uint64_t*) signed_division(imm, INSTRUCTIONSIZE), get_register_name(rs1));
@@ -3981,43 +3279,6 @@ void do_ecall() {
   throw_exception(EXCEPTION_SYSCALL, 0);
 }
 
-void backtrack_ecall() {
-  if (debug_symbolic) {
-    printf1((uint64_t*) "%s: backtracking ecall ", exe_name);
-    print_symbolic_memory(tc);
-  }
-
-  if (*(vaddrs + tc) == 0) {
-    // backtracking malloc
-    if (get_program_break(current_context) == *(los + tc) + *(ups + tc))
-      set_program_break(current_context, *(los + tc));
-    else {
-      printf1((uint64_t*) "%s: malloc backtracking error at ", exe_name);
-      print_symbolic_memory(tc);
-      printf4((uint64_t*) " with current program break %x unequal %x which is previous program break %x plus size %d\n",
-        (uint64_t*) get_program_break(current_context),
-        (uint64_t*) (*(los + tc) + *(ups + tc)),
-        (uint64_t*) *(los + tc),
-        (uint64_t*) *(ups + tc));
-
-      exit(EXITCODE_SYMBOLICEXECUTIONERROR);
-    }
-  } else {
-    // backtracking read
-    rc = rc + 1;
-
-    // record value, lower and upper bound
-    *(read_values + rc) = *(values + tc);
-
-    *(read_los + rc) = *(los + tc);
-    *(read_ups + rc) = *(ups + tc);
-
-    store_virtual_memory(pt, *(vaddrs + tc), *(tcs + tc));
-  }
-
-  efree();
-}
-
 void print_data_line_number() {
   if (data_line_number != (uint64_t*) 0)
     printf1((uint64_t*) "(~%d)", (uint64_t*) *(data_line_number + (pc - code_length) / REGISTERSIZE));
@@ -4043,339 +3304,6 @@ void print_data(uint64_t data) {
 // -----------------------------------------------------------------
 // ------------------- SYMBOLIC EXECUTION ENGINE -------------------
 // -----------------------------------------------------------------
-
-void print_symbolic_memory(uint64_t svc) {
-  printf3((uint64_t*) "@%d{@%d@%x", (uint64_t*) svc, (uint64_t*) *(tcs + svc), (uint64_t*) *(pcs + svc));
-  if (*(pcs + svc) >= entry_point)
-    print_code_line_number_for_instruction(*(pcs + svc) - entry_point);
-  if (*(vaddrs + svc) == 0) {
-    printf3((uint64_t*) ";%x=%x=malloc(%d)}\n", (uint64_t*) *(values + svc), (uint64_t*) *(los + svc), (uint64_t*) *(ups + svc));
-    return;
-  } else if (*(vaddrs + svc) < NUMBEROFREGISTERS)
-    printf2((uint64_t*) ";%s=%d", get_register_name(*(vaddrs + svc)), (uint64_t*) *(values + svc));
-  else
-    printf2((uint64_t*) ";%x=%d", (uint64_t*) *(vaddrs + svc), (uint64_t*) *(values + svc));
-  if (*(types + svc))
-    if (*(los + svc) == *(ups + svc))
-      printf1((uint64_t*) "(%d)}\n", (uint64_t*) *(los + svc));
-    else
-      printf2((uint64_t*) "(%d,%d)}\n", (uint64_t*) *(los + svc), (uint64_t*) *(ups + svc));
-  else if (*(los + svc) == *(ups + svc))
-    printf1((uint64_t*) "[%d]}\n", (uint64_t*) *(los + svc));
-  else
-    printf2((uint64_t*) "[%d,%d]}\n", (uint64_t*) *(los + svc), (uint64_t*) *(ups + svc));
-}
-
-uint64_t cardinality(uint64_t lo, uint64_t up) {
-  // there are 2^64 values if the result is 0
-  return up - lo + 1;
-}
-
-uint64_t combined_cardinality(uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t up2) {
-  uint64_t c1;
-  uint64_t c2;
-
-  c1 = cardinality(lo1, up1);
-  c2 = cardinality(lo2, up2);
-
-  if (c1 + c2 <= c1)
-    // there are at least 2^64 values
-    return 0;
-  else if (c1 + c2 <= c2)
-    // there are at least 2^64 values
-    return 0;
-  else
-    return c1 + c2;
-}
-
-uint64_t is_symbolic_value(uint64_t type, uint64_t lo, uint64_t up) {
-  if (type)
-    // memory range
-    return 0;
-  else if (lo == up)
-    // singleton interval
-    return 0;
-  else
-    // non-singleton interval
-    return 1;
-}
-
-uint64_t is_safe_address(uint64_t vaddr, uint64_t reg) {
-  if (*(reg_typ + reg)) {
-    if (vaddr < *(reg_los + reg))
-      // memory access below start address of mallocated block
-      return 0;
-    else if (vaddr - *(reg_los + reg) >= *(reg_ups + reg))
-      // memory access above end address of mallocated block
-      return 0;
-    else
-      return 1;
-  } else if (*(reg_los + reg) == *(reg_ups + reg))
-    return 1;
-  else {
-    printf2((uint64_t*) "%s: detected unsupported symbolic access of memory interval at %x", exe_name, (uint64_t*) pc);
-    print_code_line_number_for_instruction(pc - entry_point);
-    println();
-
-    exit(EXITCODE_SYMBOLICEXECUTIONERROR);
-  }
-}
-
-uint64_t load_symbolic_memory(uint64_t* pt, uint64_t vaddr) {
-  uint64_t mrvc;
-
-  // assert: vaddr is valid and mapped
-  mrvc = load_virtual_memory(pt, vaddr);
-
-  if (mrvc <= tc)
-    return mrvc;
-  else {
-    printf4((uint64_t*) "%s: detected most recent value counter %d at vaddr %x greater than current trace counter %d\n", exe_name, (uint64_t*) mrvc, (uint64_t*) vaddr, (uint64_t*) tc);
-
-    exit(EXITCODE_SYMBOLICEXECUTIONERROR);
-  }
-}
-
-uint64_t is_trace_space_available() {
-  return tc + 1 < MAX_TRACE_LENGTH;
-}
-
-void ealloc() {
-  tc = tc + 1;
-}
-
-void efree() {
-  // assert: tc > 0
-  tc = tc - 1;
-}
-
-void store_symbolic_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, uint64_t type, uint64_t lo, uint64_t up, uint64_t trb) {
-  uint64_t mrvc;
-
-  if (vaddr == 0)
-    // tracking program break and size for malloc
-    mrvc = 0;
-  else if (vaddr < NUMBEROFREGISTERS)
-    // tracking a register value for sltu
-    mrvc = mrcc;
-  else {
-    // assert: vaddr is valid and mapped
-    mrvc = load_symbolic_memory(pt, vaddr);
-
-    if (value == *(values + mrvc))
-      if (type == *(types + mrvc))
-        if (lo == *(los + mrvc))
-          if (up == *(ups + mrvc))
-            // prevent tracking identical updates
-            return;
-  }
-
-  if (trb < mrvc) {
-    // current value at vaddr does not need to be tracked,
-    // just overwrite it in the trace
-    *(values + mrvc) = value;
-
-    *(types + mrvc) = type;
-
-    *(los + mrvc) = lo;
-    *(ups + mrvc) = up;
-
-    // assert: vaddr == *(vaddrs + mrvc)
-
-    if (debug_symbolic) {
-      printf1((uint64_t*) "%s: overwriting ", exe_name);
-      print_symbolic_memory(mrvc);
-    }
-  } else if (is_trace_space_available()) {
-    // current value at vaddr is from before most recent branch,
-    // track that value by creating a new trace event
-    ealloc();
-
-    *(pcs + tc) = pc;
-    *(tcs + tc) = mrvc;
-
-    *(values + tc) = value;
-
-    *(types + tc) = type;
-
-    *(los + tc) = lo;
-    *(ups + tc) = up;
-
-    *(vaddrs + tc) = vaddr;
-
-    if (vaddr < NUMBEROFREGISTERS) {
-      if (vaddr > 0)
-        // register tracking marks most recent constraint
-        mrcc = tc;
-    } else
-      // assert: vaddr is valid and mapped
-      store_virtual_memory(pt, vaddr, tc);
-
-    if (debug_symbolic) {
-      printf1((uint64_t*) "%s: storing ", exe_name);
-      print_symbolic_memory(tc);
-    }
-  } else
-    throw_exception(EXCEPTION_MAXTRACE, 0);
-}
-
-void store_constrained_memory(uint64_t vaddr, uint64_t lo, uint64_t up, uint64_t trb) {
-  uint64_t mrvc;
-
-  if (vaddr >= get_program_break(current_context))
-    if (vaddr < *(registers + REG_SP))
-      // do not constrain free memory
-      return;
-
-  mrvc = load_virtual_memory(pt, vaddr);
-
-  if (mrvc < trb) {
-    // we do not support potentially aliased constrained memory
-    printf1((uint64_t*) "%s: detected potentially aliased constrained memory\n", exe_name);
-
-    exit(EXITCODE_SYMBOLICEXECUTIONERROR);
-  }
-
-  // always track constrained memory by using tc as most recent branch
-  store_symbolic_memory(pt, vaddr, lo, 0, lo, up, tc);
-}
-
-void store_register_memory(uint64_t reg, uint64_t value) {
-  // always track register memory by using tc as most recent branch
-  store_symbolic_memory(pt, reg, value, 0, value, value, tc);
-}
-
-void constrain_memory(uint64_t reg, uint64_t lo, uint64_t up, uint64_t trb) {
-  if (*(reg_hasco + reg)) {
-    if (*(reg_hasmn + reg))
-      store_constrained_memory(*(reg_vaddr + reg), *(reg_colos + reg) - lo, *(reg_coups + reg) - up, trb);
-    else
-      store_constrained_memory(*(reg_vaddr + reg), lo - *(reg_colos + reg), up - *(reg_coups + reg), trb);
-  }
-}
-
-void set_constraint(uint64_t reg, uint64_t hasco, uint64_t vaddr, uint64_t hasmn, uint64_t colos, uint64_t coups) {
-  *(reg_hasco + reg) = hasco;
-  *(reg_vaddr + reg) = vaddr;
-  *(reg_hasmn + reg) = hasmn;
-  *(reg_colos + reg) = colos;
-  *(reg_coups + reg) = coups;
-}
-
-void take_branch(uint64_t b, uint64_t how_many_more) {
-  if (how_many_more > 0) {
-    // record that we need to set rd to true
-    store_register_memory(rd, b);
-
-    // record frame and stack pointer
-    store_register_memory(REG_FP, *(registers + REG_FP));
-    store_register_memory(REG_SP, *(registers + REG_SP));
-  } else {
-    *(registers + rd) = b;
-
-    *(reg_typ + rd) = 0;
-
-    *(reg_los + rd) = b;
-    *(reg_ups + rd) = b;
-
-    set_constraint(rd, 0, 0, 0, 0, 0);
-  }
-}
-
-void create_constraints(uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t up2, uint64_t trb, uint64_t how_many_more) {
-  if (lo1 <= up1) {
-    // rs1 interval is not wrapped around
-    if (lo2 <= up2) {
-      // both rs1 and rs2 intervals are not wrapped around
-      if (up1 < lo2) {
-        // rs1 interval is strictly less than rs2 interval
-        constrain_memory(rs1, lo1, up1, trb);
-        constrain_memory(rs2, lo2, up2, trb);
-
-        take_branch(1, how_many_more);
-      } else if (up2 <= lo1) {
-        // rs2 interval is less than or equal to rs1 interval
-        constrain_memory(rs1, lo1, up1, trb);
-        constrain_memory(rs2, lo2, up2, trb);
-
-        take_branch(0, how_many_more);
-      } else if (lo2 == up2) {
-        // rs2 interval is a singleton
-
-        // construct constraint for false case
-        constrain_memory(rs1, lo2, up1, trb);
-        constrain_memory(rs2, lo2, up2, trb);
-
-        // record that we need to set rd to false
-        store_register_memory(rd, 0);
-
-        // record frame and stack pointer
-        store_register_memory(REG_FP, *(registers + REG_FP));
-        store_register_memory(REG_SP, *(registers + REG_SP));
-
-        // construct constraint for true case
-        constrain_memory(rs1, lo1, lo2 - 1, trb);
-        constrain_memory(rs2, lo2, up2, trb);
-
-        take_branch(1, how_many_more);
-      } else if (lo1 == up1) {
-        // rs1 interval is a singleton
-
-        // construct constraint for false case
-        constrain_memory(rs1, lo1, up1, trb);
-        constrain_memory(rs2, lo2, lo1, trb);
-
-        // record that we need to set rd to false
-        store_register_memory(rd, 0);
-
-        // record frame and stack pointer
-        store_register_memory(REG_FP, *(registers + REG_FP));
-        store_register_memory(REG_SP, *(registers + REG_SP));
-
-        // construct constraint for true case
-        constrain_memory(rs1, lo1, up1, trb);
-        constrain_memory(rs2, lo1 + 1, up2, trb);
-
-        take_branch(1, how_many_more);
-      } else {
-        // we cannot handle non-singleton interval intersections in comparison
-        printf1((uint64_t*) "%s: detected non-singleton interval intersection\n", exe_name);
-
-        exit(EXITCODE_SYMBOLICEXECUTIONERROR);
-      }
-    } else {
-      // rs1 interval is not wrapped around but rs2 is
-
-      // unwrap rs2 interval and use higher portion first
-      create_constraints(lo1, up1, lo2, UINT64_MAX_T, trb, 1);
-
-      // then use lower portion of rs2 interval
-      create_constraints(lo1, up1, 0, up2, trb, 0);
-    }
-  } else if (lo2 <= up2) {
-    // rs2 interval is not wrapped around but rs1 is
-
-    // unwrap rs1 interval and use higher portion first
-    create_constraints(lo1, UINT64_MAX_T, lo2, up2, trb, 1);
-
-    // then use lower portion of rs1 interval
-    create_constraints(0, up1, lo2, up2, trb, 0);
-  } else {
-    // both rs1 and rs2 intervals are wrapped around
-
-    // unwrap rs1 and rs2 intervals and use higher portions
-    create_constraints(lo1, UINT64_MAX_T, lo2, UINT64_MAX_T, trb, 3);
-
-    // use higher portion of rs1 interval and lower portion of rs2 interval
-    create_constraints(lo1, UINT64_MAX_T, 0, up2, trb, 2);
-
-    // use lower portions of rs1 and rs2 intervals
-    create_constraints(0, up1, 0, up2, trb, 1);
-
-    // use lower portion of rs1 interval and higher portion of rs2 interval
-    create_constraints(0, up1, lo2, UINT64_MAX_T, trb, 0);
-  }
-}
 
 uint64_t fuzz_lo(uint64_t value) {
   if (fuzz >= CPUBITWIDTH)
@@ -5252,39 +4180,6 @@ uint64_t handle_exception(uint64_t* context) {
 
     return EXIT;
   }
-}
-
-void backtrack_trace(uint64_t* context) {
-  uint64_t savepc;
-
-  if (debug_symbolic)
-    printf3((uint64_t*) "%s: backtracking %s from exit code %d\n", exe_name, get_name(context), (uint64_t*) sign_extend(get_exit_code(context), SYSCALL_BITWIDTH));
-
-  symbolic = 0;
-
-  backtrack = 1;
-
-  while (backtrack) {
-    pc = *(pcs + tc);
-
-    if (pc == 0)
-      // we have backtracked all code back to the data segment
-      backtrack = 0;
-    else {
-      savepc = pc;
-
-      fetch();
-      decode_execute();
-
-      if (pc != savepc)
-        // backtracking stopped by sltu
-        backtrack = 0;
-    }
-  }
-
-  symbolic = 1;
-
-  set_pc(context, pc);
 }
 
 uint64_t engine(uint64_t* to_context) {
