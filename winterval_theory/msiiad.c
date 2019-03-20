@@ -12,8 +12,11 @@ uint64_t* los        = (uint64_t*) 0; // trace of lower bounds on values
 uint64_t* ups        = (uint64_t*) 0; // trace of upper bounds on values
 uint64_t* steps      = (uint64_t*) 0;
 uint64_t* vaddrs     = (uint64_t*) 0; // trace of virtual addresses
+uint64_t* ld_froms   = (uint64_t*) 0;
 uint64_t* addsub_corrs    = (uint64_t*) 0;
 uint64_t* muldivrem_corrs = (uint64_t*) 0;
+uint64_t* corr_validitys  = (uint64_t*) 0;
+bool*     hasmns          = (bool*) 0;
 
 // read history
 uint64_t  rc = 0; // read counter
@@ -25,7 +28,7 @@ uint64_t* read_ups    = (uint64_t*) 0;
 uint64_t* reg_los      = (uint64_t*) 0; // lower bound on register value
 uint64_t* reg_ups      = (uint64_t*) 0; // upper bound on register value
 uint64_t* reg_steps    = (uint64_t*) 0; // step on register value
-uint8_t*  reg_data_typ = (uint64_t*) 0; // memory range or integer interval
+uint8_t*  reg_data_typ = (uint8_t*) 0; // memory range or integer interval
 uint8_t   VALUE_T      = 0;
 uint8_t   POINTER_T    = 1;
 // register constraints on memory
@@ -34,7 +37,7 @@ uint8_t   CONCRETE_T   = 0;
 uint8_t   SYMBOLIC_CONCRETE_T = 1;
 uint8_t   SYMBOLIC_T   = 2;
 uint64_t* reg_vaddr = (uint64_t*) 0; // vaddr of constrained memory
-uint64_t* reg_hasmn = (uint64_t*) 0; // constraint has minuend
+bool*     reg_hasmn = (bool*) 0; // constraint has minuend
 // corrections
 uint64_t* reg_addsub_corr    = (uint64_t*) 0;
 uint64_t* reg_muldivrem_corr = (uint64_t*) 0;
@@ -63,6 +66,8 @@ void init_symbolic_engine() {
   vaddrs     = zalloc(MAX_TRACE_LENGTH * SIZEOFUINT64);
   addsub_corrs    = zalloc(MAX_TRACE_LENGTH * SIZEOFUINT64);
   muldivrem_corrs = zalloc(MAX_TRACE_LENGTH * SIZEOFUINT64);
+  corr_validitys  = zalloc(MAX_TRACE_LENGTH * SIZEOFUINT64);
+  hasmns          = zalloc(MAX_TRACE_LENGTH * SIZEOFUINT64);
 
   read_values = zalloc(MAX_TRACE_LENGTH * SIZEOFUINT64);
   read_los    = zalloc(MAX_TRACE_LENGTH * SIZEOFUINT64);
@@ -1071,6 +1076,14 @@ uint64_t constrain_ld() {
       if (rd != REG_ZR) {
         mrvc = load_symbolic_memory(pt, vaddr);
 
+        // it is important because we have prevousely freed stack addresses on the trace
+        if (vaddr >= get_program_break(current_context))
+          if (vaddr < *(registers + REG_SP)) {
+            // free memory
+            printf("OUTPUT: loading an uninitialized memory %x\n", pc - entry_point);
+            exit(EXITCODE_SYMBOLICEXECUTIONERROR);
+          }
+
         // interval semantics of ld
         *(reg_data_typ + rd) = *(data_types + mrvc);
 
@@ -1121,7 +1134,7 @@ uint64_t constrain_sd() {
     if (is_virtual_address_mapped(pt, vaddr)) {
       // interval semantics of sd
 
-      store_symbolic_memory(pt, vaddr, *(registers + rs2), *(reg_data_typ + rs2), *(reg_los + rs2), *(reg_ups + rs2), *(reg_steps + rs2), mrcc);
+      store_symbolic_memory(pt, vaddr, registers[rs2], reg_data_typ[rs2], reg_los[rs2], reg_ups[rs2], reg_steps[rs2], reg_vaddr[rs2], reg_hasmn[rs2], reg_addsub_corr[rs2], reg_muldivrem_corr[rs2], reg_corr_validity[rs2], mrcc);
 
       // keep track of instruction address for profiling stores
       a = (pc - entry_point) / INSTRUCTIONSIZE;
@@ -1235,7 +1248,7 @@ void efree() {
   tc = tc - 1;
 }
 
-void store_symbolic_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, uint8_t data_type, uint64_t lo, uint64_t up, uint64_t step, uint64_t trb) {
+void store_symbolic_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, uint8_t data_type, uint64_t lo, uint64_t up, uint64_t step, uint64_t ld_from, bool hasmn, uint64_t addsub_corr, uint64_t muldivrem_corr, uint64_t corr_validity, uint64_t trb) {
   uint64_t mrvc;
 
   if (vaddr == 0)
@@ -1248,14 +1261,19 @@ void store_symbolic_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, uint8_t
     // assert: vaddr is valid and mapped
     mrvc = load_symbolic_memory(pt, vaddr);
 
-    if (value == *(values + mrvc))
-      if (data_type == *(data_types + mrvc))
-        if (lo == *(los + mrvc))
-          if (up == *(ups + mrvc))
-            if (step == *(steps + mrvc)
-              if (trb < mrvc)
-                // prevent tracking identical updates
-                return;
+    if (trb < mrvc)
+      if (value == *(values + mrvc))
+        if (data_type == *(data_types + mrvc))
+          if (lo == *(los + mrvc))
+            if (up == *(ups + mrvc))
+              if (step == *(steps + mrvc))
+                if (ld_from == ld_froms[mrvc])
+                  if (addsub_corr == addsub_corrs[mrvc])
+                    if (muldivrem_corr == muldivrem_corrs[mrvc])
+                      if (corr_validity == corr_validitys[mrvc])
+                        if (hasmn == hasmns[mrvc])
+                          // prevent tracking identical updates
+                          return;
 
   }
 
@@ -1271,6 +1289,12 @@ void store_symbolic_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, uint8_t
 
     // assert: vaddr == *(vaddrs + mrvc)
 
+    *(ld_froms        + mrvc) = ld_from;
+    *(hasmns          + mrvc) = hasmn;
+    *(addsub_corrs    + mrvc) = addsub_corr;
+    *(muldivrem_corrs + mrvc) = muldivrem_corr;
+    *(corr_validitys  + mrvc) = corr_validity;
+
     if (debug_symbolic) {
       printf1((uint64_t*) "%s: overwriting ", exe_name);
       print_symbolic_memory(mrvc);
@@ -1282,15 +1306,18 @@ void store_symbolic_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, uint8_t
 
     *(pcs + tc) = pc;
     *(tcs + tc) = mrvc;
-
     *(data_types + tc) = data_type;
-
     *(values + tc) = value;
     *(los    + tc) = lo;
     *(ups    + tc) = up;
     *(steps  + tc) = step;
-
     *(vaddrs + tc) = vaddr;
+
+    *(ld_froms        + tc) = ld_from;
+    *(hasmns          + tc) = hasmn;
+    *(addsub_corrs    + tc) = addsub_corr;
+    *(muldivrem_corrs + tc) = muldivrem_corr;
+    *(corr_validitys  + tc) = corr_validity;
 
     if (vaddr < NUMBEROFREGISTERS) {
       if (vaddr > 0)
@@ -1308,25 +1335,26 @@ void store_symbolic_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, uint8_t
     throw_exception(EXCEPTION_MAXTRACE, 0);
 }
 
-void store_constrained_memory(uint64_t vaddr, uint64_t lo, uint64_t up, uint64_t trb) {
+void store_constrained_memory(uint64_t vaddr, uint64_t lo, uint64_t up, uint64_t step, uint64_t ld_from, bool hasmn, uint64_t addsub_corr, uint64_t muldivrem_corr, uint64_t corr_validity, uint64_t trb) {
   uint64_t mrvc;
 
-  if (vaddr >= get_program_break(current_context))
-    if (vaddr < *(registers + REG_SP))
-      // do not constrain free memory
-      return;
+  /* we need to constrain freed memory to keep our ld chain alive */
+  // if (vaddr >= get_program_break(current_context))
+  //   if (vaddr < *(registers + REG_SP))
+  //     // do not constrain free memory
+  //     return;
 
-  mrvc = load_virtual_memory(pt, vaddr);
-
-  if (mrvc < trb) {
-    // we do not support potentially aliased constrained memory
-    printf1((uint64_t*) "%s: detected potentially aliased constrained memory\n", exe_name);
-
-    exit(EXITCODE_SYMBOLICEXECUTIONERROR);
-  }
+  /* useless */
+  // mrvc = load_virtual_memory(pt, vaddr);
+  // if (mrvc < trb) {
+  //   // we do not support potentially aliased constrained memory
+  //   printf1((uint64_t*) "%s: detected potentially aliased constrained memory\n", exe_name);
+  //
+  //   exit(EXITCODE_SYMBOLICEXECUTIONERROR);
+  // }
 
   // always track constrained memory by using tc as most recent branch
-  store_symbolic_memory(pt, vaddr, lo, 0, lo, up, steps[mrvc], tc);
+  store_symbolic_memory(pt, vaddr, lo, VALUE_T, lo, up, step, ld_from, hasmn, addsub_corr, muldivrem_corr, corr_validity, tc);
 }
 
 void store_register_memory(uint64_t reg, uint64_t value, uint64_t next_pc) {
@@ -1341,6 +1369,116 @@ uint64_t reverse_division_up(uint64_t ups_mrvc, uint64_t up, uint64_t codiv) {
     return codiv - 1;
 }
 
+// consider y = x op a;
+// mrvc is mrvc of x
+// lo_before_op is previouse lo of y
+void apply_correction(uint64_t lo, uint64_t up, bool hasmn, uint64_t addsub_corr, uint64_t muldivrem_corr, uint64_t corr_validity, uint64_t lo_before_op, uint64_t mrvc, uint64_t trb) {
+  lo = compute_lower_bound(los[mrvc], steps[mrvc], lo);
+  up = compute_upper_bound(los[mrvc], steps[mrvc], up);
+
+  // add, sub
+  if (hasmn) {
+    uint64_t tmp = addsub_corr - up;
+    up  = addsub_corr - lo;
+    lo = tmp;
+  } else {
+    lo = lo - addsub_corr;
+    up = up - addsub_corr;
+  }
+
+  // mul, div, rem
+  if (corr_validity == MUL_T) {
+    // <9223372036854775808, 2^64 - 1, 1> * 2 = <0, 2^64 - 2, 2>
+    // <9223372036854775809, 15372286728091293014, 1> * 3 = <9223372036854775811, 9223372036854775810, 3>
+    lo = los[mrvc] + (lo - lo_before_op) / muldivrem_corr; // lo_op_before_cmp
+    up = los[mrvc] + (up - lo_before_op) / muldivrem_corr; // lo_op_before_cmp
+
+  } else if (corr_validity == DIVU_T) {
+    uint64_t divisor = muldivrem_corr;
+
+    if (los[mrvc] <= ups[mrvc]) {
+      // non-wrapped
+      lo = (lo == 0) ? los[mrvc] : lo * divisor;
+
+      // if (lo * divisor >= los[mrvc])
+      //   lo = compute_lower_bound(los[mrvc], steps[mrvc], lo * divisor);
+      // else
+      //   lo = los[mrvc];
+
+      up = compute_upper_bound(los[mrvc], steps[mrvc], up * divisor + reverse_division_up(ups[mrvc], up, divisor));
+    } else {
+      // wrapped
+      uint64_t lo1;
+      uint64_t up1;
+      uint64_t lo2;
+      uint64_t up2;
+      uint64_t max = compute_upper_bound(los[mrvc], steps[mrvc], UINT64_MAX);
+      uint8_t  which_is_empty;
+
+      lo = (lo == 0) ? (max + steps[mrvc]) : lo * divisor;
+      up = compute_upper_bound(los[mrvc], steps[mrvc], up * divisor + reverse_division_up(max, up, divisor));
+
+      which_is_empty = 0;
+      if (lo <= ups[mrvc]) {
+        lo_1 = lo;
+        up_1 = (up < ups[mrvc]) ? up : ups[mrvc];
+      } else {
+        which_is_empty = 1;
+      }
+
+      if (up >= los[mrvc]) {
+        lo_2 = (lo > los[mrvc]) ? lo : los[mrvc];
+        up_2 = up;
+      } else {
+        which_is_empty = (which_is_empty == 1) ? 4 : 2;
+      }
+
+      if (which_is_empty == 4) {
+        if (up_1 + steps[mrvc] >= lo_2) {
+          lo = lo_1;
+          up = up_2;
+        } else {
+          printf("OUTPUT: reverse of division results two intervals at %x\n", pc - entry_point);
+          exit(EXITCODE_SYMBOLICEXECUTIONERROR);
+        }
+      }
+    }
+
+  } else if (corr_validity == REMU_T) {
+    if (*(rem_typ + reg) == 1) {
+      operator = *(rem + reg);
+      lo = computeLowerBound(*(los + mrvc), *(steps + mrvc), (*(los + mrvc) / operator) * operator + lo);
+      up = computeUpperBound(*(los + mrvc), *(steps + mrvc), (*(ups + mrvc) / operator) * operator + up);
+    } else {
+      printf("OUTPUT: detected an unsupported remu in a conditional expression at %x \n", );
+      exit(EXITCODE_SYMBOLICEXECUTIONERROR);
+    }
+  } else if (corr_validity > 5) {
+    printf("OUTPUT: detected an unsupported conditional expression at \n", pc - entry_point);
+    exit(EXITCODE_SYMBOLICEXECUTIONERROR);
+  }
+
+  //////////////////////////////////////////////////////////////////////////////
+  store_constrained_memory(vaddrs[mrvc], lo, up, steps[mrvc], ld_froms[mrvc], hasmns[mrvc], addsub_corrs[mrvc], muldivrem_corrs[mrvc], corr_validitys[mrvc], trb);
+  if (ld_froms[mrvc]) {
+    propagate_backwards(vaddrs[mrvc], los[mrvc]);
+  }
+  //////////////////////////////////////////////////////////////////////////////
+}
+
+// y = x op a;
+// if (y)
+// vaddr of y -> new y
+// lo_before_op for y -> before new y
+void propagate_backwards(uint64_t vaddr, uint64_t lo_before_op) {
+  uint64_t mrvc_y;
+  uint64_t mrvc_x;
+
+  mrvc_y = load_symbolic_memory(pt, vaddr);
+  mrvc_x = load_symbolic_memory(pt, ld_froms[mrvc_y]);
+  apply_correction(los[mrvc_y], ups[mrvc_y], hasmns[mrvc_y], addsub_corrs[mrvc_y], muldivrem_corrs[mrvc_y], corr_validitys[mrvc_y], lo_before_op, mrvc_x, trb);
+}
+
 void constrain_memory(uint64_t reg, uint64_t lo, uint64_t up, uint64_t trb, bool only_reachable_branch) {
   uint64_t mrvc;
 
@@ -1350,96 +1488,10 @@ void constrain_memory(uint64_t reg, uint64_t lo, uint64_t up, uint64_t trb, bool
     if (only_reachable_branch == true) {
       lo = los[mrvc];
       up = ups[mrvc];
+      store_constrained_memory(reg_vaddr[reg], lo, up, steps[mrvc], ld_froms[mrvc], hasmns[mrvc], addsub_corrs[mrvc], muldivrem_corrs[mrvc], corr_validitys[mrvc], trb);
     } else {
-      // applying corrections
-      lo = compute_lower_bound(los[mrvc], steps[mrvc], lo);
-      up = compute_upper_bound(los[mrvc], steps[mrvc], up);
-
-      // add, sub
-      if (reg_hasmn[reg]) {
-        uint64_t mp = reg_addsub_corr[reg] - up;
-        up  = reg_addsub_corr[reg] - lo;
-        lo = tmp;
-      } else {
-        lo = lo - reg_addsub_corr[reg];
-        up = up - reg_addsub_corr[reg];
-      }
-
-      // mul, div, rem
-      if (reg_corr_validity[reg] == MUL_T) {
-        // <9223372036854775808, 2^64 - 1, 1> * 2 = <0, 2^64 - 2, 2>
-        // <9223372036854775809, 15372286728091293014, 1> * 3 = <9223372036854775811, 9223372036854775810, 3>
-        los[mrvc] + (lo - reg_los[reg]) / reg_muldivrem_corr[reg]; // lo_op_before_cmp
-        los[mrvc] + (up - reg_los[reg]) / reg_muldivrem_corr[reg]; // lo_op_before_cmp
-
-      } else if (reg_corr_validity[reg] == DIVU_T) {
-        uint64_t divisor = reg_muldivrem_corr[reg];
-
-        if (los[mrvc] <= ups[mrvc]) {
-          // non-wrapped
-          lo = (lo == 0) ? los[mrvc] : lo * divisor;
-
-          // if (lo * divisor >= los[mrvc])
-          //   lo = compute_lower_bound(los[mrvc], steps[mrvc], lo * divisor);
-          // else
-          //   lo = los[mrvc];
-
-          up = compute_upper_bound(los[mrvc], steps[mrvc], up * divisor + reverse_division_up(ups[mrvc], up, divisor));
-        } else {
-          // wrapped
-          uint64_t lo1;
-          uint64_t up1;
-          uint64_t lo2;
-          uint64_t up2;
-          uint64_t max = compute_upper_bound(los[mrvc], steps[mrvc], UINT64_MAX);
-          uint8_t  which_is_empty;
-
-          lo = (lo == 0) ? (max + steps[mrvc]) : lo * divisor;
-          up = compute_upper_bound(los[mrvc], steps[mrvc], up * divisor + reverse_division_up(max, up, divisor));
-
-          which_is_empty = 0;
-          if (lo <= ups[mrvc]) {
-            lo_1 = lo;
-            up_1 = (up < ups[mrvc]) ? up : ups[mrvc];
-          } else {
-            which_is_empty = 1;
-          }
-
-          if (up >= los[mrvc]) {
-            lo_2 = (lo > los[mrvc]) ? lo : los[mrvc];
-            up_2 = up;
-          } else {
-            which_is_empty = (which_is_empty == 1) ? 4 : 2;
-          }
-
-          if (which_is_empty == 4) {
-            if (up_1 + steps[mrvc] >= lo_2) {
-              lo = lo_1;
-              up = up_2;
-            } else {
-              printf("OUTPUT: reverse of division results two intervals at %x\n", pc - entry_point);
-              exit(EXITCODE_SYMBOLICEXECUTIONERROR);
-            }
-          }
-        }
-
-      } else if (reg_corr_validity[reg] == REMU_T) {
-        if (*(reg_rem_typ + reg) == 1) {
-          operator = *(reg_rem + reg);
-          lo = computeLowerBound(*(los + mrvc), *(steps + mrvc), (*(los + mrvc) / operator) * operator + lo);
-          up = computeUpperBound(*(los + mrvc), *(steps + mrvc), (*(ups + mrvc) / operator) * operator + up);
-        } else {
-          printf("OUTPUT: detected an unsupported remu in a conditional expression at %x \n", );
-          exit(EXITCODE_SYMBOLICEXECUTIONERROR);
-        }
-      } else if (reg_corr_validity[reg] > 5) {
-        printf("OUTPUT: detected an unsupported conditional expression at \n", pc - entry_point);
-        exit(EXITCODE_SYMBOLICEXECUTIONERROR);
-      }
-
+      apply_correction(lo, up, reg_hasmn[reg], reg_addsub_corr[reg], reg_muldivrem_corr[reg], reg_corr_validity[reg], reg_los[reg], mrvc, trb);
     }
-
-    store_constrained_memory(reg_vaddr[reg], lo, up, trb);
 
   }
 }
