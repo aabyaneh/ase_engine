@@ -53,6 +53,10 @@ uint64_t current_rs2_tc = 0;
 
 uint64_t mrcc = 0;
 
+// ==, != detection
+bool ne_detected = false;
+bool eq_detected = false;
+
 // ------------------------- INITIALIZATION ------------------------
 
 void init_symbolic_engine() {
@@ -673,7 +677,7 @@ void constrain_remu() {
 
   if (reg_symb_typ[rs2] == SYMBOLIC_T) {
     // rs2 has constraint
-    printf("OUTPUT: constrained memory location in right operand of remu at %x", pc - entry_point);
+    printf("OUTPUT: constrained memory location in right operand of remu at %x \n", pc - entry_point);
     exit(EXITCODE_SYMBOLICEXECUTIONERROR);
   }
 
@@ -716,7 +720,7 @@ void constrain_remu() {
       uint64_t lcm        = (step * divisor) / gcd_step_k;
 
       if (reg_ups[rs1] - reg_los[rs1] < lcm - step) {
-        printf("OUTPUT: wrapped modulo results many intervals at %x\n", pc - entry_point);
+        printf("OUTPUT: wrapped modulo results many intervals at %x \n", pc - entry_point);
         exit(EXITCODE_SYMBOLICEXECUTIONERROR);
       }
 
@@ -728,7 +732,7 @@ void constrain_remu() {
       set_correction(rd, reg_addsub_corr[rs1], reg_los[rs2], reg_corr_validity[rs1] + REMU_T);
 
     } else {
-      printf("OUTPUT: wrapped modulo results many intervals at %x\n", pc - entry_point);
+      printf("OUTPUT: wrapped modulo results many intervals at %x \n", pc - entry_point);
       exit(EXITCODE_SYMBOLICEXECUTIONERROR);
     }
 
@@ -790,19 +794,7 @@ void constrain_sltu() {
   ic_sltu = ic_sltu + 1;
 }
 
-void take_eqne_branch(bool b, bool how_many_more) {
-  if (how_many_more) {
-    uint64_t new_pc = b ? pc + INSTRUCTIONSIZE : pc + imm;
-
-    // record frame and stack pointer
-    store_register_memory(REG_FP, *(registers + REG_FP), new_pc);
-    store_register_memory(REG_SP, *(registers + REG_SP), 0);
-  } else {
-    pc = b ? pc + INSTRUCTIONSIZE : pc + imm;
-  }
-}
-
-void create_bne_constraints(uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t up2, uint64_t trb) {
+void create_xor_constraints(uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t up2, uint64_t trb) {
   bool     cannot_handle = false;
   bool     empty;
   // uint64_t lo1 = reg_los[rs1];
@@ -821,18 +813,18 @@ void create_bne_constraints(uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t u
         // rs1 interval is strictly less than rs2 interval
         constrain_memory(rs1, 0, 0, trb, true);
         constrain_memory(rs2, 0, 0, trb, true);
+        take_branch(1, 0);
 
-        take_eqne_branch(false, 0);
       } else if (up2 < lo1) {
-        // rs2 interval is less than or equal to rs1 interval
+        // rs2 interval is strictly less than rs1 interval
         constrain_memory(rs1, 0, 0, trb, true);
         constrain_memory(rs2, 0, 0, trb, true);
+        take_branch(1, 0);
 
-        take_eqne_branch(false, 0);
       } else if (lo2 == up2) {
         // rs2 interval is a singleton
-
-        // construct constraint for false case 1
+        /* one of the false cases are definitly happens since rs1 at least has two values. */
+        // true case 1
         if (lo2 != lo1) {
           // non empty
           constrain_memory(rs1, lo1, lo2 - 1, trb, false);
@@ -842,34 +834,32 @@ void create_bne_constraints(uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t u
           empty = true;
         }
 
-        // construct constraint for false case 1
+        // true case 2
         if (lo2 != up1) {
           // non empty
           if (!empty)
-            take_eqne_branch(false, 1);
+            take_branch(1, 1);
           constrain_memory(rs1, lo2 + 1, up1, trb, false);
           constrain_memory(rs2, lo2, up2, trb, false);
         }
 
-        // check emptiness of true case for rhs
-        if ( (lo2 - lo1) % reg_steps[rs1]) {
-          // rhs for true case is empty
-          take_eqne_branch(false, 0);
+        /* if one of the above cases is not empty so then definitly true case is not empty */
+        // check emptiness of false case
+        if ((lo2 - lo1) % reg_steps[rs1]) {
+          // is empty
+          take_branch(1, 0);
         } else {
-          // record frame and stack pointer
-          store_register_memory(REG_FP, *(registers + REG_FP), pc + imm);
-          store_register_memory(REG_SP, *(registers + REG_SP), 0);
+          take_branch(1, 1);
 
-          // construct constraint for true case
+          // false case
           constrain_memory(rs1, lo2, up2, trb, false);
           constrain_memory(rs2, lo2, up2, trb, false);
-          take_eqne_branch(true, 0);
+          take_branch(0, 0);
         }
 
       } else if (lo1 == up1) {
         // rs1 interval is a singleton
-
-        // construct constraint for false case 1
+        // true case 1
         if (lo1 != lo2) { // otherwise rhs is empty
           constrain_memory(rs1, lo1, up1, trb, false);
           constrain_memory(rs2, lo2, lo1 - 1, trb, false);
@@ -878,11 +868,11 @@ void create_bne_constraints(uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t u
           empty = true;
         }
 
-        // construct constraint for false case 2
+        // true case 2
         if (lo1 != up2) {
           // non empty
           if (!empty)
-            take_eqne_branch(false, 1);
+            take_branch(1, 1);
           constrain_memory(rs1, lo1, up1, trb, false);
           constrain_memory(rs2, lo1 + 1, up2, trb, false);
           empty = false;
@@ -890,19 +880,17 @@ void create_bne_constraints(uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t u
           empty = true;
         }
 
-        // check emptiness of true case for rhs
+        // check emptiness of false case
         if ( (lo1 - lo2) % reg_steps[rs2]) {
-          // rhs for true case is empty
-          take_eqne_branch(false, 0);
+          // is empty
+          take_branch(1, 0);
         } else {
-          // record frame and stack pointer
-          store_register_memory(REG_FP, *(registers + REG_FP), pc + imm);
-          store_register_memory(REG_SP, *(registers + REG_SP), 0);
+          take_branch(1, 1);
 
-          // construct constraint for true case
+          // false case
           constrain_memory(rs1, lo1, up1, trb, false);
           constrain_memory(rs2, lo1, up1, trb, false);
-          take_eqne_branch(true, 0);
+          take_branch(0, 0);
         }
 
       } else {
@@ -912,12 +900,13 @@ void create_bne_constraints(uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t u
     } else {
       // rs2 wrapped
       if (up1 < lo2 && up2 < lo1) {
+        // true case
         constrain_memory(rs1, 0, 0, trb, true);
         constrain_memory(rs2, 0, 0, trb, true);
 
-        take_eqne_branch(false, 0);
+        take_branch(1, 0);
       } else if (lo1 == up1) {
-        // construct constraint for false case 1
+        // true case 1
         if (lo1 != lo2) {
           // non empty
           constrain_memory(rs1, lo1, up1, trb, false);
@@ -927,11 +916,11 @@ void create_bne_constraints(uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t u
           empty = true;
         }
 
-        // construct constraint for false case 2
+        // true case 2
         if (lo1 != up2) {
           // non empty
           if (!empty)
-            take_eqne_branch(false, 1);
+            take_branch(1, 1);
           constrain_memory(rs1, lo1, up1, trb, false);
           constrain_memory(rs2, lo1 + 1, up2, trb, false);
           empty = false;
@@ -939,19 +928,17 @@ void create_bne_constraints(uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t u
           empty = true;
         }
 
-        // check emptiness of true case for rhs
-        if ( (lo1 - lo2) % reg_steps[rs2]) {
-          // rhs for true case is empty
-          take_eqne_branch(false, 0);
+        // check emptiness of false case
+        if ((lo1 - lo2) % reg_steps[rs2]) {
+          // flase case is empty
+          take_branch(1, 0);
         } else {
-          // record frame and stack pointer
-          store_register_memory(REG_FP, *(registers + REG_FP), pc + imm);
-          store_register_memory(REG_SP, *(registers + REG_SP), 0);
+          take_branch(1, 1);
 
-          // construct constraint for true case
+          // true case
           constrain_memory(rs1, lo1, up1, trb, false);
           constrain_memory(rs2, lo1, up1, trb, false);
-          take_eqne_branch(true, 0);
+          take_branch(0, 0);
         }
 
       } else {
@@ -963,12 +950,13 @@ void create_bne_constraints(uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t u
   } else if (lo2 <= up2) {
     // rs1 wrapped, rs2 non-wrapped
     if (up2 < lo1 && up1 < lo2) {
+      // true case
       constrain_memory(rs1, 0, 0, trb, true);
       constrain_memory(rs2, 0, 0, trb, true);
 
-      take_eqne_branch(false, 0);
+      take_branch(1, 0);
     } else if (lo2 == up2) {
-      // construct constraint for false case 1
+      // true case 1
       if (lo2 != lo1) {
         // non empty
         constrain_memory(rs1, lo1, lo2 - 1, trb, false);
@@ -978,28 +966,26 @@ void create_bne_constraints(uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t u
         empty = true;
       }
 
-      // construct constraint for false case 1
+      // true case 2
       if (lo2 != up1) {
         // non empty
         if (!empty)
-          take_eqne_branch(false, 1);
+          take_branch(1, 1);
         constrain_memory(rs1, lo2 + 1, up1, trb, false);
         constrain_memory(rs2, lo2, up2, trb, false);
-      }
+      } // else empty
 
-      // check emptiness of true case for rhs
-      if ( (lo2 - lo1) % reg_steps[rs1]) {
-        // rhs for true case is empty
-        take_eqne_branch(false, 0);
+      // check emptiness of false case
+      if ((lo2 - lo1) % reg_steps[rs1]) {
+        // is empty
+        take_branch(1, 0);
       } else {
-        // record frame and stack pointer
-        store_register_memory(REG_FP, *(registers + REG_FP), pc + imm);
-        store_register_memory(REG_SP, *(registers + REG_SP), 0);
+        take_branch(1, 1);
 
         // construct constraint for true case
         constrain_memory(rs1, lo2, up2, trb, false);
         constrain_memory(rs2, lo2, up2, trb, false);
-        take_eqne_branch(true, 0);
+        take_branch(0, 0);
       }
     } else {
       // we cannot handle
@@ -1023,7 +1009,7 @@ void create_bne_constraints(uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t u
           constrain_memory(rs1, 0, 0, trb, true);
           constrain_memory(rs2, 0, 0, trb, true);
 
-          take_eqne_branch(false, 0);
+          take_branch(1, 0);
 
           cannot_handle = false;
         }
@@ -1037,30 +1023,66 @@ void create_bne_constraints(uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t u
   }
 }
 
-void constrain_bne() {
+////////////////////////////////////////////////////////////////////////////////
+// xor
+
+void do_xor() {
+  if (rd != REG_ZR) {
+    registers[rd] = registers[rs1] ^ registers[rs2];
+
+    pc = pc + INSTRUCTIONSIZE;
+
+    ic_xor = ic_xor + 1;
+  }
+}
+
+void constrain_xor() {
+  if (rd == REG_ZR)
+    return;
+
   if (reg_symb_typ[rs1] != SYMBOLIC_T && reg_symb_typ[rs2] != SYMBOLIC_T) {
-    // concrete semantics of beq
-    pc = (registers[rs1] != registers[rs2]) ? pc + imm : pc + INSTRUCTIONSIZE;
-
-    ic_bne = ic_bne + 1;
-
+    // concrete semantics of xor
+    do_xor();
+    set_constraint(rd, 0, 0, 0);
+    set_correction(rd, 0, 0, 0);
     return;
   }
+
+  pc = pc + INSTRUCTIONSIZE;
+  ic_xor = ic_xor + 1;
+
+  // ==, != detection
+  fetch();
+  uint64_t f3;
+  eq_detected = false;
+  ne_detected = false;
+  if ((f3 = get_funct3(ir)) == F3_SLTU && get_opcode(ir) == OP_OP) {
+    if (get_rs1(ir) == REG_ZR && get_rs2(ir) == rd)
+      ne_detected = true;
+
+  } else if (f3 == F3_ADDI && get_opcode(ir) == OP_IMM && get_immediate_i_format(ir) == 1 && get_rs1(ir) == REG_ZR) {
+    eq_detected = true;
+  }
+  // ---------------
 
   if (reg_data_typ[rs1] == POINTER_T)
     if (reg_data_typ[rs2] == POINTER_T) {
       // concrete semantics of beq
-      pc = (registers[rs1] != registers[rs2]) ? pc + imm : pc + INSTRUCTIONSIZE;
+      registers[rd] = registers[rs1] ^ registers[rs2];
+      set_constraint(rd, 0, 0, 0);
+      set_correction(rd, 0, 0, 0);
     } else {
-      create_bne_constraints(registers[rs1], registers[rs1], reg_los[rs2], reg_ups[rs2], mrcc);
+      create_xor_constraints(registers[rs1], registers[rs1], reg_los[rs2], reg_ups[rs2], mrcc);
     }
   else if (reg_data_typ[rs2] == POINTER_T)
-    create_bne_constraints(reg_los[rs1], reg_ups[rs1], registers[rs2], registers[rs2], mrcc);
+    create_xor_constraints(reg_los[rs1], reg_ups[rs1], registers[rs2], registers[rs2], mrcc);
   else
-    create_bne_constraints(reg_los[rs1], reg_ups[rs1], reg_los[rs2], reg_ups[rs2], mrcc);
+    create_xor_constraints(reg_los[rs1], reg_ups[rs1], reg_los[rs2], reg_ups[rs2], mrcc);
 
-  ic_bne = ic_bne + 1;
 }
+
+// xor
+////////////////////////////////////////////////////////////////////////////////
 
 uint64_t constrain_ld() {
   uint64_t vaddr;
@@ -1357,9 +1379,9 @@ void store_constrained_memory(uint64_t vaddr, uint64_t lo, uint64_t up, uint64_t
   store_symbolic_memory(pt, vaddr, lo, VALUE_T, lo, up, step, ld_from, hasmn, addsub_corr, muldivrem_corr, corr_validity, tc);
 }
 
-void store_register_memory(uint64_t reg, uint64_t value, uint64_t next_pc) {
+void store_register_memory(uint64_t reg, uint64_t value) {
   // always track register memory by using tc as most recent branch
-  store_symbolic_memory(pt, reg, value, 0, value, value, next_pc, tc);
+  store_symbolic_memory(pt, reg, value, 0, value, value, tc);
 }
 
 uint64_t reverse_division_up(uint64_t ups_mrvc, uint64_t up, uint64_t codiv) {
@@ -1505,25 +1527,24 @@ void set_constraint(uint64_t reg, uint64_t hasco, uint64_t vaddr, uint64_t hasmn
 void take_branch(uint64_t b, uint64_t how_many_more) {
   if (how_many_more > 0) {
     // record that we need to set rd to true
-    store_register_memory(rd, b, 0);
+    store_register_memory(rd, b);
 
     // record frame and stack pointer
-    store_register_memory(REG_FP, *(registers + REG_FP), 0);
-    store_register_memory(REG_SP, *(registers + REG_SP), 0);
+    store_register_memory(REG_FP, *(registers + REG_FP));
+    store_register_memory(REG_SP, *(registers + REG_SP));
   } else {
+    *(reg_data_typ + rd) = VALUE_T;
     *(registers + rd) = b;
-
-    *(reg_data_typ + rd) = 0;
-
-    *(reg_los + rd) = b;
-    *(reg_ups + rd) = b;
+    *(reg_los   + rd) = b;
+    *(reg_ups   + rd) = b;
+    *(reg_steps + rd) = 1;
 
     set_constraint(rd, 0, 0, 0);
     set_correction(rd, 0, 0, 0);
   }
 }
 
-void create_constraints(uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t up2, uint64_t trb, uint64_t how_many_more) {
+void create_constraints__(uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t up2, uint64_t trb, uint64_t how_many_more) {
   if (lo1 <= up1) {
     // rs1 interval is not wrapped around
     if (lo2 <= up2) {
@@ -1548,10 +1569,10 @@ void create_constraints(uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t up2, 
         constrain_memory(rs2, lo2, up2, trb, false);
 
         // record that we need to set rd to false
-        store_register_memory(rd, 0, 0);
+        store_register_memory(rd, 0);
         // record frame and stack pointer
-        store_register_memory(REG_FP, *(registers + REG_FP), 0);
-        store_register_memory(REG_SP, *(registers + REG_SP), 0);
+        store_register_memory(REG_FP, *(registers + REG_FP));
+        store_register_memory(REG_SP, *(registers + REG_SP));
 
         // construct constraint for true case
         constrain_memory(rs1, lo1, lo2 - 1, trb, false);
@@ -1566,10 +1587,10 @@ void create_constraints(uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t up2, 
         constrain_memory(rs2, lo2, lo1, trb, false);
 
         // record that we need to set rd to false
-        store_register_memory(rd, 0, 0);
+        store_register_memory(rd, 0);
         // record frame and stack pointer
-        store_register_memory(REG_FP, *(registers + REG_FP), 0);
-        store_register_memory(REG_SP, *(registers + REG_SP), 0);
+        store_register_memory(REG_FP, *(registers + REG_FP));
+        store_register_memory(REG_SP, *(registers + REG_SP));
 
         // construct constraint for true case
         constrain_memory(rs1, lo1, up1, trb, false);
@@ -1587,70 +1608,224 @@ void create_constraints(uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t up2, 
       // rs1 interval is not wrapped around but rs2 is
 
       // unwrap rs2 interval and use higher portion first
-      create_constraints(lo1, up1, lo2, UINT64_MAX_T, trb, 1);
+      create_constraints__(lo1, up1, lo2, UINT64_MAX_T, trb, 1);
 
       // then use lower portion of rs2 interval
-      create_constraints(lo1, up1, 0, up2, trb, 0);
+      create_constraints__(lo1, up1, 0, up2, trb, 0);
     }
   } else if (lo2 <= up2) {
     // rs2 interval is not wrapped around but rs1 is
 
     // unwrap rs1 interval and use higher portion first
-    create_constraints(lo1, UINT64_MAX_T, lo2, up2, trb, 1);
+    create_constraints__(lo1, UINT64_MAX_T, lo2, up2, trb, 1);
 
     // then use lower portion of rs1 interval
-    create_constraints(0, up1, lo2, up2, trb, 0);
+    create_constraints__(0, up1, lo2, up2, trb, 0);
   } else {
     // both rs1 and rs2 intervals are wrapped around
 
     // unwrap rs1 and rs2 intervals and use higher portions
-    create_constraints(lo1, UINT64_MAX_T, lo2, UINT64_MAX_T, trb, 3);
+    create_constraints__(lo1, UINT64_MAX_T, lo2, UINT64_MAX_T, trb, 3);
 
     // use higher portion of rs1 interval and lower portion of rs2 interval
-    create_constraints(lo1, UINT64_MAX_T, 0, up2, trb, 2);
+    create_constraints__(lo1, UINT64_MAX_T, 0, up2, trb, 2);
 
     // use lower portions of rs1 and rs2 intervals
-    create_constraints(0, up1, 0, up2, trb, 1);
+    create_constraints__(0, up1, 0, up2, trb, 1);
 
     // use lower portion of rs1 interval and higher portion of rs2 interval
-    create_constraints(0, up1, lo2, UINT64_MAX_T, trb, 0);
+    create_constraints__(0, up1, lo2, UINT64_MAX_T, trb, 0);
   }
 }
 
-void backtrack_bne() {
-  uint64_t vaddr;
+void create_constraints(uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t up2, uint64_t trb) {
+  if (lo1 <= up1) {
+    // rs1 interval is not wrapped around
+    if (lo2 <= up2) {
+      // both rs1 and rs2 intervals are not wrapped around
+      if (up1 < lo2) {
+        // rs1 interval is strictly less than rs2 interval
+        constrain_memory(rs1, lo1, up1, trb, true);
+        constrain_memory(rs2, lo2, up2, trb, true);
 
-  if (debug_symbolic) {
-    printf("OUTPUT: backtracking bne \n");
-    print_symbolic_memory(tc);
-  }
+        take_branch(1, 0);
+      } else if (up2 <= lo1) {
+        // rs2 interval is less than or equal to rs1 interval
+        constrain_memory(rs1, lo1, up1, trb, true);
+        constrain_memory(rs2, lo2, up2, trb, true);
 
-  vaddr = *(vaddrs + tc);
+        take_branch(0, 0);
+      } else if (lo2 == up2) {
+        // rs2 interval is a singleton
+        // false case
+        constrain_memory(rs1, lo2, up1, trb, false);
+        constrain_memory(rs2, lo2, up2, trb, false);
+        // record false
+        take_branch(0, 1);
 
-  if (vaddr < NUMBEROFREGISTERS && vaddr > 0) {
-    // the register is identified by vaddr
-    registers[vaddr]    = values[tc];
-    reg_data_typ[vaddr] = data_types[tc];
-    reg_los[vaddr]      = values[tc];
-    reg_ups[vaddr]      = values[tc];
-    reg_steps[vaddr]    = 1;
+        // true case
+        constrain_memory(rs1, lo1, lo2 - 1, trb, false);
+        constrain_memory(rs2, lo2, up2, trb, false);
+        take_branch(1, 0);
+      } else if (lo1 == up1) {
+        // rs1 interval is a singleton
+        // false case
+        constrain_memory(rs1, lo1, up1, trb, false);
+        constrain_memory(rs2, lo2, lo1, trb, false);
+        // record false
+        take_branch(0, 1);
 
-    set_constraint(vaddr, 0, 0, 0);
-    set_correction(vaddr, 0, 0, 0);
+        // construct constraint for true case
+        constrain_memory(rs1, lo1, up1, trb, false);
+        constrain_memory(rs2, lo1 + 1, up2, trb, false); // never overflow
+        take_branch(1, 0);
+      } else {
+        // be careful about case [10, 20] < [20, 30] where needs a relation
+        // we cannot handle non-singleton interval intersections in comparison
+        printf("OUTPUT: detected non-singleton interval intersection at %x \n", pc - entry_point);
+        exit(EXITCODE_SYMBOLICEXECUTIONERROR);
+      }
+    } else {
+      // rs1 interval is not wrapped around but rs2 is
+      if (up1 < lo2 && up2 <= lo1) {
+        // false
+        constrain_memory(rs1, lo1, up1, trb, false);
+        constrain_memory(rs2, 0, up2, trb, false);
+        // record false
+        take_branch(0, 1);
 
-    // restoring mrcc
-    mrcc = *(tcs + tc);
+        // true
+        constrain_memory(rs1, lo1, up1, trb, false);
+        constrain_memory(rs2, lo2, UINT64_MAX_T, trb, false);
+        take_branch(1, 0);
+      } else if (lo1 == up1) {
+        uint64_t lo_p;
+        uint64_t up_p;
 
-    if (vaddr == REG_FP) {
-      // stop backtracking and try next case
-      pc = steps[tc]; // next pc was stored in steps trace (due to less memory consumption)
+        if (lo1 >= lo2) { // upper part
+          // non-empty false case 1
+          constrain_memory(rs1, lo1, up1, trb, false);
+          constrain_memory(rs2, lo2, lo1, trb, false);
+          take_branch(0, 1);
 
-      ic_bne = ic_bne + 1;
+          // non-empty false case 2
+          constrain_memory(rs1, lo1, up1, trb, false);
+          constrain_memory(rs2, 0, up2, trb, false);
+
+          // true case
+          if (lo1 != UINT64_MAX_T) {
+            lo_p = compute_lower_bound(lo2, reg_steps[rs1], lo1 + 1);
+            up_p = compute_upper_bound(lo1, reg_steps[rs1], UINT64_MAX_T);
+            if (lo_p <= up_p) {
+              take_branch(0, 1);
+
+              constrain_memory(rs1, lo1, up1, trb, false);
+              constrain_memory(rs2, lo_p, up_p, trb, false);
+              take_branch(1, 0);
+
+            } else take_branch(0, 0); // else empty
+          } else take_branch(0, 0);   // else empty
+
+        } else {
+          // false case
+          lo_p = compute_lower_bound(lo2, reg_steps[rs1], 0);
+          up_p = compute_upper_bound(lo1, reg_steps[rs1], lo1);
+          if (lo_p <= up_p) {
+            constrain_memory(rs1, lo1, up1, trb, false);
+            constrain_memory(rs2, lo_p, up_p, trb, false);
+            take_branch(0, 1);
+
+          } // else empty
+
+          // non-empty true case 1
+          constrain_memory(rs1, lo1, up1, trb, false);
+          constrain_memory(rs2, lo1 + 1, up2, trb, false);
+          take_branch(1, 1);
+
+          // non-empty true case 2
+          constrain_memory(rs1, lo1, up1, trb, false);
+          constrain_memory(rs2, lo2, UINT64_MAX_T, trb, false);
+          take_branch(1, 0);
+        }
+
+      } else {
+        // we cannot handle non-singleton interval intersections in comparison
+        printf("OUTPUT: detected non-singleton interval intersection at %x \n", pc - entry_point);
+        exit(EXITCODE_SYMBOLICEXECUTIONERROR);
+      }
     }
-  } else
-    store_virtual_memory(pt, vaddr, *(tcs + tc));
+  } else if (lo2 <= up2) {
+    // rs2 interval is not wrapped around but rs1 is
+    if (up1 < lo2 && up2 <= lo1) {
+      // false case
+      constrain_memory(rs1, lo1, UINT64_MAX_T, trb, false);
+      constrain_memory(rs2, lo2, up2, trb, false);
+      take_branch(0, 1);
 
-  efree();
+      // true case
+      constrain_memory(rs1, 0, up1, trb, false);
+      constrain_memory(rs2, lo2, up2, trb, false);
+      take_branch(1, 0);
+    } else if (lo2 == up2) {
+      // construct constraint for true case
+      uint64_t lo_p;
+      uint64_t up_p;
+
+      if (lo2 > lo1) { // upper part
+        // false case
+        lo_p = compute_lower_bound(lo1, reg_steps[rs1], lo2);
+        up_p = compute_upper_bound(lo1, reg_steps[rs1], UINT64_MAX_T);
+        if (lo_p <= up_p) {
+          constrain_memory(rs1, lo_p, up_p, trb, false);
+          constrain_memory(rs2, lo2, up2, trb, false);
+          take_branch(0, 1);
+        } // else empty
+
+        // non-empty true 1
+        constrain_memory(rs1, lo1, lo2 - 1, trb, false); // never lo2 = 0
+        constrain_memory(rs2, lo2, up2, trb, false);
+        take_branch(1, 1);
+
+        // non-empty true 2
+        constrain_memory(rs1, 0, up1, trb, false);
+        constrain_memory(rs2, lo2, up2, trb, false);
+        take_branch(1, 0);
+      } else {
+        // non-empty false case 1
+        constrain_memory(rs1, lo2, up1, trb, false);
+        constrain_memory(rs2, lo2, up2, trb, false);
+        take_branch(0, 1);
+
+        // non-empty false case 2
+        constrain_memory(rs1, lo1, UINT64_MAX_T, trb, false);
+        constrain_memory(rs2, lo2, up2, trb, false);
+
+        // true case
+        if (lo2 != 0) {
+          lo_p = compute_lower_bound(lo1, reg_steps[rs1], 0);
+          up_p = compute_upper_bound(lo1, reg_steps[rs1], lo2 - 1);
+          if (lo_p <= up_p) {
+            take_branch(0, 1);
+
+            constrain_memory(rs1, lo_p, up_p, trb, false);
+            constrain_memory(rs2, lo2, up2, trb, false);
+            take_branch(1, 0);
+          } else take_branch(0, 0); // else empty
+        } else take_branch(0, 0); // else empty 0 < 0
+
+      }
+
+    } else {
+      // we cannot handle non-singleton interval intersections in comparison
+      printf("OUTPUT: detected non-singleton interval intersection at %x \n", pc - entry_point);
+      exit(EXITCODE_SYMBOLICEXECUTIONERROR);
+    }
+
+  } else {
+    // both rs1 and rs2 intervals are wrapped around
+    printf("OUTPUT: < of two non-wrapped intervals are not supported for now at %x \n", pc - entry_point);
+    exit(EXITCODE_SYMBOLICEXECUTIONERROR);
+  }
 }
 
 void backtrack_sltu() {
