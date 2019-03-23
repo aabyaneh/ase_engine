@@ -1,6 +1,10 @@
+#include "msiiad.h"
+
 // ------------------------ GLOBAL VARIABLES -----------------------
 
+uint64_t MSIIAD = 9;
 uint64_t MAX_TRACE_LENGTH = 1000000;
+uint64_t TWO_TO_THE_POWER_OF_32;
 
 // trace
 uint64_t  tc         = 0;             // trace counter
@@ -33,9 +37,9 @@ uint8_t   VALUE_T      = 0;
 uint8_t   POINTER_T    = 1;
 // register constraints on memory
 uint8_t*  reg_symb_typ = (uint8_t*) 0; // register has constraint
-uint8_t   CONCRETE_T   = 0;
-uint8_t   SYMBOLIC_CONCRETE_T = 1;
-uint8_t   SYMBOLIC_T   = 2;
+uint8_t   CONCRETE   = 0;
+uint8_t   SYMBOLIC_CONCRETE = 1;
+uint8_t   SYMBOLIC   = 2;
 uint64_t* reg_vaddr = (uint64_t*) 0; // vaddr of constrained memory
 bool*     reg_hasmn = (bool*) 0; // constraint has minuend
 // corrections
@@ -60,34 +64,49 @@ bool eq_detected = false;
 // ------------------------- INITIALIZATION ------------------------
 
 void init_symbolic_engine() {
-  pcs        = zalloc(MAX_TRACE_LENGTH * SIZEOFUINT64);
-  tcs        = zalloc(MAX_TRACE_LENGTH * SIZEOFUINT64);
-  values     = zalloc(MAX_TRACE_LENGTH * SIZEOFUINT64);
-  data_types = zalloc(MAX_TRACE_LENGTH * SIZEOFUINT64);
-  los        = zalloc(MAX_TRACE_LENGTH * SIZEOFUINT64);
-  ups        = zalloc(MAX_TRACE_LENGTH * SIZEOFUINT64);
-  steps      = zalloc(MAX_TRACE_LENGTH * SIZEOFUINT64);
-  vaddrs     = zalloc(MAX_TRACE_LENGTH * SIZEOFUINT64);
-  addsub_corrs    = zalloc(MAX_TRACE_LENGTH * SIZEOFUINT64);
-  muldivrem_corrs = zalloc(MAX_TRACE_LENGTH * SIZEOFUINT64);
-  corr_validitys  = zalloc(MAX_TRACE_LENGTH * SIZEOFUINT64);
-  hasmns          = zalloc(MAX_TRACE_LENGTH * SIZEOFUINT64);
+  pcs                = malloc(MAX_TRACE_LENGTH  * SIZEOFUINT64);
+  tcs                = malloc(MAX_TRACE_LENGTH  * SIZEOFUINT64);
+  values             = malloc(MAX_TRACE_LENGTH  * SIZEOFUINT64);
+  data_types         = malloc(MAX_TRACE_LENGTH  * SIZEOFUINT64);
+  los                = malloc(MAX_TRACE_LENGTH  * SIZEOFUINT64);
+  ups                = malloc(MAX_TRACE_LENGTH  * SIZEOFUINT64);
+  steps              = malloc(MAX_TRACE_LENGTH  * SIZEOFUINT64);
+  vaddrs             = malloc(MAX_TRACE_LENGTH  * SIZEOFUINT64);
+  ld_froms           = malloc(MAX_TRACE_LENGTH  * SIZEOFUINT64);
+  addsub_corrs       = malloc(MAX_TRACE_LENGTH  * SIZEOFUINT64);
+  muldivrem_corrs    = malloc(MAX_TRACE_LENGTH  * SIZEOFUINT64);
+  corr_validitys     = malloc(MAX_TRACE_LENGTH  * SIZEOFUINT64);
+  hasmns             = malloc(MAX_TRACE_LENGTH  * SIZEOFUINT64);
 
-  read_values = zalloc(MAX_TRACE_LENGTH * SIZEOFUINT64);
-  read_los    = zalloc(MAX_TRACE_LENGTH * SIZEOFUINT64);
-  read_ups    = zalloc(MAX_TRACE_LENGTH * SIZEOFUINT64);
+  read_values        = malloc(MAX_TRACE_LENGTH  * SIZEOFUINT64);
+  read_los           = malloc(MAX_TRACE_LENGTH  * SIZEOFUINT64);
+  read_ups           = malloc(MAX_TRACE_LENGTH  * SIZEOFUINT64);
 
-  reg_data_typ = zalloc(NUMBEROFREGISTERS * REGISTERSIZE);
-  reg_los      = zalloc(NUMBEROFREGISTERS * REGISTERSIZE);
-  reg_ups      = zalloc(NUMBEROFREGISTERS * REGISTERSIZE);
-  reg_steps    = zalloc(NUMBEROFREGISTERS * REGISTERSIZE);
+  reg_data_typ       = malloc(NUMBEROFREGISTERS * REGISTERSIZE);
+  reg_los            = malloc(NUMBEROFREGISTERS * REGISTERSIZE);
+  reg_ups            = malloc(NUMBEROFREGISTERS * REGISTERSIZE);
+  reg_steps          = malloc(NUMBEROFREGISTERS * REGISTERSIZE);
+  reg_symb_typ       = malloc(NUMBEROFREGISTERS * REGISTERSIZE);
+  reg_vaddr          = malloc(NUMBEROFREGISTERS * REGISTERSIZE);
+  reg_hasmn          = malloc(NUMBEROFREGISTERS * REGISTERSIZE);
+  reg_addsub_corr    = malloc(NUMBEROFREGISTERS * REGISTERSIZE);
+  reg_muldivrem_corr = malloc(NUMBEROFREGISTERS * REGISTERSIZE);
+  reg_corr_validity  = malloc(NUMBEROFREGISTERS * REGISTERSIZE);
 
-  reg_symb_typ = zalloc(NUMBEROFREGISTERS * REGISTERSIZE);
-  reg_vaddr    = zalloc(NUMBEROFREGISTERS * REGISTERSIZE);
-  reg_hasmn    = zalloc(NUMBEROFREGISTERS * REGISTERSIZE);
-  reg_addsub_corr    = zalloc(NUMBEROFREGISTERS * REGISTERSIZE);
-  reg_muldivrem_corr = zalloc(NUMBEROFREGISTERS * REGISTERSIZE);
-  reg_corr_validity  = zalloc(NUMBEROFREGISTERS * REGISTERSIZE);
+  pcs[0]             = 0;
+  tcs[0]             = 0;
+  values[0]          = 0;
+  data_types[0]      = 0;
+  los[0]             = 0;
+  ups[0]             = 0;
+  steps[0]           = 0;
+  vaddrs[0]          = 0;
+  addsub_corrs[0]    = 0;
+  muldivrem_corrs[0] = 0;
+  corr_validitys[0]  = 0;
+  hasmns[0]          = 0;
+
+  TWO_TO_THE_POWER_OF_32 = two_to_the_power_of(32);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -139,7 +158,7 @@ bool add_sub_condition(uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t up2) {
   uint64_t c2;
 
   c1 = up1 - lo1;
-  c2 = UINT64_MAX - (up2 - lo2);
+  c2 = UINT64_MAX_T - (up2 - lo2);
 
   if (c1 <= c2)
     return 1;
@@ -155,7 +174,7 @@ uint64_t mul_condition(uint64_t lo, uint64_t up, uint64_t k) {
     return 0;
 
   c1 = up - lo;
-  c2 = UINT64_MAX / k;
+  c2 = UINT64_MAX_T / k;
 
   if (c1 <= c2)
     return 0;
@@ -185,7 +204,7 @@ uint64_t compute_lower_bound(uint64_t lo, uint64_t step, uint64_t value) {
   if ((value - lo) % step)
     return lo + (((value - lo) / step) + 1) * step;
   else
-    return lo + ((value - lo) / step) * step;
+    return value;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -228,10 +247,11 @@ void constrain_addi() {
   reg_data_typ[rd] = VALUE_T;
 
   // interval semantics of addi
-  reg_los[rd] = reg_los[rs1] + imm;
-  reg_ups[rd] = reg_ups[rs1] + imm;
+  reg_los[rd]   = reg_los[rs1] + imm;
+  reg_ups[rd]   = reg_ups[rs1] + imm;
+  reg_steps[rd] = reg_steps[rs1];
 
-  if (reg_symb_typ[rs1] == SYMBOLIC_T) {
+  if (reg_symb_typ[rs1] == SYMBOLIC) {
       // rd inherits rs1 constraint
       set_constraint(rd, reg_symb_typ[rs1], reg_vaddr[rs1], 0);
       set_correction(rd, reg_addsub_corr[rs1] + imm, reg_muldivrem_corr[rs1],
@@ -295,11 +315,11 @@ void constrain_add() {
       add_up = reg_ups[rs1] + reg_ups[rs2];
     }
 
-    if (reg_symb_typ[rs1] == SYMBOLIC_T) {
-      if (reg_symb_typ[rs2] == SYMBOLIC_T) {
+    if (reg_symb_typ[rs1] == SYMBOLIC) {
+      if (reg_symb_typ[rs2] == SYMBOLIC) {
         // we cannot keep track of more than one constraint for add but
         // need to warn about their earlier presence if used in comparisons
-        set_constraint(rd, SYMBOLIC_T, 0, 0);
+        set_constraint(rd, SYMBOLIC, 0, 0);
         set_correction(rd, 0, 0, 10);
 
         // interval semantics of add
@@ -339,7 +359,7 @@ void constrain_add() {
         reg_ups[rd]   = add_up;
         reg_steps[rd] = reg_steps[rs1];
       }
-    } else if (reg_symb_typ[rs2] == SYMBOLIC_T) {
+    } else if (reg_symb_typ[rs2] == SYMBOLIC) {
       // rd inherits rs2 constraint since rs1 has none
       set_constraint(rd, reg_symb_typ[rs2], reg_vaddr[rs2], 0);
       set_correction(rd, reg_addsub_corr[rs2] + reg_los[rs1], reg_muldivrem_corr[rs2],
@@ -422,15 +442,15 @@ void constrain_sub() {
     // interval semantics of sub
     bool cnd = add_sub_condition(reg_los[rs1], reg_ups[rs1], reg_los[rs2], reg_ups[rs2]);
     if (cnd == true) {
-      sub_lo = reg_los[rs1] + reg_ups[rs2];
-      sub_up = reg_ups[rs1] + reg_los[rs2];
+      sub_lo = reg_los[rs1] - reg_ups[rs2];
+      sub_up = reg_ups[rs1] - reg_los[rs2];
     }
 
-    if (reg_symb_typ[rs1] == SYMBOLIC_T) {
-      if (reg_symb_typ[rs2] == SYMBOLIC_T) {
+    if (reg_symb_typ[rs1] == SYMBOLIC) {
+      if (reg_symb_typ[rs2] == SYMBOLIC) {
         // we cannot keep track of more than one constraint for sub but
         // need to warn about their earlier presence if used in comparisons
-        set_constraint(rd, SYMBOLIC_T, 0, 0);
+        set_constraint(rd, SYMBOLIC, 0, 0);
         set_correction(rd, 0, 0, 10);
 
         uint64_t gcd_steps = gcd(reg_steps[rs1], reg_steps[rs2]);
@@ -458,7 +478,7 @@ void constrain_sub() {
         reg_ups[rd]   = sub_up;
         reg_steps[rd] = reg_steps[rs1];
       }
-    } else if (reg_symb_typ[rs2] == SYMBOLIC_T) {
+    } else if (reg_symb_typ[rs2] == SYMBOLIC) {
       if (*(reg_hasmn + rs2)) {
         // rs2 constraint has already minuend and can have another minuend
         set_constraint(rd, reg_symb_typ[rs2], reg_vaddr[rs2], 0);
@@ -479,8 +499,8 @@ void constrain_sub() {
       set_constraint(rd, 0, 0, 0);
       set_correction(rd, 0, 0, 0);
 
-      reg_los[rd]   = add_lo;
-      reg_ups[rd]   = add_up;
+      reg_los[rd]   = sub_lo;
+      reg_ups[rd]   = sub_up;
       reg_steps[rd] = 1;
     }
   }
@@ -497,8 +517,8 @@ void constrain_mul() {
     mul_lo = reg_los[rs1] * reg_los[rs2];
     mul_up = reg_ups[rs1] * reg_ups[rs2];
 
-    if (reg_symb_typ[rs1] == SYMBOLIC_T) {
-      if (reg_symb_typ[rs2] == SYMBOLIC_T) {
+    if (reg_symb_typ[rs1] == SYMBOLIC) {
+      if (reg_symb_typ[rs2] == SYMBOLIC) {
         // non-linear expressions are not supported
         printf("OUTPUT: detected non-linear expression in mul at %x \n", pc);
         exit(EXITCODE_SYMBOLICEXECUTIONERROR);
@@ -535,7 +555,7 @@ void constrain_mul() {
           }
         }
       }
-    } else if (reg_symb_typ[rs2] == SYMBOLIC_T) {
+    } else if (reg_symb_typ[rs2] == SYMBOLIC) {
       if (reg_hasmn[rs2]) {
         // correction does not work anymore
         printf("correction does not work anymore at e.g. 10 * (1 - [.]) %x \n", pc);
@@ -583,6 +603,7 @@ void constrain_mul() {
 void constrain_divu() {
   uint64_t div_lo;
   uint64_t div_up;
+  uint64_t step;
 
   if (reg_los[rs2] != 0) {
     if (reg_ups[rs2] >= reg_los[rs2]) {
@@ -595,8 +616,8 @@ void constrain_divu() {
         div_up = reg_ups[rs1] / reg_los[rs2];
         step   = reg_steps[rs1];
 
-        if (reg_symb_typ[rs1] == SYMBOLIC_T) {
-          if (reg_symb_typ[rs2] == SYMBOLIC_T) {
+        if (reg_symb_typ[rs1] == SYMBOLIC) {
+          if (reg_symb_typ[rs2] == SYMBOLIC) {
             // non-linear expressions are not supported
             printf("OUTPUT: detected non-linear expression in divu at %x", pc);
             exit(EXITCODE_SYMBOLICEXECUTIONERROR);
@@ -629,14 +650,14 @@ void constrain_divu() {
 
             // interval semantics of divu
             if (*(reg_los + rs1) > *(reg_ups + rs1)) {
-              // rs1 constraint is wrapped: [lo, UINT64_MAX], [0, up]
-              max = compute_upper_bound(reg_los[rs1, step, UINT64_MAX);
+              // rs1 constraint is wrapped: [lo, UINT64_MAX_T], [0, up]
+              uint64_t max = compute_upper_bound(reg_los[rs1], step, UINT64_MAX_T);
               reg_los[rd] = (max + step) / reg_los[rs2];
               reg_ups[rd] = max          / reg_ups[rs2];
 
               // lo/k == up/k (or) up/k + step_rd
-              if (div_los != div_ups)
-                if (div_los > div_ups + reg_steps[rd]) {
+              if (div_lo != div_up)
+                if (div_lo > div_up + reg_steps[rd]) {
                   printf("OUTPUT: wrapped divison rsults two intervals at %x \n", pc);
                   exit(EXITCODE_SYMBOLICEXECUTIONERROR);
                 }
@@ -647,7 +668,7 @@ void constrain_divu() {
             }
 
           }
-        } else if (reg_symb_typ[rs2] == SYMBOLIC_T) {
+        } else if (reg_symb_typ[rs2] == SYMBOLIC) {
           printf("OUTPUT: detected division of constant by interval at %x \n", pc);
           exit(EXITCODE_SYMBOLICEXECUTIONERROR);
 
@@ -673,9 +694,9 @@ void constrain_remu() {
   uint64_t step;
 
   if (reg_los[rs2] == 0)
-    throwException(EXCEPTION_DIVISIONBYZERO, 0);
+    throw_exception(EXCEPTION_DIVISIONBYZERO, 0);
 
-  if (reg_symb_typ[rs2] == SYMBOLIC_T) {
+  if (reg_symb_typ[rs2] == SYMBOLIC) {
     // rs2 has constraint
     printf("OUTPUT: constrained memory location in right operand of remu at %x \n", pc - entry_point);
     exit(EXITCODE_SYMBOLICEXECUTIONERROR);
@@ -686,7 +707,7 @@ void constrain_remu() {
 
   reg_data_typ[rd] = VALUE_T;
 
-  if (reg_symb_typ[rs1] == SYMBOLIC_T) {
+  if (reg_symb_typ[rs1] == SYMBOLIC) {
     // interval semantics of remu
     divisor = reg_los[rs2];
     step    = reg_steps[rs1];
@@ -757,7 +778,7 @@ void constrain_remu() {
 
 void constrain_sltu() {
   if (rd != REG_ZR) {
-    if (reg_symb_typ[rs1] != SYMBOLIC_T && reg_symb_typ[rs2] != SYMBOLIC_T) {
+    if (reg_symb_typ[rs1] != SYMBOLIC && reg_symb_typ[rs2] != SYMBOLIC) {
       // concrete semantics of sltu
       registers[rd] = (registers[rs1] < registers[rs2]) ? 1 : 0;
 
@@ -775,18 +796,21 @@ void constrain_sltu() {
       return;
     }
 
-    current_rs1_tc = load_virtual_memory(pt, reg_vaddr[rs1]);
-    current_rs2_tc = load_virtual_memory(pt, reg_vaddr[rs2]);
+    if (reg_symb_typ[rs1])
+      current_rs1_tc = load_symbolic_memory(pt, reg_vaddr[rs1]);
+
+    if (reg_symb_typ[rs2])
+      current_rs2_tc = load_symbolic_memory(pt, reg_vaddr[rs2]);
 
     if (reg_data_typ[rs1] == POINTER_T)
       if (reg_data_typ[rs2] == POINTER_T)
-        create_constraints(registers[rs1], registers[rs1], registers[rs2], registers[rs2], mrcc, 0);
+        create_constraints(registers[rs1], registers[rs1], registers[rs2], registers[rs2], mrcc);
       else
-        create_constraints(registers[rs1], registers[rs1], reg_los[rs2], reg_ups[rs2], mrcc, 0);
+        create_constraints(registers[rs1], registers[rs1], reg_los[rs2], reg_ups[rs2], mrcc);
     else if (reg_data_typ[rs2] == POINTER_T)
-      create_constraints(reg_los[rs1], reg_ups[rs1], registers[rs2], registers[rs2], mrcc, 0);
+      create_constraints(reg_los[rs1], reg_ups[rs1], registers[rs2], registers[rs2], mrcc);
     else
-      create_constraints(reg_los[rs1], reg_ups[rs1], reg_los[rs2], reg_ups[rs2], mrcc, 0);
+      create_constraints(reg_los[rs1], reg_ups[rs1], reg_los[rs2], reg_ups[rs2], mrcc);
   }
 
   pc = pc + INSTRUCTIONSIZE;
@@ -1040,7 +1064,7 @@ void constrain_xor() {
   if (rd == REG_ZR)
     return;
 
-  if (reg_symb_typ[rs1] != SYMBOLIC_T && reg_symb_typ[rs2] != SYMBOLIC_T) {
+  if (reg_symb_typ[rs1] != SYMBOLIC && reg_symb_typ[rs2] != SYMBOLIC) {
     // concrete semantics of xor
     do_xor();
     set_constraint(rd, 0, 0, 0);
@@ -1048,22 +1072,28 @@ void constrain_xor() {
     return;
   }
 
-  pc = pc + INSTRUCTIONSIZE;
-  ic_xor = ic_xor + 1;
+  // pc = pc + INSTRUCTIONSIZE;
+  // ic_xor = ic_xor + 1;
+  //
+  // // ==, != detection
+  // fetch();
+  // uint64_t f3;
+  // eq_detected = false;
+  // ne_detected = false;
+  // if ((f3 = get_funct3(ir)) == F3_SLTU && get_opcode(ir) == OP_OP) {
+  //   if (get_rs1(ir) == REG_ZR && get_rs2(ir) == rd)
+  //     ne_detected = true;
+  //
+  // } else if (f3 == F3_ADDI && get_opcode(ir) == OP_IMM && get_immediate_i_format(ir) == 1 && get_rs1(ir) == REG_ZR) {
+  //   eq_detected = true;
+  // }
+  // // ---------------
 
-  // ==, != detection
-  fetch();
-  uint64_t f3;
-  eq_detected = false;
-  ne_detected = false;
-  if ((f3 = get_funct3(ir)) == F3_SLTU && get_opcode(ir) == OP_OP) {
-    if (get_rs1(ir) == REG_ZR && get_rs2(ir) == rd)
-      ne_detected = true;
+  if (reg_symb_typ[rs1])
+    current_rs1_tc = load_symbolic_memory(pt, reg_vaddr[rs1]);
 
-  } else if (f3 == F3_ADDI && get_opcode(ir) == OP_IMM && get_immediate_i_format(ir) == 1 && get_rs1(ir) == REG_ZR) {
-    eq_detected = true;
-  }
-  // ---------------
+  if (reg_symb_typ[rs2])
+    current_rs2_tc = load_symbolic_memory(pt, reg_vaddr[rs2]);
 
   if (reg_data_typ[rs1] == POINTER_T)
     if (reg_data_typ[rs2] == POINTER_T) {
@@ -1078,6 +1108,10 @@ void constrain_xor() {
     create_xor_constraints(reg_los[rs1], reg_ups[rs1], registers[rs2], registers[rs2], mrcc);
   else
     create_xor_constraints(reg_los[rs1], reg_ups[rs1], reg_los[rs2], reg_ups[rs2], mrcc);
+
+  pc = pc + INSTRUCTIONSIZE;
+
+  ic_xor = ic_xor + 1;
 
 }
 
@@ -1118,10 +1152,10 @@ uint64_t constrain_ld() {
 
         if (is_symbolic_value(*(reg_data_typ + rd), *(reg_los + rd), *(reg_ups + rd))) {
           // vaddr is constrained by rd if value interval is not singleton
-          set_constraint(rd, 1, vaddr, 0);
+          set_constraint(rd, SYMBOLIC, vaddr, 0);
           set_correction(rd, 0, 0, 0);
         } else {
-          set_constraint(rd, 0, 0, 0);
+          set_constraint(rd, CONCRETE, 0, 0);
           set_correction(rd, 0, 0, 0);
         }
       }
@@ -1234,10 +1268,7 @@ uint64_t is_safe_address(uint64_t vaddr, uint64_t reg) {
   } else if (*(reg_los + reg) == *(reg_ups + reg))
     return 1;
   else {
-    printf2((uint64_t*) "%s: detected unsupported symbolic access of memory interval at %x", exe_name, (uint64_t*) pc);
-    print_code_line_number_for_instruction(pc - entry_point);
-    println();
-
+    printf("OUTPUT: detected unsupported symbolic access of memory interval at %x\n", pc - entry_point);
     exit(EXITCODE_SYMBOLICEXECUTIONERROR);
   }
 }
@@ -1251,8 +1282,8 @@ uint64_t load_symbolic_memory(uint64_t* pt, uint64_t vaddr) {
   if (mrvc <= tc)
     return mrvc;
   else {
-    printf4((uint64_t*) "%s: detected most recent value counter %d at vaddr %x greater than current trace counter %d\n", exe_name, (uint64_t*) mrvc, (uint64_t*) vaddr, (uint64_t*) tc);
-
+    printf("OUTPUT: detected most recent value counter %llu at vaddr %llx greater than current trace counter %llu\n", mrvc, vaddr, tc);
+    // printf4((uint64_t*) "%s: detected most recent value counter %d at vaddr %x greater than current trace counter %d\n", exe_name, (uint64_t*) mrvc, (uint64_t*) vaddr, (uint64_t*) tc);
     exit(EXITCODE_SYMBOLICEXECUTIONERROR);
   }
 }
@@ -1318,7 +1349,7 @@ void store_symbolic_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, uint8_t
     *(corr_validitys  + mrvc) = corr_validity;
 
     if (debug_symbolic) {
-      printf1((uint64_t*) "%s: overwriting ", exe_name);
+      printf("OUTPUT: overwriting\n");
       print_symbolic_memory(mrvc);
     }
   } else if (is_trace_space_available()) {
@@ -1350,14 +1381,14 @@ void store_symbolic_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, uint8_t
       store_virtual_memory(pt, vaddr, tc);
 
     if (debug_symbolic) {
-      printf1((uint64_t*) "%s: storing ", exe_name);
+      printf("OUTPUT: storing\n");
       print_symbolic_memory(tc);
     }
   } else
     throw_exception(EXCEPTION_MAXTRACE, 0);
 }
 
-void store_constrained_memory(uint64_t vaddr, uint64_t lo, uint64_t up, uint64_t step, uint64_t ld_from, bool hasmn, uint64_t addsub_corr, uint64_t muldivrem_corr, uint64_t corr_validity, uint64_t trb) {
+void store_constrained_memory(uint64_t vaddr, uint64_t lo, uint64_t up, uint64_t step, uint64_t ld_from, bool hasmn, uint64_t addsub_corr, uint64_t muldivrem_corr, uint64_t corr_validity) {
   uint64_t mrvc;
 
   /* we need to constrain freed memory to keep our ld chain alive */
@@ -1381,7 +1412,7 @@ void store_constrained_memory(uint64_t vaddr, uint64_t lo, uint64_t up, uint64_t
 
 void store_register_memory(uint64_t reg, uint64_t value) {
   // always track register memory by using tc as most recent branch
-  store_symbolic_memory(pt, reg, value, 0, value, value, tc);
+  store_symbolic_memory(pt, reg, value, 0, value, value, 1, 0, 0, 0, 0, 0, tc);
 }
 
 uint64_t reverse_division_up(uint64_t ups_mrvc, uint64_t up, uint64_t codiv) {
@@ -1394,9 +1425,13 @@ uint64_t reverse_division_up(uint64_t ups_mrvc, uint64_t up, uint64_t codiv) {
 // consider y = x op a;
 // mrvc is mrvc of x
 // lo_before_op is previouse lo of y
-void apply_correction(uint64_t lo, uint64_t up, bool hasmn, uint64_t addsub_corr, uint64_t muldivrem_corr, uint64_t corr_validity, uint64_t lo_before_op, uint64_t mrvc, uint64_t trb) {
-  lo = compute_lower_bound(los[mrvc], steps[mrvc], lo);
-  up = compute_upper_bound(los[mrvc], steps[mrvc], up);
+void apply_correction(uint64_t lo, uint64_t up, bool hasmn, uint64_t addsub_corr, uint64_t muldivrem_corr, uint64_t corr_validity, uint64_t lo_before_op, uint64_t step, uint64_t mrvc) {
+  printf("1: %llu, %llu, %llu\n", lo, up, step);
+
+  lo = compute_lower_bound(lo_before_op, step, lo);
+  up = compute_upper_bound(lo_before_op, step, up);
+
+  printf("2: %llu, %llu, %llu\n", lo, up, step);
 
   // add, sub
   if (hasmn) {
@@ -1408,8 +1443,10 @@ void apply_correction(uint64_t lo, uint64_t up, bool hasmn, uint64_t addsub_corr
     up = up - addsub_corr;
   }
 
+  printf("3: %llu, %llu, %llu\n", lo, up, step);
+
   // mul, div, rem
-  if (corr_validity == MUL_T) {
+  if (corr_validity == MUL_T && muldivrem_corr != 0) { // muldivrem_corr == 0 when (x + 1)
     // <9223372036854775808, 2^64 - 1, 1> * 2 = <0, 2^64 - 2, 2>
     // <9223372036854775809, 15372286728091293014, 1> * 3 = <9223372036854775811, 9223372036854775810, 3>
     lo = los[mrvc] + (lo - lo_before_op) / muldivrem_corr; // lo_op_before_cmp
@@ -1430,11 +1467,11 @@ void apply_correction(uint64_t lo, uint64_t up, bool hasmn, uint64_t addsub_corr
       up = compute_upper_bound(los[mrvc], steps[mrvc], up * divisor + reverse_division_up(ups[mrvc], up, divisor));
     } else {
       // wrapped
-      uint64_t lo1;
-      uint64_t up1;
-      uint64_t lo2;
-      uint64_t up2;
-      uint64_t max = compute_upper_bound(los[mrvc], steps[mrvc], UINT64_MAX);
+      uint64_t lo_1;
+      uint64_t up_1;
+      uint64_t lo_2;
+      uint64_t up_2;
+      uint64_t max = compute_upper_bound(los[mrvc], steps[mrvc], UINT64_MAX_T);
       uint8_t  which_is_empty;
 
       lo = (lo == 0) ? (max + steps[mrvc]) : lo * divisor;
@@ -1467,21 +1504,21 @@ void apply_correction(uint64_t lo, uint64_t up, bool hasmn, uint64_t addsub_corr
     }
 
   } else if (corr_validity == REMU_T) {
-    if (*(rem_typ + reg) == 1) {
-      operator = *(rem + reg);
-      lo = computeLowerBound(*(los + mrvc), *(steps + mrvc), (*(los + mrvc) / operator) * operator + lo);
-      up = computeUpperBound(*(los + mrvc), *(steps + mrvc), (*(ups + mrvc) / operator) * operator + up);
-    } else {
-      printf("OUTPUT: detected an unsupported remu in a conditional expression at %x \n", );
-      exit(EXITCODE_SYMBOLICEXECUTIONERROR);
-    }
+    // if (*(rem_typ + reg) == 1) {
+    //   operator = *(rem + reg);
+    //   lo = computeLowerBound(*(los + mrvc), *(steps + mrvc), (*(los + mrvc) / operator) * operator + lo);
+    //   up = computeUpperBound(*(los + mrvc), *(steps + mrvc), (*(ups + mrvc) / operator) * operator + up);
+    // } else {
+    //   printf("OUTPUT: detected an unsupported remu in a conditional expression at %x \n", );
+    //   exit(EXITCODE_SYMBOLICEXECUTIONERROR);
+    // }
   } else if (corr_validity > 5) {
     printf("OUTPUT: detected an unsupported conditional expression at \n", pc - entry_point);
     exit(EXITCODE_SYMBOLICEXECUTIONERROR);
   }
 
   //////////////////////////////////////////////////////////////////////////////
-  store_constrained_memory(vaddrs[mrvc], lo, up, steps[mrvc], ld_froms[mrvc], hasmns[mrvc], addsub_corrs[mrvc], muldivrem_corrs[mrvc], corr_validitys[mrvc], trb);
+  store_constrained_memory(vaddrs[mrvc], lo, up, steps[mrvc], ld_froms[mrvc], hasmns[mrvc], addsub_corrs[mrvc], muldivrem_corrs[mrvc], corr_validitys[mrvc]);
   if (ld_froms[mrvc]) {
     propagate_backwards(vaddrs[mrvc], los[mrvc]);
   }
@@ -1498,21 +1535,21 @@ void propagate_backwards(uint64_t vaddr, uint64_t lo_before_op) {
 
   mrvc_y = load_symbolic_memory(pt, vaddr);
   mrvc_x = load_symbolic_memory(pt, ld_froms[mrvc_y]);
-  apply_correction(los[mrvc_y], ups[mrvc_y], hasmns[mrvc_y], addsub_corrs[mrvc_y], muldivrem_corrs[mrvc_y], corr_validitys[mrvc_y], lo_before_op, mrvc_x, trb);
+  apply_correction(los[mrvc_y], ups[mrvc_y], hasmns[mrvc_y], addsub_corrs[mrvc_y], muldivrem_corrs[mrvc_y], corr_validitys[mrvc_y], lo_before_op, steps[mrvc_y], mrvc_x);
 }
 
 void constrain_memory(uint64_t reg, uint64_t lo, uint64_t up, uint64_t trb, bool only_reachable_branch) {
   uint64_t mrvc;
 
-  if (reg_symb_typ[reg] == SYMBOLIC_T) {
+  if (reg_symb_typ[reg] == SYMBOLIC) {
     mrvc = (reg == rs1) ? current_rs1_tc : current_rs2_tc;
 
     if (only_reachable_branch == true) {
       lo = los[mrvc];
       up = ups[mrvc];
-      store_constrained_memory(reg_vaddr[reg], lo, up, steps[mrvc], ld_froms[mrvc], hasmns[mrvc], addsub_corrs[mrvc], muldivrem_corrs[mrvc], corr_validitys[mrvc], trb);
+      store_constrained_memory(reg_vaddr[reg], lo, up, steps[mrvc], ld_froms[mrvc], hasmns[mrvc], addsub_corrs[mrvc], muldivrem_corrs[mrvc], corr_validitys[mrvc]);
     } else {
-      apply_correction(lo, up, reg_hasmn[reg], reg_addsub_corr[reg], reg_muldivrem_corr[reg], reg_corr_validity[reg], reg_los[reg], mrvc, trb);
+      apply_correction(lo, up, reg_hasmn[reg], reg_addsub_corr[reg], reg_muldivrem_corr[reg], reg_corr_validity[reg], reg_los[reg], reg_steps[reg], mrvc);
     }
 
   }
@@ -1522,6 +1559,12 @@ void set_constraint(uint64_t reg, uint64_t hasco, uint64_t vaddr, uint64_t hasmn
   reg_symb_typ[reg] = hasco;
   reg_vaddr[reg] = vaddr;
   reg_hasmn[reg] = hasmn;
+}
+
+void set_correction(uint64_t reg, uint64_t addsub_corr, uint64_t muldivrem_corr, uint64_t corr_validity) {
+  reg_addsub_corr[reg]    = addsub_corr;
+  reg_muldivrem_corr[reg] = muldivrem_corr;
+  reg_corr_validity[reg]  = corr_validity;
 }
 
 void take_branch(uint64_t b, uint64_t how_many_more) {
@@ -1601,7 +1644,7 @@ void create_constraints__(uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t up2
         // be careful about case [10, 20] < [20, 30] where needs a relation
 
         // we cannot handle non-singleton interval intersections in comparison
-        printf1((uint64_t*) "%s: detected non-singleton interval intersection\n", exe_name);
+        printf("OUTPUT: detected non-singleton interval intersection at %x\n", pc - entry_point);
         exit(EXITCODE_SYMBOLICEXECUTIONERROR);
       }
     } else {
@@ -1657,6 +1700,7 @@ void create_constraints(uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t up2, 
         take_branch(0, 0);
       } else if (lo2 == up2) {
         // rs2 interval is a singleton
+        // a case where lo1 = up1 shouldn't be reach here
         // false case
         constrain_memory(rs1, lo2, up1, trb, false);
         constrain_memory(rs2, lo2, up2, trb, false);
@@ -1756,6 +1800,7 @@ void create_constraints(uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t up2, 
     }
   } else if (lo2 <= up2) {
     // rs2 interval is not wrapped around but rs1 is
+    printf("right palce\n");
     if (up1 < lo2 && up2 <= lo1) {
       // false case
       constrain_memory(rs1, lo1, UINT64_MAX_T, trb, false);
@@ -1832,7 +1877,7 @@ void backtrack_sltu() {
   uint64_t vaddr;
 
   if (debug_symbolic) {
-    printf1((uint64_t*) "%s: backtracking sltu ", exe_name);
+    printf("OUTPUT: backtracking sltu ");
     print_symbolic_memory(tc);
   }
 
@@ -1869,7 +1914,7 @@ void backtrack_sltu() {
 
 void backtrack_sd() {
   if (debug_symbolic) {
-    printf1((uint64_t*) "%s: backtracking sd ", exe_name);
+    printf("OUTPUT: backtracking sd ");
     print_symbolic_memory(tc);
   }
 
@@ -1880,7 +1925,7 @@ void backtrack_sd() {
 
 void backtrack_ecall() {
   if (debug_symbolic) {
-    printf1((uint64_t*) "%s: backtracking ecall ", exe_name);
+    printf("OUTPUT: backtracking ecall ");
     print_symbolic_memory(tc);
   }
 
@@ -1889,7 +1934,7 @@ void backtrack_ecall() {
     if (get_program_break(current_context) == *(los + tc) + *(ups + tc))
       set_program_break(current_context, *(los + tc));
     else {
-      printf1((uint64_t*) "%s: malloc backtracking error at ", exe_name);
+      printf("OUTPUT: malloc backtracking error at ");
       print_symbolic_memory(tc);
       printf4((uint64_t*) " with current program break %x unequal %x which is previous program break %x plus size %d\n",
         (uint64_t*) get_program_break(current_context),
@@ -1918,8 +1963,10 @@ void backtrack_ecall() {
 void backtrack_trace(uint64_t* context) {
   uint64_t savepc;
 
-  if (debug_symbolic)
-    printf3((uint64_t*) "%s: backtracking %s from exit code %d\n", exe_name, get_name(context), (uint64_t*) sign_extend(get_exit_code(context), SYSCALL_BITWIDTH));
+  if (debug_symbolic) {
+    printf("OUTPUT: backtracking from exit code \n");
+    // printf3((uint64_t*) "%s: backtracking %s from exit code %d\n", exe_name, get_name(context), (uint64_t*) sign_extend(get_exit_code(context), SYSCALL_BITWIDTH));
+  }
 
   symbolic = 0;
 

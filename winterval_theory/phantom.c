@@ -4,6 +4,7 @@
 // http://selfie.cs.uni-salzburg.at
 
 #include "sase.h"
+#include "msiiad.h"
 
 // -----------------------------------------------------------------
 // ----------------------- LIBRARY PROCEDURES ----------------------
@@ -373,6 +374,7 @@ uint64_t F3_ADDI  = 0; // 000
 uint64_t F3_ADD   = 0; // 000
 uint64_t F3_SUB   = 0; // 000
 uint64_t F3_MUL   = 0; // 000
+uint64_t F3_XOR   = 4; // 100
 uint64_t F3_DIVU  = 5; // 101
 uint64_t F3_REMU  = 7; // 111
 uint64_t F3_SLTU  = 3; // 011
@@ -389,6 +391,7 @@ uint64_t F7_SUB  = 32; // 0100000
 uint64_t F7_DIVU = 1;  // 0000001
 uint64_t F7_REMU = 1;  // 0000001
 uint64_t F7_SLTU = 0;  // 0000000
+uint64_t F7_XOR  = 0;  // 0000000
 
 // f12-codes (immediates)
 uint64_t F12_ECALL = 0; // 000000000000
@@ -452,6 +455,7 @@ uint64_t ic_sub   = 0;
 uint64_t ic_mul   = 0;
 uint64_t ic_divu  = 0;
 uint64_t ic_remu  = 0;
+uint64_t ic_xor   = 0;
 uint64_t ic_sltu  = 0;
 uint64_t ic_ld    = 0;
 uint64_t ic_sd    = 0;
@@ -492,6 +496,8 @@ void implement_brk(uint64_t* context);
 
 void implement_symbolic_input(uint64_t* context);
 
+void implement_printsv(uint64_t* context);
+
 // ------------------------ GLOBAL CONSTANTS -----------------------
 
 uint64_t debug_read  = 0;
@@ -505,6 +511,7 @@ uint64_t SYSCALL_WRITE = 64;
 uint64_t SYSCALL_OPEN  = 1024;
 uint64_t SYSCALL_BRK   = 214;
 uint64_t SYSCALL_SYMPOLIC_INPUT = 42;
+uint64_t SYSCALL_PRINTSV = 43;
 
 uint64_t symbolic_input_cnt = 0;
 
@@ -640,6 +647,10 @@ uint64_t fuzz_up(uint64_t value);
 // fuzzing
 
 uint64_t fuzz = 0; // power-of-two fuzzing factor for read calls
+
+uint64_t debug_symbolic = 0;
+uint64_t symbolic = 0;
+uint64_t backtrack = 0;
 
 // -----------------------------------------------------------------
 // -------------------------- INTERPRETER --------------------------
@@ -1860,6 +1871,7 @@ void reset_instruction_counters() {
   ic_mul   = 0;
   ic_divu  = 0;
   ic_remu  = 0;
+  ic_xor   = 0;
   ic_sltu  = 0;
   ic_ld    = 0;
   ic_sd    = 0;
@@ -1870,7 +1882,7 @@ void reset_instruction_counters() {
 }
 
 uint64_t get_total_number_of_instructions() {
-  return ic_lui + ic_addi + ic_add + ic_sub + ic_mul + ic_divu + ic_remu + ic_sltu + ic_ld + ic_sd + ic_beq + ic_jal + ic_jalr + ic_ecall;
+  return ic_lui + ic_addi + ic_add + ic_sub + ic_mul + ic_divu + ic_remu + ic_xor + ic_sltu + ic_ld + ic_sd + ic_beq + ic_jal + ic_jalr + ic_ecall;
 }
 
 void print_instruction_counter(uint64_t total, uint64_t counter, uint64_t* mnemonics) {
@@ -1908,6 +1920,8 @@ void print_instruction_counters() {
   print_instruction_counter(ic, ic_divu, (uint64_t*) "divu");
   print((uint64_t*) ", ");
   print_instruction_counter(ic, ic_remu, (uint64_t*) "remu");
+  print((uint64_t*) ", ");
+  print_instruction_counter(ic, ic_xor, (uint64_t*) "xor");
   println();
 
   printf1((uint64_t*) "%s: control: ", exe_name);
@@ -2296,9 +2310,9 @@ void implement_read(uint64_t* context) {
 
               if (mrcc == 0)
                 // no branching yet, we may overwrite symbolic memory
-                store_symbolic_memory(get_pt(context), vbuffer, value, 0, lo, up, 0);
+                store_symbolic_memory(get_pt(context), vbuffer, value, 0, lo, up, 1, 0, 0, 0, 0, 0, 0);
               else
-                store_symbolic_memory(get_pt(context), vbuffer, value, 0, lo, up, tc);
+                store_symbolic_memory(get_pt(context), vbuffer, value, 0, lo, up, 1, 0, 0, 0, 0, 0, tc);
             } else {
               actually_read = 0;
 
@@ -2351,7 +2365,7 @@ void implement_read(uint64_t* context) {
       else
         printf2((uint64_t*) "%s: big read in read syscall: %d\n", exe_name, (uint64_t*) *(get_regs(context) + REG_A0));
     } else {
-      *(reg_typ + REG_A0) = 0;
+      *(reg_data_typ + REG_A0) = 0;
 
       *(reg_los + REG_A0) = *(get_regs(context) + REG_A0);
       *(reg_ups + REG_A0) = *(get_regs(context) + REG_A0);
@@ -2370,6 +2384,18 @@ void implement_read(uint64_t* context) {
   }
 }
 
+void implement_printsv(uint64_t* context) {
+  uint64_t id;
+
+  id = *(get_regs(context) + REG_A0);
+
+  if (symbolic) {
+    printf("PRINTSV :=) id: %-2llu => lo: %-5llu,up: %-5llu,step: %-5llu\n", id, reg_los[REG_A1], reg_ups[REG_A1], reg_steps[REG_A1]);
+
+    set_pc(context, get_pc(context) + INSTRUCTIONSIZE);
+  }
+}
+
 void implement_symbolic_input(uint64_t* context) {
   uint64_t lo;
   uint64_t up;
@@ -2380,24 +2406,33 @@ void implement_symbolic_input(uint64_t* context) {
   up   = *(get_regs(context) + REG_A1);
   step = *(get_regs(context) + REG_A2);
 
-  if (sase_symbolic) {
-    printf("symbolic input: lo: %llu, up: %llu, step: %llu, cnt: %llu, tc: %llu\n", lo, up, step, symbolic_input_cnt, sase_tc);
+  if (symbolic) {
+    if (sase_symbolic) {
+      printf("symbolic input: lo: %llu, up: %llu, step: %llu, cnt: %llu, tc: %llu\n", lo, up, step, symbolic_input_cnt, sase_tc);
 
-    sprintf(var_buffer, "in_%llu", symbolic_input_cnt++);
-    in = boolector_var(btor, bv_sort, var_buffer);
-    // <= up
-    if (up < two_to_the_power_of_32)
-      boolector_assert(btor, boolector_ulte(btor, in, boolector_unsigned_int(btor, up, bv_sort)));
-    else
-      boolector_assert(btor, boolector_ulte(btor, in, boolector_unsigned_int_64(up)));
-    // >= lo
-    if (lo < two_to_the_power_of_32)
-      boolector_assert(btor, boolector_ugte(btor, in, boolector_unsigned_int(btor, lo, bv_sort)));
-    else
-      boolector_assert(btor, boolector_ugte(btor, in, boolector_unsigned_int_64(lo)));
+      sprintf(var_buffer, "in_%llu", symbolic_input_cnt++);
+      in = boolector_var(btor, bv_sort, var_buffer);
+      // <= up
+      if (up < two_to_the_power_of_32)
+        boolector_assert(btor, boolector_ulte(btor, in, boolector_unsigned_int(btor, up, bv_sort)));
+      else
+        boolector_assert(btor, boolector_ulte(btor, in, boolector_unsigned_int_64(up)));
+      // >= lo
+      if (lo < two_to_the_power_of_32)
+        boolector_assert(btor, boolector_ugte(btor, in, boolector_unsigned_int(btor, lo, bv_sort)));
+      else
+        boolector_assert(btor, boolector_ugte(btor, in, boolector_unsigned_int_64(lo)));
 
-    sase_regs[REG_A0]     = in;
-    sase_regs_typ[REG_A0] = SYMBOLIC_T;
+      sase_regs[REG_A0]     = in;
+      sase_regs_typ[REG_A0] = SYMBOLIC_T;
+
+    } else {
+      registers[REG_A0]    = lo;
+      reg_data_typ[REG_A0] = 0;
+      reg_los[REG_A0]      = lo;
+      reg_ups[REG_A0]      = up;
+      reg_steps[REG_A0]    = step;
+    }
 
     set_pc(context, get_pc(context) + INSTRUCTIONSIZE);
 
@@ -2504,7 +2539,7 @@ void implement_write(uint64_t* context) {
       else
         printf2((uint64_t*) "%s: big write in write syscall: %d\n", exe_name, (uint64_t*) *(get_regs(context) + REG_A0));
     } else {
-      *(reg_typ + REG_A0) = 0;
+      *(reg_data_typ + REG_A0) = 0;
 
       *(reg_los + REG_A0) = *(get_regs(context) + REG_A0);
       *(reg_ups + REG_A0) = *(get_regs(context) + REG_A0);
@@ -2539,7 +2574,7 @@ uint64_t down_load_string(uint64_t* table, uint64_t vaddr, uint64_t* s) {
 
             *(s + i) = *(values + mrvc);
 
-            if (is_symbolic_value(*(types + mrvc), *(los + mrvc), *(ups + mrvc))) {
+            if (is_symbolic_value(*(data_types + mrvc), *(los + mrvc), *(ups + mrvc))) {
               printf1((uint64_t*) "%s: detected symbolic value ", exe_name);
               print_symbolic_memory(mrvc);
               print((uint64_t*) " in filename of open call\n");
@@ -2624,7 +2659,7 @@ void implement_open(uint64_t* context) {
       // assert: *(get_regs(context) + REG_A0) < 2^32
       sase_regs[REG_A0] = boolector_unsigned_int(btor, *(get_regs(context) + REG_A0), bv_sort);
     } else {
-      *(reg_typ + REG_A0) = 0;
+      *(reg_data_typ + REG_A0) = 0;
 
       *(reg_los + REG_A0) = *(get_regs(context) + REG_A0);
       *(reg_ups + REG_A0) = *(get_regs(context) + REG_A0);
@@ -2682,7 +2717,7 @@ void implement_brk(uint64_t* context) {
         size = program_break - previous_program_break;
 
         // interval is memory range, not symbolic value
-        *(reg_typ + REG_A0) = 1;
+        *(reg_data_typ + REG_A0) = 1;
 
         // remember start and size of memory block for checking memory safety
         *(reg_los + REG_A0) = previous_program_break;
@@ -2691,7 +2726,7 @@ void implement_brk(uint64_t* context) {
         if (mrcc > 0) {
           if (is_trace_space_available())
             // since there has been branching record brk using vaddr == 0
-            store_symbolic_memory(get_pt(context), 0, previous_program_break, 1, previous_program_break, size, tc);
+            store_symbolic_memory(get_pt(context), 0, previous_program_break, 1, previous_program_break, size, 1, 0, 0, 0, 0, 0, tc);
           else {
             throw_exception(EXCEPTION_MAXTRACE, 0);
 
@@ -2724,7 +2759,7 @@ void implement_brk(uint64_t* context) {
       if (sase_symbolic) {
         sase_regs[REG_A0] = boolector_unsigned_int(btor, 0, bv_sort);
       } else {
-        *(reg_typ + REG_A0) = 0;
+        *(reg_data_typ + REG_A0) = 0;
 
         *(reg_los + REG_A0) = 0;
         *(reg_ups + REG_A0) = 0;
@@ -3540,6 +3575,21 @@ void decode_execute() {
 
         return;
       }
+    } else if (funct3 == F3_XOR) {
+      if (funct7 == F7_XOR) {
+        if (debug) {
+          if (symbolic) {
+            // if (sase_symbolic)
+            //   sase_xor();
+            // else
+              constrain_xor();
+          } else if (backtrack)
+            backtrack_sltu();
+        } else
+          do_xor();
+
+        return;
+      }
     }
   } else if (opcode == OP_BRANCH) {
     decode_b_format();
@@ -3932,7 +3982,7 @@ void map_and_store(uint64_t* context, uint64_t vaddr, uint64_t data) {
     if (sase_symbolic == 0) {
       if (is_trace_space_available())
         // always track initialized memory by using tc as most recent branch
-        store_symbolic_memory(get_pt(context), vaddr, data, 0, data, data, tc);
+        store_symbolic_memory(get_pt(context), vaddr, data, 0, data, data, 1, 0, 0, 0, 0, 0, tc);
       else {
         printf1((uint64_t*) "%s: ealloc out of memory\n", exe_name);
 
@@ -4076,7 +4126,7 @@ void up_load_arguments(uint64_t* context, uint64_t argc, uint64_t* argv) {
       // assert: SP < 2^32
       sase_regs[REG_SP] = boolector_unsigned_int(btor, SP, bv_sort);
     } else {
-      *(reg_typ + REG_SP) = 0;
+      *(reg_data_typ + REG_SP) = 0;
 
       *(reg_los + REG_SP) = SP;
       *(reg_ups + REG_SP) = SP;
@@ -4101,6 +4151,8 @@ uint64_t handle_system_call(uint64_t* context) {
     implement_open(context);
   else if (a7 == SYSCALL_SYMPOLIC_INPUT)
     implement_symbolic_input(context);
+  else if (a7 == SYSCALL_PRINTSV)
+    implement_printsv(context);
   else if (a7 == SYSCALL_EXIT) {
     implement_exit(context);
 
@@ -4234,16 +4286,20 @@ uint64_t engine(uint64_t* to_context) {
       } else {
         backtrack_trace(current_context);
 
-        if (b == 0)
-          printf1((uint64_t*) "%s: backtracking ", exe_name);
-        else
-          unprint_integer(b);
+        // if (b == 0)
+        //   printf1((uint64_t*) "%s: backtracking ", exe_name);
+        // else
+        //   unprint_integer(b);
 
         b = b + 1;
 
-        print_integer(b);
+        // print_integer(b);
 
         if (pc == 0) {
+          println();
+
+          printf1((uint64_t*) "%s: backtracking ", exe_name);
+          print_integer(b);
           println();
 
           return EXITCODE_NOERROR;
@@ -4263,11 +4319,18 @@ uint64_t selfie_run(uint64_t machine) {
     return EXITCODE_BADARGUMENTS;
   }
 
-  debug    = 1;
-  symbolic = 1;
-  sase_symbolic = 1;
+  if (machine == SASE) {
+    debug    = 1;
+    symbolic = 1;
+    sase_symbolic = 1;
 
-  init_sase();
+    init_sase();
+  } else if (machine == MSIIAD) {
+    debug    = 1;
+    symbolic = 1;
+
+    init_symbolic_engine();
+  }
 
   init_memory(round_up(4 * sase_trace_size * SIZEOFUINT64, MEGABYTE) / MEGABYTE + 1);
 
@@ -4288,6 +4351,7 @@ uint64_t selfie_run(uint64_t machine) {
   up_load_arguments(current_context, number_of_remaining_arguments(), remaining_arguments());
 
   printf3((uint64_t*) "%s: phantom executing %s with %dMB physical memory \n", exe_name, binary_name, (uint64_t*) (page_frame_memory / MEGABYTE));
+  println();
 
   exit_code = engine(current_context);
 
@@ -4370,6 +4434,8 @@ uint64_t main(uint64_t argc, uint64_t* argv) {
     option = get_argument();
     if (string_compare(option, (uint64_t*) "-k")) {
       return selfie_run(SASE);
+    } else if (string_compare(option, (uint64_t*) "-i")) {
+      return selfie_run(MSIIAD);
     } else {
       print_usage();
       return EXITCODE_BADARGUMENTS;
