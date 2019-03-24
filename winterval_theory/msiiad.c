@@ -166,20 +166,20 @@ bool add_sub_condition(uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t up2) {
     return 0;
 }
 
-uint64_t mul_condition(uint64_t lo, uint64_t up, uint64_t k) {
+bool mul_condition(uint64_t lo, uint64_t up, uint64_t k) {
   uint64_t c1;
   uint64_t c2;
 
   if (k == 0)
-    return 0;
+    return true;
 
   c1 = up - lo;
   c2 = UINT64_MAX_T / k;
 
   if (c1 <= c2)
-    return 0;
+    return true;
 
-  return 1;
+  return false;
 }
 
 int remu_condition(uint64_t lo, uint64_t up, uint64_t step, uint64_t k) {
@@ -319,7 +319,7 @@ void constrain_add() {
       if (reg_symb_typ[rs2] == SYMBOLIC) {
         // we cannot keep track of more than one constraint for add but
         // need to warn about their earlier presence if used in comparisons
-        set_constraint(rd, SYMBOLIC, 0, 0);
+        set_constraint(rd, SYMBOLIC, reg_vaddr[rs1], 0);
         set_correction(rd, 0, 0, 10);
 
         // interval semantics of add
@@ -450,7 +450,7 @@ void constrain_sub() {
       if (reg_symb_typ[rs2] == SYMBOLIC) {
         // we cannot keep track of more than one constraint for sub but
         // need to warn about their earlier presence if used in comparisons
-        set_constraint(rd, SYMBOLIC, 0, 0);
+        set_constraint(rd, SYMBOLIC, reg_vaddr[rs1], 0);
         set_correction(rd, 0, 0, 10);
 
         uint64_t gcd_steps = gcd(reg_steps[rs1], reg_steps[rs2]);
@@ -536,9 +536,9 @@ void constrain_mul() {
 
         bool cnd = mul_condition(reg_los[rs1], reg_ups[rs1], reg_los[rs2]);
         if (cnd == true) {
+          reg_steps[rd] = reg_steps[rs1] * reg_los[rs2];
           reg_los[rd]   = mul_lo;
           reg_ups[rd]   = mul_up;
-          reg_steps[rd] = reg_steps[rs1] * reg_los[rs2];
         } else {
           // TODO: make sure
           uint64_t rhs = (lcm(TWO_TO_THE_POWER_OF_32, reg_los[rs2] * reg_steps[rs1]) - reg_los[rs2] * reg_steps[rs1]) / reg_los[rs2];
@@ -550,7 +550,7 @@ void constrain_mul() {
             reg_steps[rd] = gcd_step_k;
             reg_corr_validity[rs1] += REMU_T;
           } else {
-            printf("OUTPUT: phantom canot reason about overflowed mul %x \n", pc - entry_point);
+            printf("OUTPUT: phantom canot reason about overflowed mul at %x \n", pc - entry_point);
             exit(EXITCODE_SYMBOLICEXECUTIONERROR);
           }
         }
@@ -558,7 +558,7 @@ void constrain_mul() {
     } else if (reg_symb_typ[rs2] == SYMBOLIC) {
       if (reg_hasmn[rs2]) {
         // correction does not work anymore
-        printf("correction does not work anymore at e.g. 10 * (1 - [.]) %x \n", pc);
+        printf("correction does not work anymore e.g. 10 * (1 - [.]) at %x \n", pc);
         exit(EXITCODE_SYMBOLICEXECUTIONERROR);
 
       } else {
@@ -569,9 +569,9 @@ void constrain_mul() {
 
         bool cnd = mul_condition(reg_los[rs2], reg_ups[rs2], reg_los[rs1]);
         if (cnd == true) {
+          reg_steps[rd] = reg_steps[rs2] * reg_los[rs1];
           reg_los[rd]   = mul_lo;
           reg_ups[rd]   = mul_up;
-          reg_steps[rd] = reg_steps[rs2] * reg_los[rs1];
         } else {
           // TODO: make sure
           uint64_t rhs = (lcm(TWO_TO_THE_POWER_OF_32, reg_los[rs1] * reg_steps[rs2]) - reg_los[rs1] * reg_steps[rs2]) / reg_los[rs1];
@@ -583,7 +583,7 @@ void constrain_mul() {
             reg_steps[rd] = gcd_step_k;
             reg_corr_validity[rs2] += REMU_T;
           } else {
-            printf("OUTPUT: phantom canot reason about overflowed mul %x \n", pc - entry_point);
+            printf("OUTPUT: phantom canot reason about overflowed mul at %x \n", pc - entry_point);
             exit(EXITCODE_SYMBOLICEXECUTIONERROR);
           }
         }
@@ -1426,12 +1426,9 @@ uint64_t reverse_division_up(uint64_t ups_mrvc, uint64_t up, uint64_t codiv) {
 // mrvc is mrvc of x
 // lo_before_op is previouse lo of y
 void apply_correction(uint64_t lo, uint64_t up, bool hasmn, uint64_t addsub_corr, uint64_t muldivrem_corr, uint64_t corr_validity, uint64_t lo_before_op, uint64_t step, uint64_t mrvc) {
-  printf("1: %llu, %llu, %llu\n", lo, up, step);
 
   lo = compute_lower_bound(lo_before_op, step, lo);
   up = compute_upper_bound(lo_before_op, step, up);
-
-  printf("2: %llu, %llu, %llu\n", lo, up, step);
 
   // add, sub
   if (hasmn) {
@@ -1442,8 +1439,6 @@ void apply_correction(uint64_t lo, uint64_t up, bool hasmn, uint64_t addsub_corr
     lo = lo - addsub_corr;
     up = up - addsub_corr;
   }
-
-  printf("3: %llu, %llu, %llu\n", lo, up, step);
 
   // mul, div, rem
   if (corr_validity == MUL_T && muldivrem_corr != 0) { // muldivrem_corr == 0 when (x + 1)
@@ -1504,16 +1499,10 @@ void apply_correction(uint64_t lo, uint64_t up, bool hasmn, uint64_t addsub_corr
     }
 
   } else if (corr_validity == REMU_T) {
-    // if (*(rem_typ + reg) == 1) {
-    //   operator = *(rem + reg);
-    //   lo = computeLowerBound(*(los + mrvc), *(steps + mrvc), (*(los + mrvc) / operator) * operator + lo);
-    //   up = computeUpperBound(*(los + mrvc), *(steps + mrvc), (*(ups + mrvc) / operator) * operator + up);
-    // } else {
-    //   printf("OUTPUT: detected an unsupported remu in a conditional expression at %x \n", );
-    //   exit(EXITCODE_SYMBOLICEXECUTIONERROR);
-    // }
+    printf("OUTPUT: detected an unsupported remu in a conditional expression at %x\n", pc - entry_point);
+    exit(EXITCODE_SYMBOLICEXECUTIONERROR);
   } else if (corr_validity > 5) {
-    printf("OUTPUT: detected an unsupported conditional expression at \n", pc - entry_point);
+    printf("OUTPUT: detected an unsupported conditional expression at %x\n", pc - entry_point);
     exit(EXITCODE_SYMBOLICEXECUTIONERROR);
   }
 
@@ -1800,7 +1789,6 @@ void create_constraints(uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t up2, 
     }
   } else if (lo2 <= up2) {
     // rs2 interval is not wrapped around but rs1 is
-    printf("right palce\n");
     if (up1 < lo2 && up2 <= lo1) {
       // false case
       constrain_memory(rs1, lo1, UINT64_MAX_T, trb, false);
