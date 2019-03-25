@@ -2310,9 +2310,9 @@ void implement_read(uint64_t* context) {
 
               if (mrcc == 0)
                 // no branching yet, we may overwrite symbolic memory
-                store_symbolic_memory(get_pt(context), vbuffer, value, 0, lo, up, 1, 0, 0, 0, 0, 0, 0);
+                store_symbolic_memory(get_pt(context), vbuffer, value, 0, lo, up, 1, 0, 0, 0, 0, 0, 0, 0);
               else
-                store_symbolic_memory(get_pt(context), vbuffer, value, 0, lo, up, 1, 0, 0, 0, 0, 0, tc);
+                store_symbolic_memory(get_pt(context), vbuffer, value, 0, lo, up, 1, 0, 0, 0, 0, 0, tc, 0);
             } else {
               actually_read = 0;
 
@@ -2390,7 +2390,7 @@ void implement_printsv(uint64_t* context) {
   id = *(get_regs(context) + REG_A0);
 
   if (symbolic) {
-    printf("PRINTSV :=) id: %-2llu => lo: %-5llu,up: %-5llu,step: %-5llu\n", id, reg_los[REG_A1], reg_ups[REG_A1], reg_steps[REG_A1]);
+    printf("PRINTSV :=) id: %-2llu, vaddr: %-10llu => lo: %-5llu,up: %-5llu,step: %-5llu\n", id, ld_froms[load_symbolic_memory(get_pt(context), reg_vaddr[REG_A1])], reg_los[REG_A1], reg_ups[REG_A1], reg_steps[REG_A1]);
 
     set_pc(context, get_pc(context) + INSTRUCTIONSIZE);
   }
@@ -2430,7 +2430,7 @@ void implement_symbolic_input(uint64_t* context) {
       registers[REG_A0]    = lo;
       reg_data_typ[REG_A0] = 0;
       reg_los[REG_A0]      = lo;
-      reg_ups[REG_A0]      = up;
+      reg_ups[REG_A0]      = compute_upper_bound(lo, step, up);
       reg_steps[REG_A0]    = step;
     }
 
@@ -2726,7 +2726,7 @@ void implement_brk(uint64_t* context) {
         if (mrcc > 0) {
           if (is_trace_space_available())
             // since there has been branching record brk using vaddr == 0
-            store_symbolic_memory(get_pt(context), 0, previous_program_break, 1, previous_program_break, size, 1, 0, 0, 0, 0, 0, tc);
+            store_symbolic_memory(get_pt(context), 0, previous_program_break, 1, previous_program_break, size, 1, 0, 0, 0, 0, 0, tc, 0);
           else {
             throw_exception(EXCEPTION_MAXTRACE, 0);
 
@@ -3982,7 +3982,7 @@ void map_and_store(uint64_t* context, uint64_t vaddr, uint64_t data) {
     if (sase_symbolic == 0) {
       if (is_trace_space_available())
         // always track initialized memory by using tc as most recent branch
-        store_symbolic_memory(get_pt(context), vaddr, data, 0, data, data, 1, 0, 0, 0, 0, 0, tc);
+        store_symbolic_memory(get_pt(context), vaddr, data, 0, data, data, 1, 0, 0, 0, 0, 0, tc, 0);
       else {
         printf1((uint64_t*) "%s: ealloc out of memory\n", exe_name);
 

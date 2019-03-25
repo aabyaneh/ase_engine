@@ -83,6 +83,7 @@ extern uint64_t* read_values;
 extern uint64_t* read_los;
 extern uint64_t* read_ups;
 
+extern uint64_t* reg_vaddr;
 extern uint64_t* reg_los;
 extern uint64_t* reg_ups;
 extern uint64_t* reg_steps;
@@ -92,6 +93,7 @@ extern uint64_t* values;
 extern uint64_t* data_types;
 extern uint64_t* los;
 extern uint64_t* ups;
+extern uint64_t* ld_froms;
 
 extern uint64_t mrcc;
 
@@ -125,7 +127,6 @@ void do_xor();
 void backtrack_sltu();
 void backtrack_sd();
 void backtrack_ecall();
-
 void backtrack_trace(uint64_t* context);
 
 void init_symbolic_engine();
@@ -141,16 +142,22 @@ uint64_t is_trace_space_available();
 void ealloc();
 void efree();
 
-void store_symbolic_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, uint8_t data_type, uint64_t lo, uint64_t up, uint64_t step, uint64_t ld_from, bool hasmn, uint64_t addsub_corr, uint64_t muldivrem_corr, uint64_t corr_validity, uint64_t trb);
+void store_symbolic_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, uint8_t data_type, uint64_t lo, uint64_t up, uint64_t step, uint64_t ld_from, bool hasmn, uint64_t addsub_corr, uint64_t muldivrem_corr, uint64_t corr_validity, uint64_t trb, uint64_t from_tc);
 
-void store_constrained_memory(uint64_t vaddr, uint64_t lo, uint64_t up, uint64_t step, uint64_t ld_from, bool hasmn, uint64_t addsub_corr, uint64_t muldivrem_corr, uint64_t corr_validity);
+void store_constrained_memory(uint64_t vaddr, uint64_t lo, uint64_t up, uint64_t step, uint64_t ld_from, bool hasmn, uint64_t addsub_corr, uint64_t muldivrem_corr, uint64_t corr_validity, uint64_t to_tc);
 void store_register_memory(uint64_t reg, uint64_t value);
 
 void constrain_memory(uint64_t reg, uint64_t lo, uint64_t up, uint64_t trb, bool only_reachable_branch);
 void propagate_backwards(uint64_t vaddr, uint64_t lo_before_op);
+void propagate_mul(uint64_t step, uint64_t k);
+void propagate_divu(uint64_t step, uint64_t k, uint64_t step_rd);
+void propagate_remu(uint64_t step, uint64_t divisor);
+void propagate_backwards_rhs(uint64_t lo, uint64_t up, uint64_t mrvc);
 
 void set_constraint(uint64_t reg, uint64_t hasco, uint64_t vaddr, uint64_t hasmn);
 void set_correction(uint64_t reg, uint64_t addsub_corr, uint64_t muldivrem_corr, uint64_t corr_validity);
 
 void take_branch(uint64_t b, uint64_t how_many_more);
 void create_constraints(uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t up2, uint64_t trb);
+
+uint64_t compute_upper_bound(uint64_t lo, uint64_t step, uint64_t value);
