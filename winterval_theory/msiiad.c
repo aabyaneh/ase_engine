@@ -22,7 +22,11 @@ uint64_t* muldivrem_corrs = (uint64_t*) 0;
 uint64_t* corr_validitys  = (uint64_t*) 0;
 bool*     hasmns          = (bool*) 0;
 
+uint64_t* mr_sds          = (uint64_t*) 0;
+uint64_t* ld_froms_tc     = (uint64_t*) 0;
+
 uint64_t* sd_to_idxs      = (uint64_t*) 0;
+uint64_t  MAX_SD_TO_NUM   = 10;
 struct sd_to_tc {
   uint64_t tc[10];
 } *sd_tos;
@@ -86,7 +90,10 @@ void init_symbolic_engine() {
   corr_validitys     = malloc(MAX_TRACE_LENGTH  * SIZEOFUINT64);
   hasmns             = malloc(MAX_TRACE_LENGTH  * SIZEOFUINT64);
 
-  sd_to_idxs         = zalloc(MAX_TRACE_LENGTH  * SIZEOFUINT64);
+  ld_froms_tc        = malloc(MAX_TRACE_LENGTH  * SIZEOFUINT64);
+  mr_sds             = malloc(MAX_TRACE_LENGTH  * SIZEOFUINT64);
+
+  sd_to_idxs         = malloc(MAX_TRACE_LENGTH  * SIZEOFUINT64);
   sd_tos             = malloc(MAX_TRACE_LENGTH  * sizeof(struct sd_to_tc));
 
   read_values        = malloc(MAX_TRACE_LENGTH  * SIZEOFUINT64);
@@ -112,10 +119,14 @@ void init_symbolic_engine() {
   ups[0]             = 0;
   steps[0]           = 0;
   vaddrs[0]          = 0;
+  ld_froms[0]        = 0;
   addsub_corrs[0]    = 0;
   muldivrem_corrs[0] = 0;
   corr_validitys[0]  = 0;
   hasmns[0]          = 0;
+  ld_froms_tc[0]     = 0;
+  mr_sds[0]          = 0;
+  sd_to_idxs[0]      = 0;
 
   TWO_TO_THE_POWER_OF_32 = two_to_the_power_of(32);
 }
@@ -243,10 +254,9 @@ void constrain_addi() {
 
   if (reg_data_typ[rs1] == POINTER_T) {
     reg_data_typ[rd] = reg_data_typ[rs1];
-
-    reg_los[rd]   = reg_los[rs1];
-    reg_ups[rd]   = reg_ups[rs1];
-    reg_steps[rd] = reg_steps[rs1];
+    reg_los[rd]      = reg_los[rs1];
+    reg_ups[rd]      = reg_ups[rs1];
+    reg_steps[rd]    = 1;
 
     // rd has no constraint if rs1 is memory range
     set_constraint(rd, 0, 0, 0);
@@ -260,7 +270,6 @@ void constrain_addi() {
   // interval semantics of addi
   reg_los[rd]   = reg_los[rs1] + imm;
   reg_ups[rd]   = reg_ups[rs1] + imm;
-  reg_steps[rd] = reg_steps[rs1];
 
   if (reg_symb_typ[rs1] == SYMBOLIC) {
       // rd inherits rs1 constraint
@@ -268,10 +277,14 @@ void constrain_addi() {
       set_correction(rd, reg_addsub_corr[rs1] + imm, reg_muldivrem_corr[rs1],
         (reg_corr_validity[rs1] == 0) ? MUL_T : reg_corr_validity[rs1]);
 
+      reg_steps[rd] = reg_steps[rs1];
+
   } else {
     // rd has no constraint if rs1 has none
     set_constraint(rd, 0, 0, 0);
     set_correction(rd, 0, 0, 0);
+
+    reg_steps[rd] = 1;
   }
 }
 
@@ -1166,7 +1179,7 @@ uint64_t constrain_ld() {
           set_constraint(rd, SYMBOLIC, vaddr, 0);
           set_correction(rd, 0, 0, 0);
         } else {
-          set_constraint(rd, CONCRETE, vaddr, 0);
+          set_constraint(rd, CONCRETE, 0, 0);
           set_correction(rd, 0, 0, 0);
         }
       }
@@ -1183,8 +1196,9 @@ uint64_t constrain_ld() {
       *(loads_per_instruction + a) = *(loads_per_instruction + a) + 1;
     } else
       throw_exception(EXCEPTION_PAGEFAULT, get_page_of_virtual_address(vaddr));
-  } else
+  } else {
     throw_exception(EXCEPTION_INVALIDADDRESS, vaddr);
+  }
 
   return vaddr;
 }
@@ -1201,6 +1215,7 @@ uint64_t constrain_sd() {
     if (is_virtual_address_mapped(pt, vaddr)) {
       // interval semantics of sd
 
+      // printf("%llu, %llu\n", reg_los[rs2], reg_ups[rs2]);
       store_symbolic_memory(pt, vaddr, registers[rs2], reg_data_typ[rs2], reg_los[rs2], reg_ups[rs2], reg_steps[rs2], reg_vaddr[rs2], reg_hasmn[rs2], reg_addsub_corr[rs2], reg_muldivrem_corr[rs2], reg_corr_validity[rs2], mrcc, 0);
 
       // keep track of instruction address for profiling stores
@@ -1215,8 +1230,9 @@ uint64_t constrain_sd() {
       *(stores_per_instruction + a) = *(stores_per_instruction + a) + 1;
     } else
       throw_exception(EXCEPTION_PAGEFAULT, get_page_of_virtual_address(vaddr));
-  } else
+  } else {
     throw_exception(EXCEPTION_INVALIDADDRESS, vaddr);
+  }
 
   return vaddr;
 }
@@ -1267,7 +1283,7 @@ uint64_t is_symbolic_value(uint64_t type, uint64_t lo, uint64_t up) {
 }
 
 uint64_t is_safe_address(uint64_t vaddr, uint64_t reg) {
-  if (*(reg_data_typ + reg)) {
+  if (*(reg_data_typ + reg) == POINTER_T) {
     if (vaddr < *(reg_los + reg))
       // memory access below start address of mallocated block
       return 0;
@@ -1312,7 +1328,7 @@ void efree() {
   tc = tc - 1;
 }
 
-void store_symbolic_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, uint8_t data_type, uint64_t lo, uint64_t up, uint64_t step, uint64_t ld_from, bool hasmn, uint64_t addsub_corr, uint64_t muldivrem_corr, uint64_t corr_validity, uint64_t trb, uint64_t from_tc) {
+void store_symbolic_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, uint8_t data_type, uint64_t lo, uint64_t up, uint64_t step, uint64_t ld_from, bool hasmn, uint64_t addsub_corr, uint64_t muldivrem_corr, uint64_t corr_validity, uint64_t trb, uint64_t to_tc) {
   uint64_t mrvc;
   uint64_t idx;
 
@@ -1395,15 +1411,26 @@ void store_symbolic_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, uint8_t
     *(muldivrem_corrs + tc) = muldivrem_corr;
     *(corr_validitys  + tc) = corr_validity;
 
-    if (from_tc == 0) { // means SD instrs
-      if (ld_from != 0) {
+    if (to_tc == 0) { // means SD instrs
+      if (ld_from != 0 && reg_symb_typ[rs2] == SYMBOLIC) {
         idx = load_symbolic_memory(pt, ld_from);
-        sd_tos[idx].tc[sd_to_idxs[idx]++] = tc;
+        ld_froms_tc[tc] = idx;
+        if (sd_to_idxs[idx] < MAX_SD_TO_NUM)
+          sd_tos[idx].tc[sd_to_idxs[idx]++] = tc;
+        else {
+          printf("OUTPUT: maximum number of possible sd_to is reached at %x\n", pc - entry_point);
+          exit(EXITCODE_SYMBOLICEXECUTIONERROR);
+        }
+      } else {
+        ld_froms_tc[tc] = 0;
       }
-      sd_to_idxs[tc] = 0;
+      sd_to_idxs[tc]  = 0;
+      mr_sds[tc]      = tc;
     } else {
-      sd_to_idxs[tc] = sd_to_idxs[from_tc];
-      memcpy(sd_tos[tc].tc, sd_tos[from_tc].tc, sizeof(struct sd_to_tc));
+      sd_to_idxs[tc] = sd_to_idxs[to_tc];
+      memcpy(sd_tos[tc].tc, sd_tos[to_tc].tc, sizeof(struct sd_to_tc));
+      mr_sds[tc]     = mr_sds[mrvc];
+      ld_froms_tc[tc] = ld_froms_tc[mrvc];
     }
 
     if (vaddr < NUMBEROFREGISTERS) {
@@ -1604,6 +1631,9 @@ void propagate_backwards(uint64_t vaddr, uint64_t lo_before_op) {
 
   mrvc_y = load_symbolic_memory(pt, vaddr);
   mrvc_x = load_symbolic_memory(pt, ld_froms[mrvc_y]);
+  if (mr_sds[mrvc_x] > ld_froms_tc[mrvc_y]) {
+    return;
+  }
   apply_correction(los[mrvc_y], ups[mrvc_y], hasmns[mrvc_y], addsub_corrs[mrvc_y], muldivrem_corrs[mrvc_y], corr_validitys[mrvc_y], lo_before_op, steps[mrvc_y], mrvc_x);
 }
 

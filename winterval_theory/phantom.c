@@ -2386,11 +2386,13 @@ void implement_read(uint64_t* context) {
 
 void implement_printsv(uint64_t* context) {
   uint64_t id;
+  uint64_t addr;
 
-  id = *(get_regs(context) + REG_A0);
+  id   = *(get_regs(context) + REG_A0);
+  addr = (reg_vaddr[REG_A1] != 0) ? ld_froms[load_symbolic_memory(get_pt(context), reg_vaddr[REG_A1])] : 0;
 
   if (symbolic) {
-    printf("PRINTSV :=) id: %-2llu, vaddr: %-10llu => lo: %-5llu,up: %-5llu,step: %-5llu\n", id, ld_froms[load_symbolic_memory(get_pt(context), reg_vaddr[REG_A1])], reg_los[REG_A1], reg_ups[REG_A1], reg_steps[REG_A1]);
+    printf("PRINTSV :=) id: %-3llu, vaddr: %-10llu => lo: %-5llu,up: %-5llu,step: %-5llu\n", id, addr, reg_los[REG_A1], reg_ups[REG_A1], reg_steps[REG_A1]);
 
     set_pc(context, get_pc(context) + INSTRUCTIONSIZE);
   }
@@ -2432,6 +2434,7 @@ void implement_symbolic_input(uint64_t* context) {
       reg_los[REG_A0]      = lo;
       reg_ups[REG_A0]      = compute_upper_bound(lo, step, up);
       reg_steps[REG_A0]    = step;
+      reg_vaddr[REG_A0]    = 0;
     }
 
     set_pc(context, get_pc(context) + INSTRUCTIONSIZE);
@@ -2717,11 +2720,12 @@ void implement_brk(uint64_t* context) {
         size = program_break - previous_program_break;
 
         // interval is memory range, not symbolic value
-        *(reg_data_typ + REG_A0) = 1;
-
+        *(reg_data_typ + REG_A0)      = 1;
+        *(get_regs(context) + REG_A0) = previous_program_break;
         // remember start and size of memory block for checking memory safety
-        *(reg_los + REG_A0) = previous_program_break;
-        *(reg_ups + REG_A0) = size;
+        *(reg_los   + REG_A0)         = previous_program_break;
+        *(reg_ups   + REG_A0)         = size;
+        *(reg_steps + REG_A0)         = 1;
 
         if (mrcc > 0) {
           if (is_trace_space_available())
@@ -2761,8 +2765,9 @@ void implement_brk(uint64_t* context) {
       } else {
         *(reg_data_typ + REG_A0) = 0;
 
-        *(reg_los + REG_A0) = 0;
-        *(reg_ups + REG_A0) = 0;
+        *(reg_los   + REG_A0) = 0;
+        *(reg_ups   + REG_A0) = 0;
+        *(reg_steps + REG_A0) = 1;
       }
     }
   }
@@ -3099,8 +3104,9 @@ uint64_t do_ld() {
       *(loads_per_instruction + a) = *(loads_per_instruction + a) + 1;
     } else
       throw_exception(EXCEPTION_PAGEFAULT, get_page_of_virtual_address(vaddr));
-  } else
+  } else {
     throw_exception(EXCEPTION_INVALIDADDRESS, vaddr);
+  }
 
   return vaddr;
 }
@@ -3166,8 +3172,9 @@ uint64_t do_sd() {
       *(stores_per_instruction + a) = *(stores_per_instruction + a) + 1;
     } else
       throw_exception(EXCEPTION_PAGEFAULT, get_page_of_virtual_address(vaddr));
-  } else
+  } else {
     throw_exception(EXCEPTION_INVALIDADDRESS, vaddr);
+  }
 
   return vaddr;
 }
