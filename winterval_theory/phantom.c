@@ -2720,12 +2720,18 @@ void implement_brk(uint64_t* context) {
         size = program_break - previous_program_break;
 
         // interval is memory range, not symbolic value
-        *(reg_data_typ + REG_A0)      = 1;
+        *(reg_data_typ + REG_A0)      = POINTER_T;
         *(get_regs(context) + REG_A0) = previous_program_break;
         // remember start and size of memory block for checking memory safety
         *(reg_los   + REG_A0)         = previous_program_break;
         *(reg_ups   + REG_A0)         = size;
         *(reg_steps + REG_A0)         = 1;
+        *(reg_vaddr + REG_A0)         = 0;
+        reg_symb_typ[REG_A0]          = SYMBOLIC;
+        reg_hasmn[REG_A0]             = 0;
+        reg_addsub_corr[REG_A0]       = 0;
+        reg_muldivrem_corr[REG_A0]    = 0;
+        reg_corr_validity[REG_A0]     = 0;
 
         if (mrcc > 0) {
           if (is_trace_space_available())
@@ -2763,11 +2769,16 @@ void implement_brk(uint64_t* context) {
       if (sase_symbolic) {
         sase_regs[REG_A0] = boolector_unsigned_int(btor, 0, bv_sort);
       } else {
-        *(reg_data_typ + REG_A0) = 0;
-
-        *(reg_los   + REG_A0) = 0;
-        *(reg_ups   + REG_A0) = 0;
-        *(reg_steps + REG_A0) = 1;
+        *(reg_data_typ + REG_A0) = VALUE_T;
+        *(reg_los   + REG_A0)    = 0;
+        *(reg_ups   + REG_A0)    = 0;
+        *(reg_steps + REG_A0)    = 1;
+        *(reg_vaddr + REG_A0)    = 0;
+        reg_symb_typ[REG_A0]       = CONCRETE;
+        reg_hasmn[REG_A0]          = 0;
+        reg_addsub_corr[REG_A0]    = 0;
+        reg_muldivrem_corr[REG_A0] = 0;
+        reg_corr_validity[REG_A0]  = 0;
       }
     }
   }
@@ -4332,14 +4343,14 @@ uint64_t selfie_run(uint64_t machine) {
     sase_symbolic = 1;
 
     init_sase();
+    init_memory(round_up(4 * sase_trace_size * SIZEOFUINT64, MEGABYTE) / MEGABYTE + 1);
   } else if (machine == MSIIAD) {
     debug    = 1;
     symbolic = 1;
 
     init_symbolic_engine();
+    init_memory(round_up(4 * MAX_TRACE_LENGTH * SIZEOFUINT64, MEGABYTE) / MEGABYTE + 1);
   }
-
-  init_memory(round_up(4 * sase_trace_size * SIZEOFUINT64, MEGABYTE) / MEGABYTE + 1);
 
   fuzz = atoi(peek_argument());
 

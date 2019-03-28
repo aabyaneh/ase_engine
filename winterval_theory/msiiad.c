@@ -3,7 +3,7 @@
 // ------------------------ GLOBAL VARIABLES -----------------------
 
 uint64_t MSIIAD = 9;
-uint64_t MAX_TRACE_LENGTH = 1000000;
+uint64_t MAX_TRACE_LENGTH = 10000000;
 uint64_t TWO_TO_THE_POWER_OF_32;
 
 // trace
@@ -26,9 +26,9 @@ uint64_t* mr_sds          = (uint64_t*) 0;
 uint64_t* ld_froms_tc     = (uint64_t*) 0;
 
 uint64_t* sd_to_idxs      = (uint64_t*) 0;
-uint64_t  MAX_SD_TO_NUM   = 10;
+uint64_t  MAX_SD_TO_NUM   = 100;
 struct sd_to_tc {
-  uint64_t tc[10];
+  uint64_t tc[100];
 } *sd_tos;
 uint64_t lo_prop;
 uint64_t up_prop;
@@ -2078,10 +2078,10 @@ void backtrack_trace(uint64_t* context) {
   while (backtrack) {
     pc = *(pcs + tc);
 
-    if (pc == 0)
+    if (pc == 0) {
       // we have backtracked all code back to the data segment
       backtrack = 0;
-    else {
+    } else {
       savepc = pc;
 
       fetch();

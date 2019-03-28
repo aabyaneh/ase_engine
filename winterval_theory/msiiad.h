@@ -73,6 +73,7 @@ uint64_t get_bits(uint64_t n, uint64_t i, uint64_t b);
 
 // ---------------------------- SYMBOLIC----------------------------
 extern uint64_t MSIIAD;
+extern uint64_t MAX_TRACE_LENGTH;
 
 extern uint64_t debug_symbolic;
 extern uint64_t symbolic;
@@ -88,6 +89,17 @@ extern uint64_t* reg_los;
 extern uint64_t* reg_ups;
 extern uint64_t* reg_steps;
 extern uint8_t*  reg_data_typ;
+extern uint8_t   VALUE_T;
+extern uint8_t   POINTER_T;
+extern uint8_t*  reg_symb_typ;
+extern uint8_t   CONCRETE;
+extern uint8_t   SYMBOLIC_CONCRETE;
+extern uint8_t   SYMBOLIC;
+extern uint64_t* reg_vaddr;
+extern bool*     reg_hasmn;
+extern uint64_t* reg_addsub_corr;
+extern uint64_t* reg_muldivrem_corr;
+extern uint64_t* reg_corr_validity;
 
 extern uint64_t* values;
 extern uint64_t* data_types;
