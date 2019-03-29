@@ -850,6 +850,9 @@ void emit_open();
 void emit_malloc();
 void emit_symbolic_input();
 void emit_printsv();
+void emit_assert();
+void emit_assert_begin();
+void emit_assert_end();
 
 // ------------------------ GLOBAL CONSTANTS -----------------------
 
@@ -861,6 +864,10 @@ uint64_t SYSCALL_BRK     = 214;
 
 uint64_t SYSCALL_SYMBOLIC_INPUT = 42;
 uint64_t SYSCALL_PRINTSV        = 43;
+
+uint64_t SYSCALL_ASSERT_ZONE_BGN = 44;
+uint64_t SYSCALL_ASSERT          = 45;
+uint64_t SYSCALL_ASSERT_ZONE_END = 46;
 
 // -----------------------------------------------------------------
 // ----------------------- HYPSTER SYSCALLS ------------------------
@@ -4130,6 +4137,9 @@ void selfie_compile() {
   emit_switch();
   emit_symbolic_input();
   emit_printsv();
+  emit_assert_begin();
+  emit_assert_end();
+  emit_assert();
 
   // implicitly declare main procedure in global symbol table
   // copy "main" string into zeroed double word to obtain unique hash
@@ -5028,6 +5038,39 @@ void emit_printsv() {
   emit_addi(REG_SP, REG_SP, REGISTERSIZE);
 
   emit_addi(REG_A7, REG_ZR, SYSCALL_PRINTSV);
+
+  emit_ecall();
+
+  emit_jalr(REG_ZR, REG_RA, 0);
+}
+
+void emit_assert() {
+  create_symbol_table_entry(LIBRARY_TABLE, (uint64_t*) "assert", 0, PROCEDURE, UINT64_T, 0, binary_length);
+
+  emit_ld(REG_A0, REG_SP, 0);
+  emit_addi(REG_SP, REG_SP, REGISTERSIZE);
+
+  emit_addi(REG_A7, REG_ZR, SYSCALL_ASSERT);
+
+  emit_ecall();
+
+  emit_jalr(REG_ZR, REG_RA, 0);
+}
+
+void emit_assert_begin() {
+  create_symbol_table_entry(LIBRARY_TABLE, (uint64_t*) "assert_begin", 0, PROCEDURE, UINT64_T, 0, binary_length);
+
+  emit_addi(REG_A7, REG_ZR, SYSCALL_ASSERT_ZONE_BGN);
+
+  emit_ecall();
+
+  emit_jalr(REG_ZR, REG_RA, 0);
+}
+
+void emit_assert_end() {
+  create_symbol_table_entry(LIBRARY_TABLE, (uint64_t*) "assert_end", 0, PROCEDURE, UINT64_T, 0, binary_length);
+
+  emit_addi(REG_A7, REG_ZR, SYSCALL_ASSERT_ZONE_END);
 
   emit_ecall();
 
