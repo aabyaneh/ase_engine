@@ -22,6 +22,7 @@ extern uint64_t EXCEPTION_PAGEFAULT;
 extern uint64_t EXCEPTION_INVALIDADDRESS;
 extern uint64_t EXITCODE_SYMBOLICEXECUTIONERROR;
 extern uint64_t F3_ADD;
+extern uint64_t F3_XOR;
 extern uint64_t F7_SUB;
 extern uint64_t OP_IMM;
 extern uint64_t OP_OP;
@@ -74,6 +75,8 @@ uint64_t get_bits(uint64_t n, uint64_t i, uint64_t b);
 // ---------------------------- SYMBOLIC----------------------------
 extern uint64_t MSIIAD;
 extern uint64_t MAX_TRACE_LENGTH;
+extern bool     is_only_one_branch_reachable;
+extern bool     assert_zone;
 
 extern uint64_t debug_symbolic;
 extern uint64_t symbolic;

@@ -69,9 +69,16 @@ uint64_t current_rs2_tc = 0;
 
 uint64_t mrcc = 0;
 
-// ==, != detection
-bool ne_detected = false;
-bool eq_detected = false;
+// ==, !=, <, <=, >= detection
+uint8_t  detected_conditional = 0;
+uint8_t  LT   = 1;
+uint8_t  LGTE = 2;
+uint8_t  EQ   = 4;
+uint8_t  DEQ  = 5;
+
+// assertion
+bool is_only_one_branch_reachable = false;
+bool assert_zone = false;
 
 // ------------------------- INITIALIZATION ------------------------
 
@@ -806,6 +813,8 @@ void constrain_sltu() {
       // concrete semantics of sltu
       registers[rd] = (registers[rs1] < registers[rs2]) ? 1 : 0;
 
+      is_only_one_branch_reachable = true;
+
       reg_data_typ[rd] = VALUE_T;
       reg_los[rd]      = registers[rd];
       reg_ups[rd]      = registers[rd];
@@ -820,6 +829,8 @@ void constrain_sltu() {
       return;
     }
 
+    is_only_one_branch_reachable = false;
+
     if (reg_symb_typ[rs1])
       current_rs1_tc = load_symbolic_memory(pt, reg_vaddr[rs1]);
 
@@ -827,9 +838,9 @@ void constrain_sltu() {
       current_rs2_tc = load_symbolic_memory(pt, reg_vaddr[rs2]);
 
     if (reg_data_typ[rs1] == POINTER_T)
-      if (reg_data_typ[rs2] == POINTER_T)
+      if (reg_data_typ[rs2] == POINTER_T) {
         create_constraints(registers[rs1], registers[rs1], registers[rs2], registers[rs2], mrcc);
-      else
+      } else
         create_constraints(registers[rs1], registers[rs1], reg_los[rs2], reg_ups[rs2], mrcc);
     else if (reg_data_typ[rs2] == POINTER_T)
       create_constraints(reg_los[rs1], reg_ups[rs1], registers[rs2], registers[rs2], mrcc);
@@ -862,16 +873,18 @@ void create_xor_constraints(uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t u
         constrain_memory(rs1, 0, 0, trb, true);
         constrain_memory(rs2, 0, 0, trb, true);
         take_branch(1, 0);
+        is_only_one_branch_reachable = true;
 
       } else if (up2 < lo1) {
         // rs2 interval is strictly less than rs1 interval
         constrain_memory(rs1, 0, 0, trb, true);
         constrain_memory(rs2, 0, 0, trb, true);
         take_branch(1, 0);
+        is_only_one_branch_reachable = true;
 
       } else if (lo2 == up2) {
         // rs2 interval is a singleton
-        /* one of the false cases are definitly happens since rs1 at least has two values. */
+        /* one of the true cases are definitly happens since rs1 at least has two values. */
         // true case 1
         if (lo2 != lo1) {
           // non empty
@@ -891,11 +904,11 @@ void create_xor_constraints(uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t u
           constrain_memory(rs2, lo2, up2, trb, false);
         }
 
-        /* if one of the above cases is not empty so then definitly true case is not empty */
         // check emptiness of false case
         if ((lo2 - lo1) % reg_steps[rs1]) {
           // is empty
           take_branch(1, 0);
+          is_only_one_branch_reachable = true;
         } else {
           take_branch(1, 1);
 
@@ -923,15 +936,13 @@ void create_xor_constraints(uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t u
             take_branch(1, 1);
           constrain_memory(rs1, lo1, up1, trb, false);
           constrain_memory(rs2, lo1 + 1, up2, trb, false);
-          empty = false;
-        } else {
-          empty = true;
         }
 
         // check emptiness of false case
         if ( (lo1 - lo2) % reg_steps[rs2]) {
           // is empty
           take_branch(1, 0);
+          is_only_one_branch_reachable = true;
         } else {
           take_branch(1, 1);
 
@@ -951,8 +962,8 @@ void create_xor_constraints(uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t u
         // true case
         constrain_memory(rs1, 0, 0, trb, true);
         constrain_memory(rs2, 0, 0, trb, true);
-
         take_branch(1, 0);
+        is_only_one_branch_reachable = true;
       } else if (lo1 == up1) {
         // true case 1
         if (lo1 != lo2) {
@@ -971,15 +982,13 @@ void create_xor_constraints(uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t u
             take_branch(1, 1);
           constrain_memory(rs1, lo1, up1, trb, false);
           constrain_memory(rs2, lo1 + 1, up2, trb, false);
-          empty = false;
-        } else {
-          empty = true;
         }
 
         // check emptiness of false case
         if ((lo1 - lo2) % reg_steps[rs2]) {
           // flase case is empty
           take_branch(1, 0);
+          is_only_one_branch_reachable = true;
         } else {
           take_branch(1, 1);
 
@@ -1001,8 +1010,8 @@ void create_xor_constraints(uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t u
       // true case
       constrain_memory(rs1, 0, 0, trb, true);
       constrain_memory(rs2, 0, 0, trb, true);
-
       take_branch(1, 0);
+      is_only_one_branch_reachable = true;
     } else if (lo2 == up2) {
       // true case 1
       if (lo2 != lo1) {
@@ -1027,6 +1036,7 @@ void create_xor_constraints(uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t u
       if ((lo2 - lo1) % reg_steps[rs1]) {
         // is empty
         take_branch(1, 0);
+        is_only_one_branch_reachable = true;
       } else {
         take_branch(1, 1);
 
@@ -1058,6 +1068,7 @@ void create_xor_constraints(uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t u
           constrain_memory(rs2, 0, 0, trb, true);
 
           take_branch(1, 0);
+          is_only_one_branch_reachable = true;
 
           cannot_handle = false;
         }
@@ -1091,27 +1102,13 @@ void constrain_xor() {
   if (reg_symb_typ[rs1] != SYMBOLIC && reg_symb_typ[rs2] != SYMBOLIC) {
     // concrete semantics of xor
     do_xor();
+    is_only_one_branch_reachable = true;
     set_constraint(rd, 0, 0, 0);
     set_correction(rd, 0, 0, 0);
     return;
   }
 
-  // pc = pc + INSTRUCTIONSIZE;
-  // ic_xor = ic_xor + 1;
-  //
-  // // ==, != detection
-  // fetch();
-  // uint64_t f3;
-  // eq_detected = false;
-  // ne_detected = false;
-  // if ((f3 = get_funct3(ir)) == F3_SLTU && get_opcode(ir) == OP_OP) {
-  //   if (get_rs1(ir) == REG_ZR && get_rs2(ir) == rd)
-  //     ne_detected = true;
-  //
-  // } else if (f3 == F3_ADDI && get_opcode(ir) == OP_IMM && get_immediate_i_format(ir) == 1 && get_rs1(ir) == REG_ZR) {
-  //   eq_detected = true;
-  // }
-  // // ---------------
+  is_only_one_branch_reachable = false;
 
   if (reg_symb_typ[rs1])
     current_rs1_tc = load_symbolic_memory(pt, reg_vaddr[rs1]);
@@ -1125,6 +1122,7 @@ void constrain_xor() {
       registers[rd] = registers[rs1] ^ registers[rs2];
       set_constraint(rd, 0, 0, 0);
       set_correction(rd, 0, 0, 0);
+      is_only_one_branch_reachable = true;
     } else {
       create_xor_constraints(registers[rs1], registers[rs1], reg_los[rs2], reg_ups[rs2], mrcc);
     }
@@ -1640,7 +1638,7 @@ void propagate_backwards(uint64_t vaddr, uint64_t lo_before_op) {
 void constrain_memory(uint64_t reg, uint64_t lo, uint64_t up, uint64_t trb, bool only_reachable_branch) {
   uint64_t mrvc;
 
-  if (reg_symb_typ[reg] == SYMBOLIC) {
+  if (reg_symb_typ[reg] == SYMBOLIC && assert_zone == false) {
     mrvc = (reg == rs1) ? current_rs1_tc : current_rs2_tc;
 
     if (only_reachable_branch == true) {
@@ -1667,7 +1665,7 @@ void set_correction(uint64_t reg, uint64_t addsub_corr, uint64_t muldivrem_corr,
 }
 
 void take_branch(uint64_t b, uint64_t how_many_more) {
-  if (how_many_more > 0) {
+  if (how_many_more > 0 && assert_zone == false) {
     // record that we need to set rd to true
     store_register_memory(rd, b);
 
@@ -1790,12 +1788,14 @@ void create_constraints(uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t up2, 
         constrain_memory(rs1, lo1, up1, trb, true);
         constrain_memory(rs2, lo2, up2, trb, true);
 
+        is_only_one_branch_reachable = true;
         take_branch(1, 0);
       } else if (up2 <= lo1) {
         // rs2 interval is less than or equal to rs1 interval
         constrain_memory(rs1, lo1, up1, trb, true);
         constrain_memory(rs2, lo2, up2, trb, true);
 
+        is_only_one_branch_reachable = true;
         take_branch(0, 0);
       } else if (lo2 == up2) {
         // rs2 interval is a singleton
@@ -1866,10 +1866,18 @@ void create_constraints(uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t up2, 
               constrain_memory(rs2, lo_p, up_p, trb, false);
               take_branch(1, 0);
 
-            } else take_branch(0, 0); // else empty
-          } else take_branch(0, 0);   // else empty
+            } else {
+              // else empty
+              is_only_one_branch_reachable = true;
+              take_branch(0, 0);
+            }
+          } else {
+            // else empty
+            is_only_one_branch_reachable = true;
+            take_branch(0, 0);
+          }
 
-        } else {
+        } else { // lower part
           // false case
           lo_p = compute_lower_bound(lo2, reg_steps[rs1], 0);
           up_p = compute_upper_bound(lo1, reg_steps[rs1], lo1);
@@ -1878,7 +1886,10 @@ void create_constraints(uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t up2, 
             constrain_memory(rs2, lo_p, up_p, trb, false);
             take_branch(0, 1);
 
-          } // else empty
+          } else {
+            // else empty
+            is_only_one_branch_reachable = true;
+          }
 
           // non-empty true case 1
           constrain_memory(rs1, lo1, up1, trb, false);
@@ -1922,7 +1933,10 @@ void create_constraints(uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t up2, 
           constrain_memory(rs1, lo_p, up_p, trb, false);
           constrain_memory(rs2, lo2, up2, trb, false);
           take_branch(0, 1);
-        } // else empty
+        } else {
+          // else empty
+          is_only_one_branch_reachable = true;
+        }
 
         // non-empty true 1
         constrain_memory(rs1, lo1, lo2 - 1, trb, false); // never lo2 = 0
@@ -1953,8 +1967,16 @@ void create_constraints(uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t up2, 
             constrain_memory(rs1, lo_p, up_p, trb, false);
             constrain_memory(rs2, lo2, up2, trb, false);
             take_branch(1, 0);
-          } else take_branch(0, 0); // else empty
-        } else take_branch(0, 0); // else empty 0 < 0
+          } else {
+            // else empty
+            is_only_one_branch_reachable = true;
+            take_branch(0, 0);
+          }
+        } else {
+          // else empty 0 < 0
+          is_only_one_branch_reachable = true;
+          take_branch(0, 0);
+        }
 
       }
 
@@ -2180,4 +2202,45 @@ void propagate_remu(uint64_t step, uint64_t divisor) {
     printf("OUTPUT: wrapped modulo results many intervals at %x \n", pc - entry_point);
     exit(EXITCODE_SYMBOLICEXECUTIONERROR);
   }
+}
+
+// --------------------------- conditional expression --------------------------
+
+uint8_t check_conditional_type() {
+  uint64_t saved_pc = pc;
+
+  pc = pc - INSTRUCTIONSIZE;
+  fetch();
+  if (get_opcode(ir) == OP_OP && get_funct3(ir) == F3_XOR) {
+    // !=
+    pc = saved_pc;
+    return DEQ;
+  }
+
+  pc = pc - INSTRUCTIONSIZE;
+  fetch();
+  if (get_opcode(ir) == OP_OP && get_funct3(ir) == F3_XOR) {
+    // ==
+    pc = saved_pc;
+    return EQ;
+  }
+
+  pc = saved_pc + INSTRUCTIONSIZE;
+  fetch();
+  if (get_opcode(ir) == OP_IMM) {
+    if (match_addi()) {
+      uint64_t rd_ = get_rd(ir);
+      pc = saved_pc + 2 * INSTRUCTIONSIZE;
+      fetch();
+      if (get_opcode(ir) == OP_OP) {
+        if (match_sub(rd_)) {
+          pc = saved_pc;
+          return LGTE;
+        }
+      }
+    }
+  }
+
+  pc = saved_pc;
+  return LT;
 }

@@ -208,14 +208,15 @@ uint8_t check_next_3_instrs() {
       if (opcode_ == OP_OP) {
         if (match_sub(rd_)) {
           rd = get_rd(ir);
-          pc = saved_pc + 3 * INSTRUCTIONSIZE;
-          fetch();
-          opcode_ = get_opcode(ir);
+          // pc = saved_pc + 3 * INSTRUCTIONSIZE;
+          // fetch();
+          // opcode_ = get_opcode(ir);
           pc = saved_pc;
-          if (opcode_ == OP_BRANCH)
-            return 2;
-          else
-            return 2;
+          return 2;
+          // if (opcode_ == OP_BRANCH)
+          //   return 2;
+          // else
+          //   return 2;
         }
       }
     }

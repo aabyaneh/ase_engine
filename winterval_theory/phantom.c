@@ -498,6 +498,10 @@ void implement_symbolic_input(uint64_t* context);
 
 void implement_printsv(uint64_t* context);
 
+void implement_assert_begin(uint64_t* context);
+void implement_assert(uint64_t* context);
+void implement_assert_end(uint64_t* context);
+
 // ------------------------ GLOBAL CONSTANTS -----------------------
 
 uint64_t debug_read  = 0;
@@ -510,8 +514,12 @@ uint64_t SYSCALL_READ  = 63;
 uint64_t SYSCALL_WRITE = 64;
 uint64_t SYSCALL_OPEN  = 1024;
 uint64_t SYSCALL_BRK   = 214;
-uint64_t SYSCALL_SYMPOLIC_INPUT = 42;
-uint64_t SYSCALL_PRINTSV = 43;
+
+uint64_t SYSCALL_SYMPOLIC_INPUT  = 42;
+uint64_t SYSCALL_PRINTSV         = 43;
+uint64_t SYSCALL_ASSERT_ZONE_BGN = 44;
+uint64_t SYSCALL_ASSERT          = 45;
+uint64_t SYSCALL_ASSERT_ZONE_END = 46;
 
 uint64_t symbolic_input_cnt = 0;
 
@@ -2384,6 +2392,36 @@ void implement_read(uint64_t* context) {
   }
 }
 
+void implement_assert_begin(uint64_t* context) {
+  if (symbolic) {
+    assert_zone = true;
+    set_pc(context, get_pc(context) + INSTRUCTIONSIZE);
+  }
+}
+
+void implement_assert_end(uint64_t* context) {
+  if (symbolic) {
+    assert_zone = false;
+    set_pc(context, get_pc(context) + INSTRUCTIONSIZE);
+  }
+}
+
+void implement_assert(uint64_t* context) {
+  uint64_t res;
+
+  if (symbolic) {
+    res = *(get_regs(context) + REG_A0);
+    if (res == 0 || is_only_one_branch_reachable == false) {
+      printf("OUTPUT: assertion failed at %x", pc - entry_point);
+      exit(EXITCODE_SYMBOLICEXECUTIONERROR);
+    }
+
+    is_only_one_branch_reachable = false;
+
+    set_pc(context, get_pc(context) + INSTRUCTIONSIZE);
+  }
+}
+
 void implement_printsv(uint64_t* context) {
   uint64_t id;
   uint64_t addr;
@@ -4176,7 +4214,14 @@ uint64_t handle_system_call(uint64_t* context) {
 
     // TODO: exit only if all contexts have exited
     return EXIT;
-  } else {
+  }
+  else if (a7 == SYSCALL_ASSERT_ZONE_BGN)
+    implement_assert_begin(context);
+  else if (a7 == SYSCALL_ASSERT)
+    implement_assert(context);
+  else if (a7 == SYSCALL_ASSERT_ZONE_END)
+    implement_assert_end(context);
+  else {
     printf2((uint64_t*) "%s: unknown system call %d\n", exe_name, (uint64_t*) a7);
 
     set_exit_code(context, EXITCODE_UNKNOWNSYSCALL);
