@@ -340,11 +340,8 @@ void constrain_add() {
     reg_data_typ[rd] = VALUE_T;
 
     // interval semantics of add
-    bool cnd = add_sub_condition(*(reg_los + rs1), *(reg_ups + rs1), *(reg_los + rs2), *(reg_ups + rs2));
-    if (cnd == true) {
-      add_lo = reg_los[rs1] + reg_los[rs2];
-      add_up = reg_ups[rs1] + reg_ups[rs2];
-    }
+    add_lo = reg_los[rs1] + reg_los[rs2];
+    add_up = reg_ups[rs1] + reg_ups[rs2];
 
     if (reg_symb_typ[rs1] == SYMBOLIC) {
       if (reg_symb_typ[rs2] == SYMBOLIC) {
@@ -360,6 +357,7 @@ void constrain_add() {
           exit(EXITCODE_SYMBOLICEXECUTIONERROR);
         }
 
+        bool cnd = add_sub_condition(*(reg_los + rs1), *(reg_ups + rs1), *(reg_los + rs2), *(reg_ups + rs2));
         if (cnd == false) {
           // TODO: make sure
           uint64_t rhs = (lcm(TWO_TO_THE_POWER_OF_32, gcd_steps) - gcd_steps);
@@ -471,11 +469,8 @@ void constrain_sub() {
     reg_data_typ[rd] = VALUE_T;
 
     // interval semantics of sub
-    bool cnd = add_sub_condition(reg_los[rs1], reg_ups[rs1], reg_los[rs2], reg_ups[rs2]);
-    if (cnd == true) {
-      sub_lo = reg_los[rs1] - reg_ups[rs2];
-      sub_up = reg_ups[rs1] - reg_los[rs2];
-    }
+    sub_lo = reg_los[rs1] - reg_ups[rs2];
+    sub_up = reg_ups[rs1] - reg_los[rs2];
 
     if (reg_symb_typ[rs1] == SYMBOLIC) {
       if (reg_symb_typ[rs2] == SYMBOLIC) {
@@ -490,6 +485,7 @@ void constrain_sub() {
           exit(EXITCODE_SYMBOLICEXECUTIONERROR);
         }
 
+        bool cnd = add_sub_condition(reg_los[rs1], reg_ups[rs1], reg_los[rs2], reg_ups[rs2]);
         if (cnd == false) {
           printf("OUTPUT: phantom canot reason about overflowed sub %x \n", pc);
           exit(EXITCODE_SYMBOLICEXECUTIONERROR);

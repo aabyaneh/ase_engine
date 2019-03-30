@@ -1,10 +1,7 @@
 #include "stdint.h"
 #include "stdbool.h"
 
-// -----------------------------------------------------------------
-// variables and procedures which will be defined in selfie.c
-// and are needed in sase engine
-// -----------------------------------------------------------------
+// ------ shared variables and procedures between source files -----
 
 extern uint64_t rs1;
 extern uint64_t rs2;
@@ -73,6 +70,7 @@ uint64_t two_to_the_power_of(uint64_t p);
 uint64_t get_bits(uint64_t n, uint64_t i, uint64_t b);
 
 // ---------------------------- SYMBOLIC----------------------------
+
 extern uint64_t MSIIAD;
 extern uint64_t MAX_TRACE_LENGTH;
 extern bool     is_only_one_branch_reachable;
