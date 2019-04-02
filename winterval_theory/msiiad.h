@@ -135,7 +135,6 @@ uint64_t constrain_ld();
 uint64_t constrain_sd();
 
 void constrain_xor();
-void do_xor();
 
 void backtrack_sltu();
 void backtrack_sd();

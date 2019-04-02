@@ -613,6 +613,8 @@ void do_remu();
 
 void do_sltu();
 
+void do_xor();
+
 void     print_ld();
 void     print_ld_before();
 void     print_ld_after(uint64_t vaddr);
@@ -2473,6 +2475,8 @@ void implement_symbolic_input(uint64_t* context) {
       reg_ups[REG_A0]      = compute_upper_bound(lo, step, up);
       reg_steps[REG_A0]    = step;
       reg_vaddr[REG_A0]    = 0;
+
+      printf("symbolic input: lo: %llu, up: %llu, step: %llu\n", lo, reg_ups[REG_A0], step);
     }
 
     set_pc(context, get_pc(context) + INSTRUCTIONSIZE);
@@ -3073,6 +3077,16 @@ void do_remu() {
     ic_remu = ic_remu + 1;
   } else
     throw_exception(EXCEPTION_DIVISIONBYZERO, 0);
+}
+
+void do_xor() {
+  if (rd != REG_ZR) {
+    registers[rd] = registers[rs1] ^ registers[rs2];
+
+    pc = pc + INSTRUCTIONSIZE;
+
+    ic_xor = ic_xor + 1;
+  }
 }
 
 void do_sltu() {

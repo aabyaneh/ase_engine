@@ -299,7 +299,7 @@ bool constrain_add_pointer() {
   if (reg_data_typ[rs1] == POINTER_T) {
     if (reg_data_typ[rs2] == POINTER_T) {
       // adding two pointers is undefined
-      printf("OUTPUT: undefined addition of two pointers at %x\n", pc);
+      printf("OUTPUT: undefined addition of two pointers at %x\n", pc - entry_point);
       exit(EXITCODE_SYMBOLICEXECUTIONERROR);
     }
 
@@ -353,7 +353,7 @@ void constrain_add() {
         // interval semantics of add
         uint64_t gcd_steps = gcd(reg_steps[rs1], reg_steps[rs2]);
         if (check_incompleteness(gcd_steps) == true) {
-          printf("%s\n", " steps in addition are not consistent");
+          printf("OUTPUT: steps in addition are not consistent %x\n", pc - entry_point);
           exit(EXITCODE_SYMBOLICEXECUTIONERROR);
         }
 
@@ -369,7 +369,7 @@ void constrain_add() {
             add_up    = compute_upper_bound(add_lo, gcd_step_k, TWO_TO_THE_POWER_OF_32 - 1);
             gcd_steps = gcd_step_k;
           } else {
-            printf("OUTPUT: phantom canot reason about overflowed add %x \n", pc);
+            printf("OUTPUT: cannot reason about overflowed add %x \n", pc - entry_point);
             exit(EXITCODE_SYMBOLICEXECUTIONERROR);
           }
         }
@@ -481,13 +481,13 @@ void constrain_sub() {
 
         uint64_t gcd_steps = gcd(reg_steps[rs1], reg_steps[rs2]);
         if (check_incompleteness(gcd_steps) == true) {
-          printf("%s\n", " steps in subtraction are not consistent");
+          printf("OUTPUT: steps in subtraction are not consistent %x\n", pc - entry_point);
           exit(EXITCODE_SYMBOLICEXECUTIONERROR);
         }
 
         bool cnd = add_sub_condition(reg_los[rs1], reg_ups[rs1], reg_los[rs2], reg_ups[rs2]);
         if (cnd == false) {
-          printf("OUTPUT: phantom canot reason about overflowed sub %x \n", pc);
+          printf("OUTPUT: phantom canot reason about overflowed sub %x\n", pc - entry_point);
           exit(EXITCODE_SYMBOLICEXECUTIONERROR);
         }
 
@@ -547,12 +547,12 @@ void constrain_mul() {
     if (reg_symb_typ[rs1] == SYMBOLIC) {
       if (reg_symb_typ[rs2] == SYMBOLIC) {
         // non-linear expressions are not supported
-        printf("OUTPUT: detected non-linear expression in mul at %x \n", pc);
+        printf("OUTPUT: detected non-linear expression in mul at %x\n", pc - entry_point);
         exit(EXITCODE_SYMBOLICEXECUTIONERROR);
 
       } else if (reg_hasmn[rs1]) {
         // correction does not work anymore
-        printf("correction does not work anymore at e.g. (1 - [.]) * 10 %x \n", pc);
+        printf("OUTPUT: correction does not work anymore e.g. (1 - [.]) * 10 at %x\n", pc - entry_point);
         exit(EXITCODE_SYMBOLICEXECUTIONERROR);
 
       } else {
@@ -585,7 +585,7 @@ void constrain_mul() {
     } else if (reg_symb_typ[rs2] == SYMBOLIC) {
       if (reg_hasmn[rs2]) {
         // correction does not work anymore
-        printf("correction does not work anymore e.g. 10 * (1 - [.]) at %x \n", pc);
+        printf("OUTPUT: correction does not work anymore e.g. 10 * (1 - [.]) at %x\n", pc - entry_point);
         exit(EXITCODE_SYMBOLICEXECUTIONERROR);
 
       } else {
@@ -610,7 +610,7 @@ void constrain_mul() {
             reg_steps[rd] = gcd_step_k;
             reg_corr_validity[rs2] += REMU_T;
           } else {
-            printf("OUTPUT: phantom canot reason about overflowed mul at %x \n", pc - entry_point);
+            printf("OUTPUT: phantom canot reason about overflowed mul at %x\n", pc - entry_point);
             exit(EXITCODE_SYMBOLICEXECUTIONERROR);
           }
         }
@@ -646,12 +646,12 @@ void constrain_divu() {
         if (reg_symb_typ[rs1] == SYMBOLIC) {
           if (reg_symb_typ[rs2] == SYMBOLIC) {
             // non-linear expressions are not supported
-            printf("OUTPUT: detected non-linear expression in divu at %x", pc);
+            printf("OUTPUT: detected non-linear expression in divu at %x\n", pc - entry_point);
             exit(EXITCODE_SYMBOLICEXECUTIONERROR);
 
           } else if (reg_hasmn[rs1]) {
             // correction does not work anymore
-            printf("correction does not work anymore at e.g. (1 - [.]) / 10 %x \n", pc);
+            printf("correction does not work anymore at e.g. (1 - [.]) / 10 %x\n", pc - entry_point);
             exit(EXITCODE_SYMBOLICEXECUTIONERROR);
 
           } else {
@@ -663,13 +663,13 @@ void constrain_divu() {
             // step computation
             if (reg_steps[rs1] < reg_los[rs2]) {
               if (reg_los[rs2] % reg_steps[rs1] != 0) {
-                printf("OUTPUT: steps in divison are not consistent at %x\n", pc);
+                printf("OUTPUT: steps in divison are not consistent at %x\n", pc - entry_point);
                 exit(EXITCODE_SYMBOLICEXECUTIONERROR);
               }
               reg_steps[rd] = 1;
             } else {
               if (reg_steps[rs1] % reg_los[rs2] != 0) {
-                printf("OUTPUT: steps in divison are not consistent at %x\n", pc);
+                printf("OUTPUT: steps in divison are not consistent at %x\n", pc - entry_point);
                 exit(EXITCODE_SYMBOLICEXECUTIONERROR);
               }
               reg_steps[rd] = reg_steps[rs1] / reg_los[rs2];
@@ -685,7 +685,7 @@ void constrain_divu() {
               // lo/k == up/k (or) up/k + step_rd
               if (div_lo != div_up)
                 if (div_lo > div_up + reg_steps[rd]) {
-                  printf("OUTPUT: wrapped divison rsults two intervals at %x \n", pc);
+                  printf("OUTPUT: wrapped divison rsults two intervals at %x\n", pc - entry_point);
                   exit(EXITCODE_SYMBOLICEXECUTIONERROR);
                 }
             } else {
@@ -696,7 +696,7 @@ void constrain_divu() {
 
           }
         } else if (reg_symb_typ[rs2] == SYMBOLIC) {
-          printf("OUTPUT: detected division of constant by interval at %x \n", pc);
+          printf("OUTPUT: detected division of constant by interval at %x\n", pc - entry_point);
           exit(EXITCODE_SYMBOLICEXECUTIONERROR);
 
         } else {
@@ -725,7 +725,7 @@ void constrain_remu() {
 
   if (reg_symb_typ[rs2] == SYMBOLIC) {
     // rs2 has constraint
-    printf("OUTPUT: constrained memory location in right operand of remu at %x \n", pc - entry_point);
+    printf("OUTPUT: constrained memory location in right operand of remu at %x\n", pc - entry_point);
     exit(EXITCODE_SYMBOLICEXECUTIONERROR);
   }
 
@@ -768,7 +768,7 @@ void constrain_remu() {
       uint64_t lcm        = (step * divisor) / gcd_step_k;
 
       if (reg_ups[rs1] - reg_los[rs1] < lcm - step) {
-        printf("OUTPUT: wrapped modulo results many intervals at %x \n", pc - entry_point);
+        printf("OUTPUT: wrapped modulo results many intervals at %x\n", pc - entry_point);
         exit(EXITCODE_SYMBOLICEXECUTIONERROR);
       }
 
@@ -780,13 +780,13 @@ void constrain_remu() {
       set_correction(rd, reg_addsub_corr[rs1], reg_los[rs2], reg_corr_validity[rs1] + REMU_T);
 
     } else {
-      printf("OUTPUT: wrapped modulo results many intervals at %x \n", pc - entry_point);
+      printf("OUTPUT: wrapped modulo results many intervals at %x\n", pc - entry_point);
       exit(EXITCODE_SYMBOLICEXECUTIONERROR);
     }
 
     if (reg_hasmn[rs1]) {
       // correction does not work anymore
-      printf("correction does not work anymore at e.g. (1 - [.]) mod 10 %x \n", pc);
+      printf("OUTPUT: correction does not work anymore e.g. (1 - [.]) mod 10 at %x\n", pc - entry_point);
       exit(EXITCODE_SYMBOLICEXECUTIONERROR);
     }
 
@@ -833,12 +833,11 @@ void constrain_sltu() {
     if (reg_symb_typ[rs2])
       current_rs2_tc = load_symbolic_memory(pt, reg_vaddr[rs2]);
 
-    if (reg_data_typ[rs1] == POINTER_T)
-      if (reg_data_typ[rs2] == POINTER_T) {
-        create_constraints(registers[rs1], registers[rs1], registers[rs2], registers[rs2], mrcc);
-      } else
+    if (reg_data_typ[rs1] == POINTER_T) {
+      if (reg_data_typ[rs2] != POINTER_T) {
         create_constraints(registers[rs1], registers[rs1], reg_los[rs2], reg_ups[rs2], mrcc);
-    else if (reg_data_typ[rs2] == POINTER_T)
+      } // else never
+    } else if (reg_data_typ[rs2] == POINTER_T)
       create_constraints(reg_los[rs1], reg_ups[rs1], registers[rs2], registers[rs2], mrcc);
     else
       create_constraints(reg_los[rs1], reg_ups[rs1], reg_los[rs2], reg_ups[rs2], mrcc);
@@ -850,12 +849,8 @@ void constrain_sltu() {
 }
 
 void create_xor_constraints(uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t up2, uint64_t trb) {
-  bool     cannot_handle = false;
-  bool     empty;
-  // uint64_t lo1 = reg_los[rs1];
-  // uint64_t up1 = reg_ups[rs1];
-  // uint64_t lo2 = reg_los[rs2];
-  // uint64_t up2 = reg_ups[rs2];
+  bool cannot_handle = false;
+  bool empty;
 
   if (rd == REG_ZR)
     return;
@@ -950,7 +945,7 @@ void create_xor_constraints(uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t u
 
       } else {
         // we cannot handle
-        cannot_handle == true;
+        cannot_handle = true;
       }
     } else {
       // rs2 wrapped
@@ -996,7 +991,7 @@ void create_xor_constraints(uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t u
 
       } else {
         // we cannot handle
-        cannot_handle == true;
+        cannot_handle = true;
       }
     }
 
@@ -1043,13 +1038,13 @@ void create_xor_constraints(uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t u
       }
     } else {
       // we cannot handle
-      cannot_handle == true;
+      cannot_handle = true;
     }
 
   } else {
     // rs1 wrapped, rs2 wrapped
     // we cannot handle: they have common vlaues and they canont be singleton
-    cannot_handle == true;
+    cannot_handle = true;
   }
 
   if (cannot_handle) {
@@ -1078,29 +1073,27 @@ void create_xor_constraints(uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t u
   }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// xor
-
-void do_xor() {
-  if (rd != REG_ZR) {
-    registers[rd] = registers[rs1] ^ registers[rs2];
-
-    pc = pc + INSTRUCTIONSIZE;
-
-    ic_xor = ic_xor + 1;
-  }
-}
-
 void constrain_xor() {
   if (rd == REG_ZR)
     return;
 
   if (reg_symb_typ[rs1] != SYMBOLIC && reg_symb_typ[rs2] != SYMBOLIC) {
     // concrete semantics of xor
-    do_xor();
+    registers[rd] = registers[rs1] ^ registers[rs2];
+
     is_only_one_branch_reachable = true;
+
+    reg_data_typ[rd] = VALUE_T;
+    reg_los[rd]      = registers[rd];
+    reg_ups[rd]      = registers[rd];
+    reg_steps[rd]    = 1;
+
     set_constraint(rd, 0, 0, 0);
     set_correction(rd, 0, 0, 0);
+
+    pc = pc + INSTRUCTIONSIZE;
+
+    ic_xor = ic_xor + 1;
     return;
   }
 
@@ -1112,17 +1105,11 @@ void constrain_xor() {
   if (reg_symb_typ[rs2])
     current_rs2_tc = load_symbolic_memory(pt, reg_vaddr[rs2]);
 
-  if (reg_data_typ[rs1] == POINTER_T)
-    if (reg_data_typ[rs2] == POINTER_T) {
-      // concrete semantics of beq
-      registers[rd] = registers[rs1] ^ registers[rs2];
-      set_constraint(rd, 0, 0, 0);
-      set_correction(rd, 0, 0, 0);
-      is_only_one_branch_reachable = true;
-    } else {
+  if (reg_data_typ[rs1] == POINTER_T) {
+    if (reg_data_typ[rs2] != POINTER_T) {
       create_xor_constraints(registers[rs1], registers[rs1], reg_los[rs2], reg_ups[rs2], mrcc);
-    }
-  else if (reg_data_typ[rs2] == POINTER_T)
+    } // else never as pointers are concrete; are catched above
+  } else if (reg_data_typ[rs2] == POINTER_T)
     create_xor_constraints(reg_los[rs1], reg_ups[rs1], registers[rs2], registers[rs2], mrcc);
   else
     create_xor_constraints(reg_los[rs1], reg_ups[rs1], reg_los[rs2], reg_ups[rs2], mrcc);
@@ -1132,9 +1119,6 @@ void constrain_xor() {
   ic_xor = ic_xor + 1;
 
 }
-
-// xor
-////////////////////////////////////////////////////////////////////////////////
 
 uint64_t constrain_ld() {
   uint64_t vaddr;
@@ -1233,8 +1217,13 @@ uint64_t constrain_sd() {
 
 void constrain_jal_jalr() {
   if (rd != REG_ZR) {
-    *(reg_los + rd) = *(registers + rd);
-    *(reg_ups + rd) = *(registers + rd);
+    reg_data_typ[rd]  = VALUE_T;
+    reg_los[rd]       = *(registers + rd);
+    reg_ups[rd]       = *(registers + rd);
+    reg_steps[rd]     = 1;
+
+    set_constraint(rd, 0, 0, 0);
+    set_correction(rd, 0, 0, 0);
   }
 }
 
