@@ -107,16 +107,20 @@ void init_symbolic_engine() {
   read_los           = malloc(MAX_TRACE_LENGTH  * SIZEOFUINT64);
   read_ups           = malloc(MAX_TRACE_LENGTH  * SIZEOFUINT64);
 
-  reg_data_typ       = malloc(NUMBEROFREGISTERS * REGISTERSIZE);
-  reg_los            = malloc(NUMBEROFREGISTERS * REGISTERSIZE);
-  reg_ups            = malloc(NUMBEROFREGISTERS * REGISTERSIZE);
+  reg_data_typ       = zalloc(NUMBEROFREGISTERS * REGISTERSIZE);
+  reg_los            = zalloc(NUMBEROFREGISTERS * REGISTERSIZE);
+  reg_ups            = zalloc(NUMBEROFREGISTERS * REGISTERSIZE);
   reg_steps          = malloc(NUMBEROFREGISTERS * REGISTERSIZE);
-  reg_symb_typ       = malloc(NUMBEROFREGISTERS * REGISTERSIZE);
-  reg_vaddr          = malloc(NUMBEROFREGISTERS * REGISTERSIZE);
-  reg_hasmn          = malloc(NUMBEROFREGISTERS * REGISTERSIZE);
-  reg_addsub_corr    = malloc(NUMBEROFREGISTERS * REGISTERSIZE);
-  reg_muldivrem_corr = malloc(NUMBEROFREGISTERS * REGISTERSIZE);
-  reg_corr_validity  = malloc(NUMBEROFREGISTERS * REGISTERSIZE);
+  reg_symb_typ       = zalloc(NUMBEROFREGISTERS * REGISTERSIZE);
+  reg_vaddr          = zalloc(NUMBEROFREGISTERS * REGISTERSIZE);
+  reg_hasmn          = zalloc(NUMBEROFREGISTERS * REGISTERSIZE);
+  reg_addsub_corr    = zalloc(NUMBEROFREGISTERS * REGISTERSIZE);
+  reg_muldivrem_corr = zalloc(NUMBEROFREGISTERS * REGISTERSIZE);
+  reg_corr_validity  = zalloc(NUMBEROFREGISTERS * REGISTERSIZE);
+
+  for (uint8_t i = 0; i < NUMBEROFREGISTERS; i++) {
+    reg_steps[i] = 1;
+  }
 
   pcs[0]             = 0;
   tcs[0]             = 0;

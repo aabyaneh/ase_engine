@@ -2475,6 +2475,11 @@ void implement_symbolic_input(uint64_t* context) {
       reg_ups[REG_A0]      = compute_upper_bound(lo, step, up);
       reg_steps[REG_A0]    = step;
       reg_vaddr[REG_A0]    = 0;
+      reg_symb_typ[REG_A0] = (reg_los[REG_A0] == reg_ups[REG_A0]) ? CONCRETE : SYMBOLIC;
+      reg_hasmn[REG_A0]             = 0;
+      reg_addsub_corr[REG_A0]       = 0;
+      reg_muldivrem_corr[REG_A0]    = 0;
+      reg_corr_validity[REG_A0]     = 0;
 
       printf("symbolic input: lo: %llu, up: %llu, step: %llu\n", lo, reg_ups[REG_A0], step);
     }
@@ -2769,7 +2774,7 @@ void implement_brk(uint64_t* context) {
         *(reg_ups   + REG_A0)         = size;
         *(reg_steps + REG_A0)         = 1;
         *(reg_vaddr + REG_A0)         = 0;
-        reg_symb_typ[REG_A0]          = SYMBOLIC;
+        reg_symb_typ[REG_A0]          = CONCRETE;
         reg_hasmn[REG_A0]             = 0;
         reg_addsub_corr[REG_A0]       = 0;
         reg_muldivrem_corr[REG_A0]    = 0;
@@ -2811,11 +2816,11 @@ void implement_brk(uint64_t* context) {
       if (sase_symbolic) {
         sase_regs[REG_A0] = boolector_unsigned_int(btor, 0, bv_sort);
       } else {
-        *(reg_data_typ + REG_A0) = VALUE_T;
-        *(reg_los   + REG_A0)    = 0;
-        *(reg_ups   + REG_A0)    = 0;
-        *(reg_steps + REG_A0)    = 1;
-        *(reg_vaddr + REG_A0)    = 0;
+        *(reg_data_typ + REG_A0)   = VALUE_T;
+        *(reg_los      + REG_A0)   = 0;
+        *(reg_ups      + REG_A0)   = 0;
+        *(reg_steps    + REG_A0)   = 1;
+        *(reg_vaddr    + REG_A0)   = 0;
         reg_symb_typ[REG_A0]       = CONCRETE;
         reg_hasmn[REG_A0]          = 0;
         reg_addsub_corr[REG_A0]    = 0;
