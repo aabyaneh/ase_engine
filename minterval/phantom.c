@@ -72,6 +72,9 @@ uint64_t round_up(uint64_t n, uint64_t m);
 uint64_t* smalloc(uint64_t size);
 uint64_t* zalloc(uint64_t size);
 
+uint64_t val_ptr_1[1];
+uint64_t val_ptr_2[1];
+
 // ------------------------ GLOBAL CONSTANTS -----------------------
 
 uint64_t CHAR_EOF          =  -1; // end of file
@@ -611,9 +614,9 @@ void do_divu();
 
 void do_remu();
 
-void do_sltu();
-
 void do_xor();
+
+void do_sltu();
 
 void     print_ld();
 void     print_ld_before();
@@ -2318,11 +2321,13 @@ void implement_read(uint64_t* context) {
                 store_physical_memory(buffer, mrvc);
               }
 
+              val_ptr_1[0] = lo;
+              val_ptr_2[0] = up;
               if (mrcc == 0)
                 // no branching yet, we may overwrite symbolic memory
-                store_symbolic_memory(get_pt(context), vbuffer, value, 0, lo, up, 1, 0, 0, 0, 0, 0, 0, 0);
+                store_symbolic_memory(get_pt(context), vbuffer, value, 0, val_ptr_1, val_ptr_2, 1, 1, 0, 0, 0, 0, 0, 0, 0);
               else
-                store_symbolic_memory(get_pt(context), vbuffer, value, 0, lo, up, 1, 0, 0, 0, 0, 0, tc, 0);
+                store_symbolic_memory(get_pt(context), vbuffer, value, 0, val_ptr_1, val_ptr_2, 1, 1, 0, 0, 0, 0, 0, tc, 0);
             } else {
               actually_read = 0;
 
@@ -2377,8 +2382,9 @@ void implement_read(uint64_t* context) {
     } else {
       *(reg_data_typ + REG_A0) = 0;
 
-      *(reg_los + REG_A0) = *(get_regs(context) + REG_A0);
-      *(reg_ups + REG_A0) = *(get_regs(context) + REG_A0);
+      reg_mints[REG_A0].los[0] = *(get_regs(context) + REG_A0);
+      reg_mints[REG_A0].ups[0] = *(get_regs(context) + REG_A0);
+      reg_mints_idx[REG_A0]    = 1;
     }
   }
 
@@ -2414,7 +2420,7 @@ void implement_assert(uint64_t* context) {
   if (symbolic) {
     res = *(get_regs(context) + REG_A0);
     if (res == 0 || is_only_one_branch_reachable == false) {
-      printf("OUTPUT: assertion failed at %x", pc - entry_point);
+      printf("OUTPUT: assertion failed %llu, %d at %x", res, is_only_one_branch_reachable, pc - entry_point);
       exit(EXITCODE_SYMBOLICEXECUTIONERROR);
     }
 
@@ -2432,7 +2438,7 @@ void implement_printsv(uint64_t* context) {
   addr = (reg_vaddr[REG_A1] != 0) ? ld_froms[load_symbolic_memory(get_pt(context), reg_vaddr[REG_A1])] : 0;
 
   if (symbolic) {
-    printf("PRINTSV :=) id: %-3llu, vaddr: %-10llu => lo: %-5llu,up: %-5llu,step: %-5llu\n", id, addr, reg_los[REG_A1], reg_ups[REG_A1], reg_steps[REG_A1]);
+    printf("PRINTSV :=) id: %-3llu, vaddr: %-10llu => lo: %-5llu,up: %-5llu,step: %-5llu\n", id, addr, reg_mints[REG_A1].los[0], reg_mints[REG_A1].ups[0], reg_steps[REG_A1]);
 
     set_pc(context, get_pc(context) + INSTRUCTIONSIZE);
   }
@@ -2469,19 +2475,20 @@ void implement_symbolic_input(uint64_t* context) {
       sase_regs_typ[REG_A0] = SYMBOLIC_T;
 
     } else {
-      registers[REG_A0]    = lo;
-      reg_data_typ[REG_A0] = 0;
-      reg_los[REG_A0]      = lo;
-      reg_ups[REG_A0]      = compute_upper_bound(lo, step, up);
-      reg_steps[REG_A0]    = step;
-      reg_vaddr[REG_A0]    = 0;
-      reg_symb_typ[REG_A0] = (reg_los[REG_A0] == reg_ups[REG_A0]) ? CONCRETE : SYMBOLIC;
+      registers[REG_A0]        = lo;
+      reg_data_typ[REG_A0]     = 0;
+      reg_mints[REG_A0].los[0] = lo;
+      reg_mints[REG_A0].ups[0] = compute_upper_bound(lo, step, up);
+      reg_mints_idx[REG_A0]    = 1;
+      reg_steps[REG_A0]        = step;
+      reg_vaddr[REG_A0]        = 0;
+      reg_symb_typ[REG_A0]     = (lo == reg_mints[REG_A0].ups[0]) ? CONCRETE : SYMBOLIC;
       reg_hasmn[REG_A0]             = 0;
       reg_addsub_corr[REG_A0]       = 0;
       reg_muldivrem_corr[REG_A0]    = 0;
       reg_corr_validity[REG_A0]     = 0;
 
-      printf("symbolic input: lo: %llu, up: %llu, step: %llu\n", lo, reg_ups[REG_A0], step);
+      printf("symbolic input: lo: %llu, up: %llu, step: %llu, cnt: %llu\n", reg_mints[REG_A0].los[0], reg_mints[REG_A0].ups[0], step, symbolic_input_cnt++);
     }
 
     set_pc(context, get_pc(context) + INSTRUCTIONSIZE);
@@ -2591,8 +2598,9 @@ void implement_write(uint64_t* context) {
     } else {
       *(reg_data_typ + REG_A0) = 0;
 
-      *(reg_los + REG_A0) = *(get_regs(context) + REG_A0);
-      *(reg_ups + REG_A0) = *(get_regs(context) + REG_A0);
+      reg_mints[REG_A0].los[0] = *(get_regs(context) + REG_A0);
+      reg_mints[REG_A0].ups[0] = *(get_regs(context) + REG_A0);
+      reg_mints_idx[REG_A0]    = 1;
     }
   }
 
@@ -2624,7 +2632,7 @@ uint64_t down_load_string(uint64_t* table, uint64_t vaddr, uint64_t* s) {
 
             *(s + i) = *(values + mrvc);
 
-            if (is_symbolic_value(*(data_types + mrvc), *(los + mrvc), *(ups + mrvc))) {
+            if (is_symbolic_value(*(data_types + mrvc), mints[mrvc].los[0], mints[mrvc].ups[0])) {
               printf1((uint64_t*) "%s: detected symbolic value ", exe_name);
               print_symbolic_memory(mrvc);
               print((uint64_t*) " in filename of open call\n");
@@ -2711,8 +2719,9 @@ void implement_open(uint64_t* context) {
     } else {
       *(reg_data_typ + REG_A0) = 0;
 
-      *(reg_los + REG_A0) = *(get_regs(context) + REG_A0);
-      *(reg_ups + REG_A0) = *(get_regs(context) + REG_A0);
+      reg_mints[REG_A0].los[0] = *(get_regs(context) + REG_A0);
+      reg_mints[REG_A0].ups[0] = *(get_regs(context) + REG_A0);
+      reg_mints_idx[REG_A0]    = 1;
     }
   }
 
@@ -2770,8 +2779,9 @@ void implement_brk(uint64_t* context) {
         *(reg_data_typ + REG_A0)      = POINTER_T;
         *(get_regs(context) + REG_A0) = previous_program_break;
         // remember start and size of memory block for checking memory safety
-        *(reg_los   + REG_A0)         = previous_program_break;
-        *(reg_ups   + REG_A0)         = size;
+        reg_mints[REG_A0].los[0]      = previous_program_break;
+        reg_mints[REG_A0].ups[0]      = size;
+        reg_mints_idx[REG_A0]         = 1;
         *(reg_steps + REG_A0)         = 1;
         *(reg_vaddr + REG_A0)         = 0;
         reg_symb_typ[REG_A0]          = CONCRETE;
@@ -2781,10 +2791,12 @@ void implement_brk(uint64_t* context) {
         reg_corr_validity[REG_A0]     = 0;
 
         if (mrcc > 0) {
-          if (is_trace_space_available())
+          if (is_trace_space_available()) {
             // since there has been branching record brk using vaddr == 0
-            store_symbolic_memory(get_pt(context), 0, previous_program_break, 1, previous_program_break, size, 1, 0, 0, 0, 0, 0, tc, 0);
-          else {
+            val_ptr_1[0] = previous_program_break;
+            val_ptr_2[0] = size;
+            store_symbolic_memory(get_pt(context), 0, previous_program_break, 1, val_ptr_1, val_ptr_2, 1, 1, 0, 0, 0, 0, 0, tc, 0);
+          } else {
             throw_exception(EXCEPTION_MAXTRACE, 0);
 
             return;
@@ -2817,10 +2829,11 @@ void implement_brk(uint64_t* context) {
         sase_regs[REG_A0] = boolector_unsigned_int(btor, 0, bv_sort);
       } else {
         *(reg_data_typ + REG_A0)   = VALUE_T;
-        *(reg_los      + REG_A0)   = 0;
-        *(reg_ups      + REG_A0)   = 0;
-        *(reg_steps    + REG_A0)   = 1;
-        *(reg_vaddr    + REG_A0)   = 0;
+        reg_mints[REG_A0].los[0]   = 0;
+        reg_mints[REG_A0].ups[0]   = 0;
+        reg_mints_idx[REG_A0]      = 1;
+        *(reg_steps + REG_A0)      = 1;
+        *(reg_vaddr + REG_A0)      = 0;
         reg_symb_typ[REG_A0]       = CONCRETE;
         reg_hasmn[REG_A0]          = 0;
         reg_addsub_corr[REG_A0]    = 0;
@@ -4055,10 +4068,11 @@ void map_and_store(uint64_t* context, uint64_t vaddr, uint64_t data) {
 
   if (symbolic) {
     if (sase_symbolic == 0) {
-      if (is_trace_space_available())
+      if (is_trace_space_available()) {
         // always track initialized memory by using tc as most recent branch
-        store_symbolic_memory(get_pt(context), vaddr, data, 0, data, data, 1, 0, 0, 0, 0, 0, tc, 0);
-      else {
+        val_ptr_1[0] = data;
+        store_symbolic_memory(get_pt(context), vaddr, data, 0, val_ptr_1, val_ptr_1, 1, 1, 0, 0, 0, 0, 0, tc, 0);
+      } else {
         printf1((uint64_t*) "%s: ealloc out of memory\n", exe_name);
 
         exit(EXITCODE_OUTOFTRACEMEMORY);
@@ -4203,8 +4217,9 @@ void up_load_arguments(uint64_t* context, uint64_t argc, uint64_t* argv) {
     } else {
       *(reg_data_typ + REG_SP) = 0;
 
-      *(reg_los + REG_SP) = SP;
-      *(reg_ups + REG_SP) = SP;
+      reg_mints[REG_SP].los[0] = SP;
+      reg_mints[REG_SP].ups[0] = SP;
+      reg_mints_idx[REG_SP]    = 1;
     }
   }
 }
@@ -4369,7 +4384,7 @@ uint64_t engine(uint64_t* to_context) {
         backtrack_trace(current_context);
 
         // if (b == 0)
-        //   printf1((uint64_t*) "%s: backtracking ", exe_name);
+        //   printf1((uint64_t*) "%s: backtracking \n", exe_name);
         // else
         //   unprint_integer(b);
 

@@ -1,7 +1,10 @@
 #include "stdint.h"
 #include "stdbool.h"
 
-// ------ shared variables and procedures between source files -----
+// -----------------------------------------------------------------
+// variables and procedures which will be defined in selfie.c
+// and are needed in sase engine
+// -----------------------------------------------------------------
 
 extern uint64_t rs1;
 extern uint64_t rs2;
@@ -70,7 +73,6 @@ uint64_t two_to_the_power_of(uint64_t p);
 uint64_t get_bits(uint64_t n, uint64_t i, uint64_t b);
 
 // ---------------------------- SYMBOLIC----------------------------
-
 extern uint64_t MSIIAD;
 extern uint64_t MAX_TRACE_LENGTH;
 extern bool     is_only_one_branch_reachable;
@@ -86,8 +88,6 @@ extern uint64_t* read_los;
 extern uint64_t* read_ups;
 
 extern uint64_t* reg_vaddr;
-extern uint64_t* reg_los;
-extern uint64_t* reg_ups;
 extern uint64_t* reg_steps;
 extern uint8_t*  reg_data_typ;
 extern uint8_t   VALUE_T;
@@ -104,9 +104,13 @@ extern uint64_t* reg_corr_validity;
 
 extern uint64_t* values;
 extern uint64_t* data_types;
-extern uint64_t* los;
-extern uint64_t* ups;
 extern uint64_t* ld_froms;
+
+struct minterval {
+  uint64_t los[10];
+  uint64_t ups[10];
+} *reg_mints, *mints;
+extern uint8_t* reg_mints_idx;
 
 extern uint64_t mrcc;
 
@@ -154,17 +158,18 @@ uint64_t is_trace_space_available();
 void ealloc();
 void efree();
 
-void store_symbolic_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, uint8_t data_type, uint64_t lo, uint64_t up, uint64_t step, uint64_t ld_from, bool hasmn, uint64_t addsub_corr, uint64_t muldivrem_corr, uint64_t corr_validity, uint64_t trb, uint64_t from_tc);
+void store_symbolic_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, uint8_t data_type, uint64_t* lo, uint64_t* up, uint8_t mints_num, uint64_t step, uint64_t ld_from, bool hasmn, uint64_t addsub_corr, uint64_t muldivrem_corr, uint64_t corr_validity, uint64_t trb, uint64_t to_tc);
 
-void store_constrained_memory(uint64_t vaddr, uint64_t lo, uint64_t up, uint64_t step, uint64_t ld_from, bool hasmn, uint64_t addsub_corr, uint64_t muldivrem_corr, uint64_t corr_validity, uint64_t to_tc);
-void store_register_memory(uint64_t reg, uint64_t value);
+void store_constrained_memory(uint64_t vaddr, uint64_t* lo, uint64_t* up, uint8_t mints_num, uint64_t step, uint64_t ld_from, bool hasmn, uint64_t addsub_corr, uint64_t muldivrem_corr, uint64_t corr_validity, uint64_t to_tc);
 
-void constrain_memory(uint64_t reg, uint64_t lo, uint64_t up, uint64_t trb, bool only_reachable_branch);
-void propagate_backwards(uint64_t vaddr, uint64_t lo_before_op);
+void store_register_memory(uint64_t reg, uint64_t* value);
+
+void constrain_memory(uint64_t reg, uint64_t* lo, uint64_t* up, uint8_t mints_num, uint64_t trb, bool only_reachable_branch);
+void propagate_backwards(uint64_t vaddr, uint64_t* lo_before_op);
 void propagate_mul(uint64_t step, uint64_t k);
 void propagate_divu(uint64_t step, uint64_t k, uint64_t step_rd);
 void propagate_remu(uint64_t step, uint64_t divisor);
-void propagate_backwards_rhs(uint64_t lo, uint64_t up, uint64_t mrvc);
+void propagate_backwards_rhs(uint64_t* lo, uint64_t* up, uint8_t mints_num, uint64_t mrvc);
 
 void set_constraint(uint64_t reg, uint64_t hasco, uint64_t vaddr, uint64_t hasmn);
 void set_correction(uint64_t reg, uint64_t addsub_corr, uint64_t muldivrem_corr, uint64_t corr_validity);
