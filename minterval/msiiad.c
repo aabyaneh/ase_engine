@@ -6,6 +6,10 @@ uint64_t MSIIAD = 9;
 uint64_t MAX_TRACE_LENGTH = 10000000;
 uint64_t TWO_TO_THE_POWER_OF_32;
 
+typedef unsigned __int128 uint128_t;
+uint128_t UINT64_MAX_VALUE = 18446744073709551615U;
+uint128_t TWO_TO_THE_POWER_OF_64;
+
 // ---------- trace
 uint64_t  tc         = 0;             // trace counter
 uint64_t* pcs        = (uint64_t*) 0; // trace of program counter values
@@ -171,6 +175,8 @@ void init_symbolic_engine() {
   sd_to_idxs[0]      = 0;
 
   TWO_TO_THE_POWER_OF_32 = two_to_the_power_of(32);
+
+  TWO_TO_THE_POWER_OF_64 = UINT64_MAX_VALUE + 1U;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -189,6 +195,18 @@ uint64_t lcm(uint64_t n1, uint64_t n2) {
     return (n1 / gcd(n1, n2)) * n2;
   else
     return (n2 / gcd(n1, n2)) * n1;
+}
+
+uint128_t gcd_128(uint128_t n1, uint128_t n2) {
+  if (n1 == 0)
+    return n2;
+
+  return gcd(n2 % n1, n1);
+}
+
+uint128_t lcm_128(uint128_t n1, uint128_t n2) {
+  // assert 0 <= n1, n2 <= 2^64-1
+  return (n1 * n2) / gcd(n1, n2);
 }
 
 bool is_power_of_two(uint64_t v) {
@@ -405,14 +423,14 @@ void constrain_add() {
 
         bool cnd = add_sub_condition(reg_mints[rs1].los[0], reg_mints[rs1].ups[0], reg_mints[rs2].los[0], reg_mints[rs2].ups[0]);
         if (cnd == false) {
-          // TODO: make sure
-          uint64_t rhs = (lcm(TWO_TO_THE_POWER_OF_32, gcd_steps) - gcd_steps);
-          uint64_t lhs = (reg_mints[rs1].ups[0] - reg_mints[rs1].los[0]) + (reg_mints[rs2].ups[0] - reg_mints[rs2].los[0]);
+          uint128_t rhs = (uint128_t) lcm_128(TWO_TO_THE_POWER_OF_64, (uint128_t) gcd_steps) - gcd_steps;
+          uint128_t lhs = (uint128_t) (reg_mints[rs1].ups[0] - reg_mints[rs1].los[0]) + (reg_mints[rs2].ups[0] - reg_mints[rs2].los[0]);
           if (lhs >= rhs) {
-            uint64_t gcd_step_k = gcd(gcd_steps, TWO_TO_THE_POWER_OF_32);
-            uint64_t lo = (reg_mints[rs1].los[0] + reg_mints[rs2].los[0]) % TWO_TO_THE_POWER_OF_32;
+            // assert: gcd_steps <= UINT64_MAX_T
+            uint64_t gcd_step_k = gcd_128( (uint128_t) gcd_steps, TWO_TO_THE_POWER_OF_64);
+            uint64_t lo = (reg_mints[rs1].los[0] + reg_mints[rs2].los[0]);
             add_lo    = lo - (lo / gcd_step_k) * gcd_step_k;
-            add_up    = compute_upper_bound(add_lo, gcd_step_k, TWO_TO_THE_POWER_OF_32 - 1);
+            add_up    = compute_upper_bound(add_lo, gcd_step_k, UINT64_MAX_T);
             gcd_steps = gcd_step_k;
           } else {
             printf("OUTPUT: cannot reason about overflowed add %x\n", pc - entry_point);
@@ -645,13 +663,16 @@ void constrain_mul() {
             reg_mints[rd].ups[0] = reg_mints[rs1].ups[0] * reg_mints[rs2].ups[0];
             reg_mints_idx[rd]    = 1;
           } else {
-            // TODO: make sure
-            uint64_t rhs = (lcm(TWO_TO_THE_POWER_OF_32, reg_mints[rs2].los[0] * reg_steps[rs1]) - reg_mints[rs2].los[0] * reg_steps[rs1]) / reg_mints[rs2].los[0];
-            if (reg_mints[rs1].ups[0] - reg_mints[rs1].los[0] >= rhs) {
-              uint64_t gcd_step_k = gcd(reg_mints[rs2].los[0] * reg_steps[rs1], TWO_TO_THE_POWER_OF_32);
-              uint64_t lo          = (reg_mints[rs1].los[0] * reg_mints[rs2].los[0]) % TWO_TO_THE_POWER_OF_32;
+            // potential of overflow
+            // assert: reg_mints[rs2].los[0] * reg_steps[rs1] <= UINT64_MAX_T
+            uint128_t lcm_ = lcm_128(TWO_TO_THE_POWER_OF_64, (uint128_t) reg_mints[rs2].los[0] * reg_steps[rs1]);
+            uint128_t rhs = (uint128_t) (lcm_ - (uint128_t) reg_mints[rs2].los[0] * reg_steps[rs1]) / reg_mints[rs2].los[0];
+            uint128_t lhs = (reg_mints[rs1].ups[0] - reg_mints[rs1].los[0]);
+            if (lhs >= rhs) {
+              uint64_t gcd_step_k = gcd_128( (uint128_t) reg_mints[rs2].los[0] * reg_steps[rs1], TWO_TO_THE_POWER_OF_64);
+              uint64_t lo          = (reg_mints[rs1].los[0] * reg_mints[rs2].los[0]);
               reg_mints[rd].los[0] = lo - (lo / gcd_step_k) * gcd_step_k;
-              reg_mints[rd].ups[0] = compute_upper_bound(reg_mints[rd].los[0], gcd_step_k, TWO_TO_THE_POWER_OF_32 - 1);
+              reg_mints[rd].ups[0] = compute_upper_bound(reg_mints[rd].los[0], gcd_step_k, UINT64_MAX_T);
               reg_mints_idx[rd]    = 1;
               reg_steps[rd] = gcd_step_k;
               reg_corr_validity[rs1] += REMU_T;
@@ -695,18 +716,21 @@ void constrain_mul() {
             reg_mints[rd].ups[0] = reg_mints[rs1].ups[0] * reg_mints[rs2].ups[0];
             reg_mints_idx[rd]    = 1;
           } else {
-            // TODO: make sure
-            uint64_t rhs = (lcm(TWO_TO_THE_POWER_OF_32, reg_mints[rs1].los[0] * reg_steps[rs2]) - reg_mints[rs1].los[0] * reg_steps[rs2]) / reg_mints[rs1].los[0];
-            if (reg_mints[rs2].ups[0] - reg_mints[rs2].los[0] >= rhs) {
-              uint64_t gcd_step_k = gcd(reg_mints[rs1].los[0] * reg_steps[rs2], TWO_TO_THE_POWER_OF_32);
-              uint64_t lo          = (reg_mints[rs1].los[0] * reg_mints[rs2].los[0]) % TWO_TO_THE_POWER_OF_32;
+            // potential of overflow
+            // assert: reg_mints[rs2].los[0] * reg_steps[rs1] <= UINT64_MAX_T
+            uint128_t lcm_ = lcm_128(TWO_TO_THE_POWER_OF_64, (uint128_t) reg_mints[rs1].los[0] * reg_steps[rs2]);
+            uint128_t rhs = (uint128_t) (lcm_ - (uint128_t) reg_mints[rs1].los[0] * reg_steps[rs2]) / reg_mints[rs1].los[0];
+            uint128_t lhs = (reg_mints[rs2].ups[0] - reg_mints[rs2].los[0]);
+            if (lhs >= rhs) {
+              uint64_t gcd_step_k = gcd_128( (uint128_t) reg_mints[rs1].los[0] * reg_steps[rs2], TWO_TO_THE_POWER_OF_64);
+              uint64_t lo          = (reg_mints[rs1].los[0] * reg_mints[rs2].los[0]);
               reg_mints[rd].los[0] = lo - (lo / gcd_step_k) * gcd_step_k;
-              reg_mints[rd].ups[0] = compute_upper_bound(reg_mints[rd].los[0], gcd_step_k, TWO_TO_THE_POWER_OF_32 - 1);
+              reg_mints[rd].ups[0] = compute_upper_bound(reg_mints[rd].los[0], gcd_step_k, UINT64_MAX_T);
               reg_mints_idx[rd]    = 1;
               reg_steps[rd] = gcd_step_k;
               reg_corr_validity[rs2] += REMU_T;
             } else {
-              printf("OUTPUT: cannot reason about overflowed mul at %x \n", pc - entry_point);
+              printf("OUTPUT: cannot reason about overflowed mul at %x\n", pc - entry_point);
               exit(EXITCODE_SYMBOLICEXECUTIONERROR);
             }
           }
@@ -2383,15 +2407,18 @@ void propagate_mul(uint64_t step, uint64_t k) {
       lo_prop[i] = lo_prop[i] * k;
       up_prop[i] = up_prop[i] * k;
     } else {
-      // TODO: make sure
-      uint64_t rhs = (lcm(TWO_TO_THE_POWER_OF_32, k * step) - k * step) / k;
-      if (up_prop[i] - lo_prop[i] >= rhs) {
-        uint64_t gcd_step_k = gcd(k * step, TWO_TO_THE_POWER_OF_32);
-        uint64_t lo_p   = (lo_prop[i] * k) % TWO_TO_THE_POWER_OF_32;
-        lo_prop[i]   = lo_p - (lo_p / gcd_step_k) * gcd_step_k;
-        up_prop[i]   = compute_upper_bound(lo_prop[i], gcd_step_k, TWO_TO_THE_POWER_OF_32 - 1);
+      // potential of overflow
+      // assert: reg_mints[rs2].los[0] * reg_steps[rs1] <= UINT64_MAX_T
+      uint128_t lcm_ = lcm_128(TWO_TO_THE_POWER_OF_64, (uint128_t) k * step);
+      uint128_t rhs  = (uint128_t) (lcm_ - (uint128_t) k * step) / k;
+      uint128_t lhs  = (up_prop[i] - lo_prop[i]);
+      if (lhs >= rhs) {
+        uint64_t gcd_step_k = gcd_128( (uint128_t) k * step, TWO_TO_THE_POWER_OF_64);
+        uint64_t lo_p       = (lo_prop[i] * k);
+        lo_prop[i]          = lo_p - (lo_p / gcd_step_k) * gcd_step_k;
+        up_prop[i]          = compute_upper_bound(lo_prop[i], gcd_step_k, UINT64_MAX_T);
       } else {
-        printf("OUTPUT: phantom canot reason about overflowed mul at %x \n", pc - entry_point);
+        printf("OUTPUT: cannot reason about overflowed mul at %x\n", pc - entry_point);
         exit(EXITCODE_SYMBOLICEXECUTIONERROR);
       }
     }
