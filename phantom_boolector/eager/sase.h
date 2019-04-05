@@ -1,6 +1,9 @@
 #include "stdio.h"
 #include "boolector.h"
 
+#define RED   "\x1B[31m"
+#define RESET "\x1B[0m"
+
 // -----------------------------------------------------------------
 // variables and procedures which will be defined in selfie.c
 // and are needed in sase engine
@@ -28,7 +31,6 @@ extern uint64_t OP_OP;
 extern uint64_t F3_ADDI;
 
 extern uint64_t entry_point;
-
 extern uint64_t ic_addi;
 extern uint64_t ic_sub;
 extern uint64_t ic_sltu;
@@ -89,6 +91,8 @@ extern uint64_t       SASE;            // Solver Aided Symbolic Execution
 extern uint64_t       CONCRETE_T;
 extern uint64_t       SYMBOLIC_T;
 extern uint64_t       two_to_the_power_of_32;
+extern uint8_t        which_branch;
+extern uint8_t        assert_zone;
 
 // symbolic registers
 extern BoolectorNode**   sase_regs;           // array of pointers to SMT expressions
