@@ -173,5 +173,6 @@ void set_correction(uint64_t reg, uint64_t addsub_corr, uint64_t muldivrem_corr,
 
 void take_branch(uint64_t b, uint64_t how_many_more);
 void create_constraints(uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t up2, uint64_t trb);
+void create_mconstraints(uint64_t* lo1_p, uint64_t* up1_p, uint64_t* lo2_p, uint64_t* up2_p, uint64_t trb);
 
 uint64_t compute_upper_bound(uint64_t lo, uint64_t step, uint64_t value);

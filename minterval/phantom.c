@@ -2438,7 +2438,9 @@ void implement_printsv(uint64_t* context) {
   addr = (reg_vaddr[REG_A1] != 0) ? ld_froms[load_symbolic_memory(get_pt(context), reg_vaddr[REG_A1])] : 0;
 
   if (symbolic) {
-    printf("PRINTSV :=) id: %-3llu, vaddr: %-10llu => lo: %-5llu,up: %-5llu,step: %-5llu\n", id, addr, reg_mints[REG_A1].los[0], reg_mints[REG_A1].ups[0], reg_steps[REG_A1]);
+    for (uint8_t i = 0; i < reg_mints_idx[REG_A1]; i++) {
+      printf("PRINTSV :=) id: %-3llu, mint: %-2u vaddr: %-10llu => lo: %-5llu, up: %-5llu, step: %-5llu\n", id, i, addr, reg_mints[REG_A1].los[i], reg_mints[REG_A1].ups[i], reg_steps[REG_A1]);
+    }
 
     set_pc(context, get_pc(context) + INSTRUCTIONSIZE);
   }
