@@ -1,6 +1,9 @@
 #include "stdint.h"
 #include "stdbool.h"
 
+#define MAX_SD_TO_NUM        100
+#define MAX_NUM_OF_INTERVALS 10
+
 // ------ shared variables and procedures between source files -----
 
 extern uint64_t rs1;
@@ -104,8 +107,8 @@ extern uint64_t* data_types;
 extern uint64_t* ld_froms;
 
 struct minterval {
-  uint64_t los[10];
-  uint64_t ups[10];
+  uint64_t los[MAX_NUM_OF_INTERVALS];
+  uint64_t ups[MAX_NUM_OF_INTERVALS];
 } *reg_mints, *mints;
 extern uint8_t* reg_mints_idx;
 
@@ -162,7 +165,7 @@ void store_constrained_memory(uint64_t vaddr, uint64_t* lo, uint64_t* up, uint8_
 void store_register_memory(uint64_t reg, uint64_t* value);
 
 void constrain_memory(uint64_t reg, uint64_t* lo, uint64_t* up, uint8_t mints_num, uint64_t trb, bool only_reachable_branch);
-void propagate_backwards(uint64_t vaddr, uint64_t* lo_before_op);
+void propagate_backwards(uint64_t vaddr, uint64_t lo_before_op);
 void propagate_mul(uint64_t step, uint64_t k);
 void propagate_divu(uint64_t step, uint64_t k, uint64_t step_rd);
 void propagate_remu(uint64_t step, uint64_t divisor);

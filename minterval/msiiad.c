@@ -30,12 +30,11 @@ uint64_t* ld_froms        = (uint64_t*) 0; // ld form where vaddr
 uint64_t* ld_froms_tc     = (uint64_t*) 0; // ld form where tc
 // propagation from right to left b = a + 1;
 uint64_t* sd_to_idxs      = (uint64_t*) 0;
-uint64_t  MAX_SD_TO_NUM   = 100;
 struct sd_to_tc {
-  uint64_t tc[100];
+  uint64_t tc[MAX_SD_TO_NUM];
 } *sd_tos;
-uint64_t lo_prop[10];
-uint64_t up_prop[10];
+uint64_t lo_prop[MAX_NUM_OF_INTERVALS];
+uint64_t up_prop[MAX_NUM_OF_INTERVALS];
 uint8_t  mints_num_prop = 0;
 uint64_t step_prop;
 
@@ -68,16 +67,16 @@ uint64_t  REMU_T = 5;
 // ---------- multi intervals
 uint8_t* reg_mints_idx = (uint8_t*) 0;
 uint8_t* mints_idxs    = (uint8_t*) 0;
-uint8_t  MAX_NUM_OF_INTERVALS   = 10;
 // struct minterval {
 //   uint64_t los[10];
 //   uint64_t ups[10];
 // } *reg_mints, *mints;
+uint64_t* mints_min_lo = (uint64_t*) 0;
 // temporaries to pass as function parameters
-uint64_t mint_lo_sym[10];
-uint64_t mint_up_sym[10];
-uint64_t mint_lo_crt[10];
-uint64_t mint_up_crt[10];
+uint64_t mint_lo_sym[MAX_NUM_OF_INTERVALS];
+uint64_t mint_up_sym[MAX_NUM_OF_INTERVALS];
+uint64_t mint_lo_crt[MAX_NUM_OF_INTERVALS];
+uint64_t mint_up_crt[MAX_NUM_OF_INTERVALS];
 uint8_t  mint_num_sym = 0;
 uint64_t val_ptr[1];
 // for minterval managment in eq/diseq
@@ -137,6 +136,7 @@ void init_symbolic_engine() {
   reg_mints          = malloc(NUMBEROFREGISTERS * sizeof(struct minterval));
   mints_idxs         = malloc(MAX_TRACE_LENGTH  * sizeof(uint8_t));
   reg_mints_idx      = malloc(NUMBEROFREGISTERS * sizeof(uint8_t));
+  mints_min_lo       = malloc(MAX_TRACE_LENGTH  * SIZEOFUINT64);
 
   read_values        = malloc(MAX_TRACE_LENGTH  * SIZEOFUINT64);
   read_los           = malloc(MAX_TRACE_LENGTH  * SIZEOFUINT64);
@@ -1164,8 +1164,9 @@ bool create_xor_true_false_constraints(uint64_t lo1, uint64_t up1, uint64_t lo2,
 
 // multi intervals are managed
 void create_xor_mconstraints(uint64_t* lo1_p, uint64_t* up1_p, uint64_t* lo2_p, uint64_t* up2_p, uint64_t trb) {
-  bool cannot_handle = false;
-  bool empty = false;
+  bool cannot_handle   = false;
+  bool true_reachable  = false;
+  bool false_reachable = false;
   uint64_t lo1;
   uint64_t up1;
   uint64_t lo2;
@@ -1210,24 +1211,35 @@ void create_xor_mconstraints(uint64_t* lo1_p, uint64_t* up1_p, uint64_t* lo2_p, 
     }
 
   } else {
-    if (mint_num_true_rs1 > 0 && mint_num_true_rs2 > 0) {
-      constrain_memory(rs1, mint_true_rs1.los, mint_true_rs1.ups, mint_num_true_rs1, trb, false);
-      constrain_memory(rs2, mint_true_rs2.los, mint_true_rs2.ups, mint_num_true_rs2, trb, false);
-    } else {
-      is_only_one_branch_reachable = true;
-      empty = true;
-    }
+    if (mint_num_true_rs1 > 0 && mint_num_true_rs2 > 0)
+      true_reachable  = true;
+    if (mint_num_false_rs1 > 0 && mint_num_false_rs2 > 0)
+      false_reachable = true;
 
-    if (mint_num_false_rs1 > 0 && mint_num_false_rs2 > 0) {
-      if (!empty)
+    if (true_reachable) {
+      if (false_reachable) {
+        constrain_memory(rs1, mint_true_rs1.los, mint_true_rs1.ups, mint_num_true_rs1, trb, false);
+        constrain_memory(rs2, mint_true_rs2.los, mint_true_rs2.ups, mint_num_true_rs2, trb, false);
         take_branch(1, 1);
-      constrain_memory(rs1, mint_false_rs1.los, mint_false_rs1.ups, mint_num_false_rs1, trb, false);
-      constrain_memory(rs2, mint_false_rs2.los, mint_false_rs2.ups, mint_num_false_rs2, trb, false);
+        constrain_memory(rs1, mint_false_rs1.los, mint_false_rs1.ups,mint_num_false_rs1, trb, false);
+        constrain_memory(rs2, mint_false_rs2.los, mint_false_rs2.ups,mint_num_false_rs2, trb, false);
+        take_branch(0, 0);
+      } else {
+        constrain_memory(rs1, mint_true_rs1.los, mint_true_rs1.ups, mint_num_true_rs1, trb, true);
+        constrain_memory(rs2, mint_true_rs2.los, mint_true_rs2.ups, mint_num_true_rs2, trb, true);
+        is_only_one_branch_reachable = true;
+        take_branch(1, 0);
+      }
+    } else if (false_reachable) {
+      constrain_memory(rs1, mint_false_rs1.los, mint_false_rs1.ups,mint_num_false_rs1, trb, true);
+      constrain_memory(rs2, mint_false_rs2.los, mint_false_rs2.ups,mint_num_false_rs2, trb, true);
+      is_only_one_branch_reachable = true;
       take_branch(0, 0);
     } else {
-      is_only_one_branch_reachable = true;
-      take_branch(1, 0);
+      printf("OUTPUT: both branches unreachable!!! %x\n", pc - entry_point);
+      exit(EXITCODE_SYMBOLICEXECUTIONERROR);
     }
+
   }
 
 }
@@ -1707,9 +1719,12 @@ void store_symbolic_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, uint8_t
     *(vaddrs     + tc) = vaddr;
 
     *(mints_idxs + tc) = mints_num;
+    *(mints_min_lo + tc) = lo[0];
     for (uint8_t i = 0; i < mints_num; i++) {
       mints[tc].los[i] = lo[i];
       mints[tc].ups[i] = up[i];
+      if (lo[i] < mints_min_lo[tc])
+        mints_min_lo[tc] = lo[i];
     }
 
     *(ld_froms        + tc) = ld_from;
@@ -1778,11 +1793,14 @@ uint64_t reverse_division_up(uint64_t ups_mrvc, uint64_t up, uint64_t codiv) {
 // consider y = x op a;
 // mrvc is mrvc of x
 // lo_before_op is previouse lo of y
-void apply_correction(uint64_t* lo, uint64_t* up, uint8_t mints_num, bool hasmn, uint64_t addsub_corr, uint64_t muldivrem_corr, uint64_t corr_validity, uint64_t* lo_before_op, uint64_t step, uint64_t mrvc) {
+void apply_correction(uint64_t* lo, uint64_t* up, uint8_t mints_num, bool hasmn, uint64_t addsub_corr, uint64_t muldivrem_corr, uint64_t corr_validity, uint64_t lo_before_op, uint64_t step, uint64_t mrvc) {
+  uint64_t lo_p[MAX_NUM_OF_INTERVALS];
+  uint64_t up_p[MAX_NUM_OF_INTERVALS];
+  bool     is_lo_p_up_p_used = false;
 
   for (uint8_t i = 0; i < mints_num; i++) {
-    lo_prop[i] = compute_lower_bound(lo_before_op[i], step, lo[i]);
-    up_prop[i] = compute_upper_bound(lo_before_op[i], step, up[i]);
+    lo_prop[i] = compute_lower_bound(lo_before_op, step, lo[i]);
+    up_prop[i] = compute_upper_bound(lo_before_op, step, up[i]);
   }
 
   // add, sub
@@ -1805,8 +1823,8 @@ void apply_correction(uint64_t* lo, uint64_t* up, uint8_t mints_num, bool hasmn,
     // <9223372036854775808, 2^64 - 1, 1> * 2 = <0, 2^64 - 2, 2>
     // <9223372036854775809, 15372286728091293014, 1> * 3 = <9223372036854775811, 9223372036854775810, 3>
     for (uint8_t i = 0; i < mints_num; i++) {
-      lo_prop[i] = mints[mrvc].los[i] + (lo_prop[i] - lo_before_op[i]) / muldivrem_corr; // lo_op_before_cmp
-      up_prop[i] = mints[mrvc].los[i] + (up_prop[i] - lo_before_op[i]) / muldivrem_corr; // lo_op_before_cmp
+      lo_prop[i] = mints_min_lo[mrvc] + (lo_prop[i] - lo_before_op) / muldivrem_corr; // lo_op_before_cmp
+      up_prop[i] = mints_min_lo[mrvc] + (up_prop[i] - lo_before_op) / muldivrem_corr; // lo_op_before_cmp
     }
 
   } else if (corr_validity == DIVU_T) {
@@ -1876,9 +1894,20 @@ void apply_correction(uint64_t* lo, uint64_t* up, uint8_t mints_num, bool hasmn,
   //////////////////////////////////////////////////////////////////////////////
   store_constrained_memory(vaddrs[mrvc], lo_prop, up_prop, mints_num, steps[mrvc], ld_froms[mrvc], hasmns[mrvc], addsub_corrs[mrvc], muldivrem_corrs[mrvc], corr_validitys[mrvc], mrvc);
   if (ld_froms[mrvc]) {
-    propagate_backwards(vaddrs[mrvc], mints[mrvc].los);
+    for (uint8_t i = 0; i < mints_num; i++) {
+      lo_p[i] = lo_prop[i];
+      up_p[i] = up_prop[i];
+    }
+    is_lo_p_up_p_used = true;
+    propagate_backwards(vaddrs[mrvc], mints_min_lo[mrvc]);
   }
   if (sd_to_idxs[mrvc]) {
+    if (is_lo_p_up_p_used) {
+      for (uint8_t i = 0; i < mints_num; i++) {
+        lo_prop[i] = lo_p[i];
+        up_prop[i] = up_p[i];
+      }
+    }
     propagate_backwards_rhs(lo_prop, up_prop, mints_num, mrvc);
   }
   //////////////////////////////////////////////////////////////////////////////
@@ -1901,7 +1930,8 @@ void propagate_backwards_rhs(uint64_t* lo, uint64_t* up, uint8_t mints_num, uint
   for (int i = 0; i < sd_to_idxs[mrvc]; i++) {
     to_tc = sd_tos[mrvc].tc[i];
     mr_to_tc = load_symbolic_memory(pt, vaddrs[to_tc]);
-    if (mr_to_tc != to_tc && ld_froms[mr_to_tc] != ld_froms[to_tc]) {
+    mr_to_tc = mr_sds[mr_to_tc];
+    if (mr_to_tc > to_tc) {
       continue;
     }
     // lo_prop = lo;
@@ -1948,7 +1978,7 @@ void propagate_backwards_rhs(uint64_t* lo, uint64_t* up, uint8_t mints_num, uint
 // if (y)
 // vaddr of y -> new y
 // lo_before_op for y -> before new y
-void propagate_backwards(uint64_t vaddr, uint64_t* lo_before_op) {
+void propagate_backwards(uint64_t vaddr, uint64_t lo_before_op) {
   uint64_t mrvc_y;
   uint64_t mrvc_x;
 
@@ -1966,12 +1996,17 @@ void constrain_memory(uint64_t reg, uint64_t* lo, uint64_t* up, uint8_t mints_nu
   if (reg_symb_typ[reg] == SYMBOLIC && assert_zone == false) {
     mrvc = (reg == rs1) ? current_rs1_tc : current_rs2_tc;
 
-    if (only_reachable_branch == true) {
+    if (only_reachable_branch == true && reg_corr_validity[reg] <= 5) {
       lo = mints[mrvc].los;
       up = mints[mrvc].ups;
       store_constrained_memory(reg_vaddr[reg], lo, up, mints_idxs[mrvc], steps[mrvc], ld_froms[mrvc], hasmns[mrvc], addsub_corrs[mrvc], muldivrem_corrs[mrvc], corr_validitys[mrvc], mrvc);
     } else {
-      apply_correction(lo, up, mints_num, reg_hasmn[reg], reg_addsub_corr[reg], reg_muldivrem_corr[reg], reg_corr_validity[reg], reg_mints[reg].los, reg_steps[reg], mrvc);
+      uint64_t min = reg_mints[reg].los[0];
+      for (uint8_t i = 1; i < reg_mints_idx[reg]; i++) {
+        if (reg_mints[reg].los[i] < min)
+          min = reg_mints[reg].los[i];
+      }
+      apply_correction(lo, up, mints_num, reg_hasmn[reg], reg_addsub_corr[reg], reg_muldivrem_corr[reg], reg_corr_validity[reg], min, reg_steps[reg], mrvc);
     }
 
   }
@@ -2004,7 +2039,7 @@ void take_branch(uint64_t b, uint64_t how_many_more) {
     *(reg_steps + rd) = 1;
     reg_mints[rd].los[0] = b;
     reg_mints[rd].ups[0] = b;
-    reg_mints_idx[0]     = 1;
+    reg_mints_idx[rd]    = 1;
 
     set_constraint(rd, 0, 0, 0);
     set_correction(rd, 0, 0, 0);
@@ -2214,8 +2249,9 @@ void create_true_false_constraints(uint64_t lo1, uint64_t up1, uint64_t lo2, uin
 
 // multi intervals are managed
 void create_mconstraints(uint64_t* lo1_p, uint64_t* up1_p, uint64_t* lo2_p, uint64_t* up2_p, uint64_t trb) {
-  bool cannot_handle = false;
-  bool empty = false;
+  bool cannot_handle   = false;
+  bool true_reachable  = false;
+  bool false_reachable = false;
   uint64_t lo1;
   uint64_t up1;
   uint64_t lo2;
@@ -2236,23 +2272,33 @@ void create_mconstraints(uint64_t* lo1_p, uint64_t* up1_p, uint64_t* lo2_p, uint
     }
   }
 
-  if (mint_num_true_rs1 > 0 && mint_num_true_rs2 > 0) {
-    constrain_memory(rs1, mint_true_rs1.los, mint_true_rs1.ups,mint_num_true_rs1, trb, false);
-    constrain_memory(rs2, mint_true_rs2.los, mint_true_rs2.ups,mint_num_true_rs2, trb, false);
-  } else {
-    is_only_one_branch_reachable = true;
-    empty = true;
-  }
+  if (mint_num_true_rs1 > 0 && mint_num_true_rs2 > 0)
+    true_reachable  = true;
+  if (mint_num_false_rs1 > 0 && mint_num_false_rs2 > 0)
+    false_reachable = true;
 
-  if (mint_num_false_rs1 > 0 && mint_num_false_rs2 > 0) {
-    if (!empty)
+  if (true_reachable) {
+    if (false_reachable) {
+      constrain_memory(rs1, mint_true_rs1.los, mint_true_rs1.ups, mint_num_true_rs1, trb, false);
+      constrain_memory(rs2, mint_true_rs2.los, mint_true_rs2.ups, mint_num_true_rs2, trb, false);
       take_branch(1, 1);
-    constrain_memory(rs1, mint_false_rs1.los, mint_false_rs1.ups,mint_num_false_rs1, trb, false);
-    constrain_memory(rs2, mint_false_rs2.los, mint_false_rs2.ups,mint_num_false_rs2, trb, false);
+      constrain_memory(rs1, mint_false_rs1.los, mint_false_rs1.ups,mint_num_false_rs1, trb, false);
+      constrain_memory(rs2, mint_false_rs2.los, mint_false_rs2.ups,mint_num_false_rs2, trb, false);
+      take_branch(0, 0);
+    } else {
+      constrain_memory(rs1, mint_true_rs1.los, mint_true_rs1.ups, mint_num_true_rs1, trb, true);
+      constrain_memory(rs2, mint_true_rs2.los, mint_true_rs2.ups, mint_num_true_rs2, trb, true);
+      is_only_one_branch_reachable = true;
+      take_branch(1, 0);
+    }
+  } else if (false_reachable) {
+    constrain_memory(rs1, mint_false_rs1.los, mint_false_rs1.ups,mint_num_false_rs1, trb, true);
+    constrain_memory(rs2, mint_false_rs2.los, mint_false_rs2.ups,mint_num_false_rs2, trb, true);
+    is_only_one_branch_reachable = true;
     take_branch(0, 0);
   } else {
-    is_only_one_branch_reachable = true;
-    take_branch(1, 0);
+    printf("OUTPUT: both branches unreachable!!! %x\n", pc - entry_point);
+    exit(EXITCODE_SYMBOLICEXECUTIONERROR);
   }
 
 }
