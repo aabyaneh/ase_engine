@@ -26,8 +26,7 @@ bool*     hasmns          = (bool*) 0;
 // ---------- propagation
 uint64_t* mr_sds          = (uint64_t*) 0; // most recent sd to
 // propagation from left to right b = a + 1; (chain)
-uint64_t* ld_froms        = (uint64_t*) 0; // ld form where vaddr
-uint64_t* ld_froms_tc     = (uint64_t*) 0; // ld form where tc
+// ld_froms and ld_froms_tc
 // propagation from right to left b = a + 1;
 uint64_t* sd_to_idxs      = (uint64_t*) 0;
 struct sd_to_tc {
@@ -54,7 +53,6 @@ uint8_t*  reg_symb_typ = (uint8_t*) 0; // register has constraint
 uint8_t   CONCRETE   = 0;
 uint8_t   SYMBOLIC_CONCRETE = 1;
 uint8_t   SYMBOLIC   = 2;
-uint64_t* reg_vaddr = (uint64_t*) 0; // vaddr of constrained memory
 bool*     reg_hasmn = (bool*) 0; // constraint has minuend
 // corrections
 uint64_t* reg_addsub_corr    = (uint64_t*) 0;
@@ -64,12 +62,19 @@ uint64_t  MUL_T  = 3;
 uint64_t  DIVU_T = 4;
 uint64_t  REMU_T = 5;
 
+// ---------- operand's addresses
+uint8_t* reg_addrs_idx = (uint8_t*) 0;
+uint8_t* ld_froms_idx  = (uint8_t*) 0;
+// struct addr {
+//   uint64_t vaddrs[MAX_NUM_OF_OP_VADDRS];
+// } *reg_addr, *ld_froms, *ld_froms_tc;
+
 // ---------- multi intervals
 uint8_t* reg_mints_idx = (uint8_t*) 0;
 uint8_t* mints_idxs    = (uint8_t*) 0;
 // struct minterval {
-//   uint64_t los[10];
-//   uint64_t ups[10];
+//   uint64_t los[MAX_NUM_OF_INTERVALS];
+//   uint64_t ups[MAX_NUM_OF_INTERVALS];
 // } *reg_mints, *mints;
 uint64_t* mints_min_lo = (uint64_t*) 0;
 // temporaries to pass as function parameters
@@ -89,8 +94,8 @@ uint8_t mint_num_true_rs2;
 uint8_t mint_num_false_rs1;
 uint8_t mint_num_false_rs2;
 // for propagation defined above
-// uint64_t lo_prop[10];
-// uint64_t up_prop[10];
+// uint64_t lo_prop[MAX_NUM_OF_INTERVALS];
+// uint64_t up_prop[MAX_NUM_OF_INTERVALS];
 // uint8_t  mints_num_prop = 0;
 
 // ---------- other globals
@@ -120,13 +125,17 @@ void init_symbolic_engine() {
   data_types         = malloc(MAX_TRACE_LENGTH  * SIZEOFUINT64);
   steps              = malloc(MAX_TRACE_LENGTH  * SIZEOFUINT64);
   vaddrs             = malloc(MAX_TRACE_LENGTH  * SIZEOFUINT64);
-  ld_froms           = malloc(MAX_TRACE_LENGTH  * SIZEOFUINT64);
   addsub_corrs       = malloc(MAX_TRACE_LENGTH  * SIZEOFUINT64);
   muldivrem_corrs    = malloc(MAX_TRACE_LENGTH  * SIZEOFUINT64);
   corr_validitys     = malloc(MAX_TRACE_LENGTH  * SIZEOFUINT64);
   hasmns             = malloc(MAX_TRACE_LENGTH  * SIZEOFUINT64);
 
-  ld_froms_tc        = malloc(MAX_TRACE_LENGTH  * SIZEOFUINT64);
+  ld_froms           = malloc(MAX_TRACE_LENGTH  * sizeof(struct addr));
+  ld_froms_tc        = malloc(MAX_TRACE_LENGTH  * sizeof(struct addr));
+  reg_addr           = malloc(NUMBEROFREGISTERS * sizeof(struct addr));
+  ld_froms_idx       = malloc(MAX_TRACE_LENGTH  * sizeof(uint8_t));
+  reg_addrs_idx      = zalloc(NUMBEROFREGISTERS * sizeof(uint8_t));
+
   mr_sds             = malloc(MAX_TRACE_LENGTH  * SIZEOFUINT64);
 
   sd_to_idxs         = malloc(MAX_TRACE_LENGTH  * SIZEOFUINT64);
@@ -145,7 +154,6 @@ void init_symbolic_engine() {
   reg_data_typ       = zalloc(NUMBEROFREGISTERS * REGISTERSIZE);
   reg_steps          = malloc(NUMBEROFREGISTERS * REGISTERSIZE);
   reg_symb_typ       = zalloc(NUMBEROFREGISTERS * REGISTERSIZE);
-  reg_vaddr          = zalloc(NUMBEROFREGISTERS * REGISTERSIZE);
   reg_hasmn          = zalloc(NUMBEROFREGISTERS * REGISTERSIZE);
   reg_addsub_corr    = zalloc(NUMBEROFREGISTERS * REGISTERSIZE);
   reg_muldivrem_corr = zalloc(NUMBEROFREGISTERS * REGISTERSIZE);
@@ -165,14 +173,14 @@ void init_symbolic_engine() {
   mints_idxs[0]      = 0;
   steps[0]           = 0;
   vaddrs[0]          = 0;
-  ld_froms[0]        = 0;
   addsub_corrs[0]    = 0;
   muldivrem_corrs[0] = 0;
   corr_validitys[0]  = 0;
   hasmns[0]          = 0;
-  ld_froms_tc[0]     = 0;
   mr_sds[0]          = 0;
   sd_to_idxs[0]      = 0;
+  ld_froms_idx[0]    = 0;
+  mints_min_lo[0]    = 0;
 
   TWO_TO_THE_POWER_OF_32 = two_to_the_power_of(32);
 
@@ -302,10 +310,10 @@ void constrain_lui() {
     reg_mints[rd].ups[0] = imm << 12;
     reg_mints_idx[rd]    = 1;
     reg_steps[rd]        = 1;
+    reg_addrs_idx[rd]    = 0;
 
     // rd has no constraint
-    set_constraint(rd, 0, 0, 0);
-    set_correction(rd, 0, 0, 0);
+    set_correction(rd, 0, 0, 0, 0, 0);
   }
 }
 
@@ -319,10 +327,10 @@ void constrain_addi() {
     reg_mints[rd].ups[0] = reg_mints[rs1].ups[0];
     reg_mints_idx[rd]    = 1;
     reg_steps[rd]        = 1;
+    reg_addrs_idx[rd]    = 0;
 
     // rd has no constraint if rs1 is memory range
-    set_constraint(rd, 0, 0, 0);
-    set_correction(rd, 0, 0, 0);
+    set_correction(rd, 0, 0, 0, 0, 0);
 
     return;
   }
@@ -332,9 +340,9 @@ void constrain_addi() {
   // interval semantics of addi
   if (reg_symb_typ[rs1] == SYMBOLIC) {
       // rd inherits rs1 constraint
-      set_constraint(rd, reg_symb_typ[rs1], reg_vaddr[rs1], 0);
-      set_correction(rd, reg_addsub_corr[rs1] + imm, reg_muldivrem_corr[rs1],
+      set_correction(rd, reg_symb_typ[rs1], 0, reg_addsub_corr[rs1] + imm, reg_muldivrem_corr[rs1],
         (reg_corr_validity[rs1] == 0) ? MUL_T : reg_corr_validity[rs1]);
+      set_vaddrs(rd, reg_addr[rs1].vaddrs, 0, reg_addrs_idx[rs1]);
 
       reg_steps[rd] = reg_steps[rs1];
       for (uint8_t i = 0; i < reg_mints_idx[rs1]; i++) {
@@ -345,13 +353,13 @@ void constrain_addi() {
 
   } else {
     // rd has no constraint if rs1 has none
-    set_constraint(rd, 0, 0, 0);
-    set_correction(rd, 0, 0, 0);
+    set_correction(rd, 0, 0, 0, 0, 0);
 
     reg_mints[rd].los[0] = reg_mints[rs1].los[0] + imm;
     reg_mints[rd].ups[0] = reg_mints[rd].los[0];
     reg_mints_idx[rd]    = 1;
     reg_steps[rd]        = 1;
+    reg_addrs_idx[rd]    = 0;
   }
 }
 
@@ -368,10 +376,10 @@ bool constrain_add_pointer() {
     reg_mints[rd].ups[0] = reg_mints[rs1].ups[0];
     reg_mints_idx[rd]    = 1;
     reg_steps[rd]        = 1;
+    reg_addrs_idx[rd]    = 0;
 
     // rd has no constraint if rs1 is memory range
-    set_constraint(rd, 0, 0, 0);
-    set_correction(rd, 0, 0, 0);
+    set_correction(rd, 0, 0, 0, 0, 0);
 
     return 1;
   } else if (reg_data_typ[rs2] == POINTER_T) {
@@ -380,10 +388,10 @@ bool constrain_add_pointer() {
     reg_mints[rd].ups[0] = reg_mints[rs2].ups[0];
     reg_mints_idx[rd]    = 1;
     reg_steps[rd]        = 1;
+    reg_addrs_idx[rd]    = 0;
 
     // rd has no constraint if rs2 is memory range
-    set_constraint(rd, 0, 0, 0);
-    set_correction(rd, 0, 0, 0);
+    set_correction(rd, 0, 0, 0, 0, 0);
 
     return 1;
   }
@@ -406,8 +414,10 @@ void constrain_add() {
       if (reg_symb_typ[rs2] == SYMBOLIC) {
         // we cannot keep track of more than one constraint for add but
         // need to warn about their earlier presence if used in comparisons
-        set_constraint(rd, SYMBOLIC, reg_vaddr[rs1], 0);
-        set_correction(rd, 0, 0, 10);
+        set_correction(rd, SYMBOLIC, 0, 0, 0, 10);
+        uint8_t rd_addr_idx = reg_addrs_idx[rs1] + reg_addrs_idx[rs2];
+        set_vaddrs(rd, reg_addr[rs1].vaddrs, 0, reg_addrs_idx[rs1]);
+        set_vaddrs(rd, reg_addr[rs2].vaddrs, reg_addrs_idx[rs1], rd_addr_idx);
 
         if (reg_mints_idx[rs1] > 1 || reg_mints_idx[rs2] > 1) {
           printf("OUTPUT: unsupported minterval 1 %x \n", pc - entry_point);
@@ -448,9 +458,9 @@ void constrain_add() {
 
       } else {
         // rd inherits rs1 constraint since rs2 has none
-        set_constraint(rd, reg_symb_typ[rs1], reg_vaddr[rs1], 0);
-        set_correction(rd, reg_addsub_corr[rs1] + reg_mints[rs2].los[0], reg_muldivrem_corr[rs1],
+        set_correction(rd, reg_symb_typ[rs1], 0, reg_addsub_corr[rs1] + reg_mints[rs2].los[0], reg_muldivrem_corr[rs1],
           (reg_corr_validity[rs1] == 0) ? MUL_T : reg_corr_validity[rs1]);
+        set_vaddrs(rd, reg_addr[rs1].vaddrs, 0, reg_addrs_idx[rs1]);
 
         reg_steps[rd] = reg_steps[rs1];
         for (uint8_t i = 0; i < reg_mints_idx[rs1]; i++) {
@@ -461,9 +471,9 @@ void constrain_add() {
       }
     } else if (reg_symb_typ[rs2] == SYMBOLIC) {
       // rd inherits rs2 constraint since rs1 has none
-      set_constraint(rd, reg_symb_typ[rs2], reg_vaddr[rs2], 0);
-      set_correction(rd, reg_addsub_corr[rs2] + reg_mints[rs1].los[0], reg_muldivrem_corr[rs2],
+      set_correction(rd, reg_symb_typ[rs2], 0, reg_addsub_corr[rs2] + reg_mints[rs1].los[0], reg_muldivrem_corr[rs2],
         (reg_corr_validity[rs2] == 0) ? MUL_T : reg_corr_validity[rs2]);
+      set_vaddrs(rd, reg_addr[rs2].vaddrs, 0, reg_addrs_idx[rs2]);
 
       reg_steps[rd] = reg_steps[rs2];
       for (uint8_t i = 0; i < reg_mints_idx[rs2]; i++) {
@@ -473,13 +483,13 @@ void constrain_add() {
       reg_mints_idx[rd] = reg_mints_idx[rs2];
     } else {
       // rd has no constraint if both rs1 and rs2 have no constraints
-      set_constraint(rd, 0, 0, 0);
-      set_correction(rd, 0, 0, 0);
+      set_correction(rd, 0, 0, 0, 0, 0);
 
       reg_mints[rd].los[0] = reg_mints[rs1].los[0] + reg_mints[rs2].los[0];
       reg_mints[rd].ups[0] = reg_mints[rd].los[0];
       reg_mints_idx[rd]    = 1;
       reg_steps[rd]        = 1;
+      reg_addrs_idx[rd]    = 0;
     }
   }
 }
@@ -494,10 +504,10 @@ bool constrain_sub_pointer() {
           reg_mints[rd].ups[0] = registers[rd];
           reg_mints_idx[rd]    = 1;
           reg_steps[rd]        = 1;
+          reg_addrs_idx[rd]    = 0;
 
           // rd has no constraint if rs1 and rs2 are memory range
-          set_constraint(rd, 0, 0, 0);
-          set_correction(rd, 0, 0, 0);
+          set_correction(rd, 0, 0, 0, 0, 0);
 
           return 1;
         }
@@ -512,10 +522,10 @@ bool constrain_sub_pointer() {
       reg_mints[rd].ups[0] = reg_mints[rs1].ups[0];
       reg_mints_idx[rd]    = 1;
       reg_steps[rd]        = 1;
+      reg_addrs_idx[rd]    = 0;
 
       // rd has no constraint if rs1 is memory range
-      set_constraint(rd, 0, 0, 0);
-      set_correction(rd, 0, 0, 0);
+      set_correction(rd, 0, 0, 0, 0, 0);
 
       return 1;
     }
@@ -525,10 +535,10 @@ bool constrain_sub_pointer() {
     reg_mints[rd].ups[0] = reg_mints[rs2].ups[0];
     reg_mints_idx[rd]    = 1;
     reg_steps[rd]        = 1;
+    reg_addrs_idx[rd]    = 0;
 
     // rd has no constraint if rs2 is memory range
-    set_constraint(rd, 0, 0, 0);
-    set_correction(rd, 0, 0, 0);
+    set_correction(rd, 0, 0, 0, 0, 0);
 
     return 1;
   }
@@ -552,8 +562,10 @@ void constrain_sub() {
       if (reg_symb_typ[rs2] == SYMBOLIC) {
         // we cannot keep track of more than one constraint for sub but
         // need to warn about their earlier presence if used in comparisons
-        set_constraint(rd, SYMBOLIC, reg_vaddr[rs1], 0);
-        set_correction(rd, 0, 0, 10);
+        set_correction(rd, SYMBOLIC, 0, 0, 0, 10);
+        uint8_t rd_addr_idx = reg_addrs_idx[rs1] + reg_addrs_idx[rs2];
+        set_vaddrs(rd, reg_addr[rs1].vaddrs, 0, reg_addrs_idx[rs1]);
+        set_vaddrs(rd, reg_addr[rs2].vaddrs, reg_addrs_idx[rs1], rd_addr_idx);
 
         if (reg_mints_idx[rs1] > 1 || reg_mints_idx[rs2] > 1) {
           printf("OUTPUT: unsupported minterval 2 %x \n", pc - entry_point);
@@ -577,13 +589,13 @@ void constrain_sub() {
         reg_mints[rd].los[0] = reg_mints[rs1].los[0] - sub_up;
         reg_mints[rd].ups[0] = reg_mints[rs1].ups[0] - sub_lo;
         reg_mints_idx[rd]    = 1;
-        reg_steps[rd] = gcd_steps;
+        reg_steps[rd]        = gcd_steps;
 
       } else {
         // rd inherits rs1 constraint since rs2 has none
-        set_constraint(rd, reg_symb_typ[rs1], reg_vaddr[rs1], 0);
-        set_correction(rd, reg_addsub_corr[rs1] - reg_mints[rs2].los[0], reg_muldivrem_corr[rs1],
+        set_correction(rd, reg_symb_typ[rs1], 0, reg_addsub_corr[rs1] - reg_mints[rs2].los[0], reg_muldivrem_corr[rs1],
           (reg_corr_validity[rs1] == 0) ? MUL_T : reg_corr_validity[rs1]);
+        set_vaddrs(rd, reg_addr[rs1].vaddrs, 0, reg_addrs_idx[rs1]);
 
         reg_steps[rd] = reg_steps[rs1];
         sub_lo = reg_mints[rs2].los[0];
@@ -597,15 +609,15 @@ void constrain_sub() {
     } else if (reg_symb_typ[rs2] == SYMBOLIC) {
       if (*(reg_hasmn + rs2)) {
         // rs2 constraint has already minuend and can have another minuend
-        set_constraint(rd, reg_symb_typ[rs2], reg_vaddr[rs2], 0);
-        set_correction(rd, reg_mints[rs1].los[0] - reg_addsub_corr[rs2], reg_muldivrem_corr[rs2],
+        set_correction(rd, reg_symb_typ[rs2], 0, reg_mints[rs1].los[0] - reg_addsub_corr[rs2], reg_muldivrem_corr[rs2],
           (reg_corr_validity[rs2] == 0) ? MUL_T : reg_corr_validity[rs2]);
       } else {
         // rd inherits rs2 constraint since rs1 has none
-        set_constraint(rd, reg_symb_typ[rs2], reg_vaddr[rs2], 1);
-        set_correction(rd, reg_mints[rs1].los[0] - reg_addsub_corr[rs2], reg_muldivrem_corr[rs2],
+        set_correction(rd, reg_symb_typ[rs2], 1, reg_mints[rs1].los[0] - reg_addsub_corr[rs2], reg_muldivrem_corr[rs2],
           (reg_corr_validity[rs2] == 0) ? MUL_T : reg_corr_validity[rs2]);
       }
+
+      set_vaddrs(rd, reg_addr[rs2].vaddrs, 0, reg_addrs_idx[rs2]);
 
       reg_steps[rd] = reg_steps[rs2];
       sub_lo = reg_mints[rs1].los[0];
@@ -618,13 +630,13 @@ void constrain_sub() {
       reg_mints_idx[rd] = reg_mints_idx[rs2];
     } else {
       // rd has no constraint if both rs1 and rs2 have no constraints
-      set_constraint(rd, 0, 0, 0);
-      set_correction(rd, 0, 0, 0);
+      set_correction(rd, 0, 0, 0, 0, 0);
 
       reg_mints[rd].los[0] = reg_mints[rs1].los[0] - reg_mints[rs2].ups[0];
       reg_mints[rd].ups[0] = reg_mints[rd].los[0];
       reg_mints_idx[rd]    = 1;
       reg_steps[rd]        = 1;
+      reg_addrs_idx[rd]    = 0;
     }
   }
 }
@@ -652,8 +664,8 @@ void constrain_mul() {
       } else {
         // rd inherits rs1 constraint since rs2 has none
         // assert: rs2 interval is singleton
-        set_constraint(rd, reg_symb_typ[rs1], reg_vaddr[rs1], 0);
-        set_correction(rd, reg_addsub_corr[rs1], reg_mints[rs2].los[0], reg_corr_validity[rs1] + MUL_T);
+        set_correction(rd, reg_symb_typ[rs1], 0, reg_addsub_corr[rs1], reg_mints[rs2].los[0], reg_corr_validity[rs1] + MUL_T);
+        set_vaddrs(rd, reg_addr[rs1].vaddrs, 0, reg_addrs_idx[rs1]);
 
         if (reg_mints_idx[rs1] == 1) {
           cnd = mul_condition(reg_mints[rs1].los[0], reg_mints[rs1].ups[0], reg_mints[rs2].los[0]);
@@ -705,8 +717,8 @@ void constrain_mul() {
       } else {
         // rd inherits rs2 constraint since rs1 has none
         // assert: rs1 interval is singleton
-        set_constraint(rd, reg_symb_typ[rs2], reg_vaddr[rs2], 0);
-        set_correction(rd, reg_addsub_corr[rs2], reg_mints[rs1].los[0], reg_corr_validity[rs2] + MUL_T);
+        set_correction(rd, reg_symb_typ[rs2], 0, reg_addsub_corr[rs2], reg_mints[rs1].los[0], reg_corr_validity[rs2] + MUL_T);
+        set_vaddrs(rd, reg_addr[rs2].vaddrs, 0, reg_addrs_idx[rs2]);
 
         if (reg_mints_idx[rs2] == 1) {
           cnd = mul_condition(reg_mints[rs2].los[0], reg_mints[rs2].ups[0], reg_mints[rs1].los[0]);
@@ -751,13 +763,13 @@ void constrain_mul() {
       }
     } else {
       // rd has no constraint if both rs1 and rs2 have no constraints
-      set_constraint(rd, 0, 0, 0);
-      set_correction(rd, 0, 0, 0);
+      set_correction(rd, 0, 0, 0, 0, 0);
 
       reg_steps[rd]        = 1;
       reg_mints[rd].los[0] = reg_mints[rs1].los[0] * reg_mints[rs2].los[0];
       reg_mints[rd].ups[0] = reg_mints[rs1].ups[0] * reg_mints[rs2].ups[0];
       reg_mints_idx[rd]    = 1;
+      reg_addrs_idx[rd]    = 0;
     }
   }
 }
@@ -797,8 +809,8 @@ void constrain_divu() {
           } else {
             // rd inherits rs1 constraint since rs2 has none
             // assert: rs2 interval is singleton
-            set_constraint(rd, reg_symb_typ[rs1], reg_vaddr[rs1], 0);
-            set_correction(rd, reg_addsub_corr[rs1], reg_mints[rs2].los[0], reg_corr_validity[rs1] + DIVU_T);
+            set_correction(rd, reg_symb_typ[rs1], 0, reg_addsub_corr[rs1], reg_mints[rs2].los[0], reg_corr_validity[rs1] + DIVU_T);
+            set_vaddrs(rd, reg_addr[rs1].vaddrs, 0, reg_addrs_idx[rs1]);
 
             // step computation
             if (reg_steps[rs1] < reg_mints[rs2].los[0]) {
@@ -843,13 +855,13 @@ void constrain_divu() {
 
         } else {
           // rd has no constraint if both rs1 and rs2 have no constraints
-          set_constraint(rd, 0, 0, 0);
-          set_correction(rd, 0, 0, 0);
+          set_correction(rd, 0, 0, 0, 0, 0);
 
           reg_mints[rd].los[0] = div_lo;
           reg_mints[rd].ups[0] = div_up;
           reg_mints_idx[rd]    = 1;
           reg_steps[rd]        = 1;
+          reg_addrs_idx[rd]    = 0;
         }
       }
     } else
@@ -907,8 +919,8 @@ void constrain_remu() {
         exit(EXITCODE_SYMBOLICEXECUTIONERROR);
       }
 
-      set_constraint(rd, reg_symb_typ[rs1], reg_vaddr[rs1], 0);
-      set_correction(rd, reg_addsub_corr[rs1], reg_mints[rs2].los[0], reg_corr_validity[rs1] + REMU_T);
+      set_correction(rd, reg_symb_typ[rs1], 0, reg_addsub_corr[rs1], reg_mints[rs2].los[0], reg_corr_validity[rs1] + REMU_T);
+      set_vaddrs(rd, reg_addr[rs1].vaddrs, 0, reg_addrs_idx[rs1]);
 
     } else if (is_power_of_two(divisor)) {
       // rs1 interval is wrapped
@@ -924,8 +936,8 @@ void constrain_remu() {
       rem_up        = compute_upper_bound(rem_lo, gcd_step_k, divisor - 1);
       reg_steps[rd] = gcd_step_k;
 
-      set_constraint(rd, reg_symb_typ[rs1], reg_vaddr[rs1], 0);
-      set_correction(rd, reg_addsub_corr[rs1], reg_mints[rs2].los[0], reg_corr_validity[rs1] + REMU_T);
+      set_correction(rd, reg_symb_typ[rs1], 0, reg_addsub_corr[rs1], reg_mints[rs2].los[0], reg_corr_validity[rs1] + REMU_T);
+      set_vaddrs(rd, reg_addr[rs1].vaddrs, 0, reg_addrs_idx[rs1]);
 
     } else {
       printf("OUTPUT: wrapped modulo results many intervals at %x\n", pc - entry_point);
@@ -943,13 +955,13 @@ void constrain_remu() {
     reg_mints_idx[rd]    = 1;
   } else {
     // rd has no constraint if both rs1 and rs2 have no constraints
-    set_constraint(rd, 0, 0, 0);
-    set_correction(rd, 0, 0, 0);
+    set_correction(rd, 0, 0, 0, 0, 0);
 
     reg_mints[rd].los[0] = reg_mints[rs1].los[0] % reg_mints[rs2].los[0];
     reg_mints[rd].ups[0] = reg_mints[rs1].ups[0] % reg_mints[rs2].ups[0];
     reg_mints_idx[rd]    = 1;
     reg_steps[rd]        = 1;
+    reg_addrs_idx[rd]    = 0;
   }
 }
 
@@ -966,9 +978,9 @@ void constrain_sltu() {
       reg_mints[rd].ups[0] = registers[rd];
       reg_mints_idx[rd]    = 1;
       reg_steps[rd]        = 1;
+      reg_addrs_idx[rd]    = 0;
 
-      set_constraint(rd, 0, 0, 0);
-      set_correction(rd, 0, 0, 0);
+      set_correction(rd, 0, 0, 0, 0, 0);
 
       pc = pc + INSTRUCTIONSIZE;
 
@@ -979,10 +991,10 @@ void constrain_sltu() {
     is_only_one_branch_reachable = false;
 
     if (reg_symb_typ[rs1])
-      current_rs1_tc = load_symbolic_memory(pt, reg_vaddr[rs1]);
+      current_rs1_tc = load_symbolic_memory(pt, reg_addr[rs1].vaddrs[0]);
 
     if (reg_symb_typ[rs2])
-      current_rs2_tc = load_symbolic_memory(pt, reg_vaddr[rs2]);
+      current_rs2_tc = load_symbolic_memory(pt, reg_addr[rs2].vaddrs[0]);
 
     if (reg_data_typ[rs1] == POINTER_T) {
       if (reg_data_typ[rs2] != POINTER_T) {
@@ -1196,8 +1208,8 @@ void create_xor_mconstraints(uint64_t* lo1_p, uint64_t* up1_p, uint64_t* lo2_p, 
             constrain_memory(rs1, (uint64_t*) 0, (uint64_t*) 0, 0, trb, true);
             constrain_memory(rs2, (uint64_t*) 0, (uint64_t*) 0, 0, trb, true);
 
-            take_branch(1, 0);
             is_only_one_branch_reachable = true;
+            take_branch(1, 0);
 
             cannot_handle = false;
           }
@@ -1239,7 +1251,6 @@ void create_xor_mconstraints(uint64_t* lo1_p, uint64_t* up1_p, uint64_t* lo2_p, 
       printf("OUTPUT: both branches unreachable!!! %x\n", pc - entry_point);
       exit(EXITCODE_SYMBOLICEXECUTIONERROR);
     }
-
   }
 
 }
@@ -1477,10 +1488,10 @@ void constrain_xor() {
     reg_mints[rd].ups[0] = registers[rd];
     reg_mints_idx[rd]    = 1;
     reg_steps[rd]        = 1;
+    reg_addrs_idx[rd]    = 0;
 
     is_only_one_branch_reachable = true;
-    set_constraint(rd, 0, 0, 0);
-    set_correction(rd, 0, 0, 0);
+    set_correction(rd, 0, 0, 0, 0, 0);
 
     pc = pc + INSTRUCTIONSIZE;
     ic_xor = ic_xor + 1;
@@ -1491,10 +1502,10 @@ void constrain_xor() {
   is_only_one_branch_reachable = false;
 
   if (reg_symb_typ[rs1])
-    current_rs1_tc = load_symbolic_memory(pt, reg_vaddr[rs1]);
+    current_rs1_tc = load_symbolic_memory(pt, reg_addr[rs1].vaddrs[0]);
 
   if (reg_symb_typ[rs2])
-    current_rs2_tc = load_symbolic_memory(pt, reg_vaddr[rs2]);
+    current_rs2_tc = load_symbolic_memory(pt, reg_addr[rs2].vaddrs[0]);
 
   if (reg_data_typ[rs1] == POINTER_T) {
     if (reg_data_typ[rs2] != POINTER_T) {
@@ -1550,15 +1561,17 @@ uint64_t constrain_ld() {
         // assert: vaddr == *(vaddrs + mrvc)
 
         if (mints_idxs[mrvc] > 1) {
-          set_constraint(rd, SYMBOLIC, vaddr, 0);
-          set_correction(rd, 0, 0, 0);
+          set_correction(rd, SYMBOLIC, 0, 0, 0, 0);
+          reg_addrs_idx[rd]      = 1;
+          reg_addr[rd].vaddrs[0] = vaddr;
         } else if (is_symbolic_value(reg_data_typ[rd], reg_mints[rd].los[0], reg_mints[rd].ups[0])) {
           // vaddr is constrained by rd if value interval is not singleton
-          set_constraint(rd, SYMBOLIC, vaddr, 0);
-          set_correction(rd, 0, 0, 0);
+          set_correction(rd, SYMBOLIC, 0, 0, 0, 0);
+          reg_addrs_idx[rd]      = 1;
+          reg_addr[rd].vaddrs[0] = vaddr;
         } else {
-          set_constraint(rd, CONCRETE, 0, 0);
-          set_correction(rd, 0, 0, 0);
+          set_correction(rd, CONCRETE, 0, 0, 0, 0);
+          reg_addrs_idx[rd]      = 0;
         }
       }
 
@@ -1592,7 +1605,7 @@ uint64_t constrain_sd() {
   if (is_safe_address(vaddr, rs1)) {
     if (is_virtual_address_mapped(pt, vaddr)) {
       // interval semantics of sd
-      store_symbolic_memory(pt, vaddr, registers[rs2], reg_data_typ[rs2], reg_mints[rs2].los, reg_mints[rs2].ups, reg_mints_idx[rs2], reg_steps[rs2], reg_vaddr[rs2], reg_hasmn[rs2], reg_addsub_corr[rs2], reg_muldivrem_corr[rs2], reg_corr_validity[rs2], mrcc, 0);
+      store_symbolic_memory(pt, vaddr, registers[rs2], reg_data_typ[rs2], reg_mints[rs2].los, reg_mints[rs2].ups, reg_mints_idx[rs2], reg_steps[rs2], reg_addr[rs2].vaddrs, reg_addrs_idx[rs2], reg_hasmn[rs2], reg_addsub_corr[rs2], reg_muldivrem_corr[rs2], reg_corr_validity[rs2], mrcc, 0);
 
       // keep track of instruction address for profiling stores
       a = (pc - entry_point) / INSTRUCTIONSIZE;
@@ -1619,9 +1632,9 @@ void constrain_jal_jalr() {
     reg_mints[rd].ups[0] = registers[rd];
     reg_mints_idx[rd]    = 1;
     reg_steps[rd]        = 1;
+    reg_addrs_idx[rd]    = 0;
 
-    set_constraint(rd, 0, 0, 0);
-    set_correction(rd, 0, 0, 0);
+    set_correction(rd, 0, 0, 0, 0, 0);
   }
 }
 
@@ -1691,7 +1704,7 @@ void efree() {
   tc = tc - 1;
 }
 
-void store_symbolic_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, uint8_t data_type, uint64_t* lo, uint64_t* up, uint8_t mints_num, uint64_t step, uint64_t ld_from, bool hasmn, uint64_t addsub_corr, uint64_t muldivrem_corr, uint64_t corr_validity, uint64_t trb, uint64_t to_tc) {
+void store_symbolic_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, uint8_t data_type, uint64_t* lo, uint64_t* up, uint8_t mints_num, uint64_t step, uint64_t* ld_from, uint8_t ld_from_num, bool hasmn, uint64_t addsub_corr, uint64_t muldivrem_corr, uint64_t corr_validity, uint64_t trb, uint64_t to_tc) {
   uint64_t mrvc;
   uint64_t idx;
 
@@ -1718,7 +1731,7 @@ void store_symbolic_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, uint8_t
     *(steps      + tc) = step;
     *(vaddrs     + tc) = vaddr;
 
-    *(mints_idxs + tc) = mints_num;
+    *(mints_idxs   + tc) = mints_num;
     *(mints_min_lo + tc) = lo[0];
     for (uint8_t i = 0; i < mints_num; i++) {
       mints[tc].los[i] = lo[i];
@@ -1727,24 +1740,30 @@ void store_symbolic_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, uint8_t
         mints_min_lo[tc] = lo[i];
     }
 
-    *(ld_froms        + tc) = ld_from;
     *(hasmns          + tc) = hasmn;
     *(addsub_corrs    + tc) = addsub_corr;
     *(muldivrem_corrs + tc) = muldivrem_corr;
     *(corr_validitys  + tc) = corr_validity;
 
+    *(ld_froms_idx    + tc) = ld_from_num;
+    for (uint8_t i = 0; i < ld_from_num; i++) {
+      ld_froms[tc].vaddrs[i] = ld_from[i];
+    }
+
     if (to_tc == 0) { // means SD instrs
-      if (ld_from != 0 && reg_symb_typ[rs2] == SYMBOLIC) {
-        idx = load_symbolic_memory(pt, ld_from);
-        ld_froms_tc[tc] = idx;
-        if (sd_to_idxs[idx] < MAX_SD_TO_NUM)
-          sd_tos[idx].tc[sd_to_idxs[idx]++] = tc;
-        else {
-          printf("OUTPUT: maximum number of possible sd_to is reached at %x\n", pc - entry_point);
-          exit(EXITCODE_SYMBOLICEXECUTIONERROR);
+      if (ld_from_num != 0 && reg_symb_typ[rs2] == SYMBOLIC) {
+        for (uint8_t i = 0; i < ld_from_num; i++) {
+          idx = load_symbolic_memory(pt, ld_from[i]);
+          ld_froms_tc[tc].vaddrs[i] = idx;
+          if (sd_to_idxs[idx] < MAX_SD_TO_NUM)
+            sd_tos[idx].tc[sd_to_idxs[idx]++] = tc;
+          else {
+            printf("OUTPUT: maximum number of possible sd_to is reached at %x\n", pc - entry_point);
+            exit(EXITCODE_SYMBOLICEXECUTIONERROR);
+          }
         }
       } else {
-        ld_froms_tc[tc] = 0;
+        ld_froms_idx[tc] = 0;
       }
       sd_to_idxs[tc]  = 0;
       mr_sds[tc]      = tc;
@@ -1752,7 +1771,9 @@ void store_symbolic_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, uint8_t
       sd_to_idxs[tc] = sd_to_idxs[to_tc];
       memcpy(sd_tos[tc].tc, sd_tos[to_tc].tc, sizeof(struct sd_to_tc));
       mr_sds[tc]     = mr_sds[mrvc];
-      ld_froms_tc[tc] = ld_froms_tc[mrvc];
+      for (uint8_t i = 0; i < ld_from_num; i++) {
+        ld_froms_tc[tc].vaddrs[i] = ld_froms_tc[mrvc].vaddrs[i];
+      }
     }
 
     if (vaddr < NUMBEROFREGISTERS) {
@@ -1771,16 +1792,16 @@ void store_symbolic_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, uint8_t
     throw_exception(EXCEPTION_MAXTRACE, 0);
 }
 
-void store_constrained_memory(uint64_t vaddr, uint64_t* lo, uint64_t* up, uint8_t mints_num, uint64_t step, uint64_t ld_from, bool hasmn, uint64_t addsub_corr, uint64_t muldivrem_corr, uint64_t corr_validity, uint64_t to_tc) {
+void store_constrained_memory(uint64_t vaddr, uint64_t* lo, uint64_t* up, uint8_t mints_num, uint64_t step, uint64_t* ld_from, uint8_t ld_from_num, bool hasmn, uint64_t addsub_corr, uint64_t muldivrem_corr, uint64_t corr_validity, uint64_t to_tc) {
   uint64_t mrvc;
 
   // always track constrained memory by using tc as most recent branch
-  store_symbolic_memory(pt, vaddr, lo[0], VALUE_T, lo, up, mints_num, step, ld_from, hasmn, addsub_corr, muldivrem_corr, corr_validity, tc, to_tc);
+  store_symbolic_memory(pt, vaddr, lo[0], VALUE_T, lo, up, mints_num, step, ld_from, ld_from_num, hasmn, addsub_corr, muldivrem_corr, corr_validity, tc, to_tc);
 }
 
 void store_register_memory(uint64_t reg, uint64_t* value) {
   // always track register memory by using tc as most recent branch
-  store_symbolic_memory(pt, reg, value[0], 0, value, value, 1, 1, 0, 0, 0, 0, 0, tc, 0);
+  store_symbolic_memory(pt, reg, value[0], 0, value, value, 1, 1, 0, 0, 0, 0, 0, 0, tc, 0);
 }
 
 uint64_t reverse_division_up(uint64_t ups_mrvc, uint64_t up, uint64_t codiv) {
@@ -1892,8 +1913,10 @@ void apply_correction(uint64_t* lo, uint64_t* up, uint8_t mints_num, bool hasmn,
   }
 
   //////////////////////////////////////////////////////////////////////////////
-  store_constrained_memory(vaddrs[mrvc], lo_prop, up_prop, mints_num, steps[mrvc], ld_froms[mrvc], hasmns[mrvc], addsub_corrs[mrvc], muldivrem_corrs[mrvc], corr_validitys[mrvc], mrvc);
-  if (ld_froms[mrvc]) {
+  store_constrained_memory(vaddrs[mrvc], lo_prop, up_prop, mints_num, steps[mrvc], ld_froms[mrvc].vaddrs, ld_froms_idx[mrvc], hasmns[mrvc], addsub_corrs[mrvc], muldivrem_corrs[mrvc], corr_validitys[mrvc], mrvc);
+
+  // assert: (ld_froms_idx[mrvc] > 1) never reach here
+  if (ld_froms_idx[mrvc]) {
     for (uint8_t i = 0; i < mints_num; i++) {
       lo_p[i] = lo_prop[i];
       up_p[i] = up_prop[i];
@@ -1901,6 +1924,7 @@ void apply_correction(uint64_t* lo, uint64_t* up, uint8_t mints_num, bool hasmn,
     is_lo_p_up_p_used = true;
     propagate_backwards(vaddrs[mrvc], mints_min_lo[mrvc]);
   }
+
   if (sd_to_idxs[mrvc]) {
     if (is_lo_p_up_p_used) {
       for (uint8_t i = 0; i < mints_num; i++) {
@@ -1934,8 +1958,7 @@ void propagate_backwards_rhs(uint64_t* lo, uint64_t* up, uint8_t mints_num, uint
     if (mr_to_tc > to_tc) {
       continue;
     }
-    // lo_prop = lo;
-    // up_prop = up;
+
     for (uint8_t j = 0; j < mints_num; j++) {
       lo_prop[j] = lo_p[j];
       up_prop[j] = up_p[j];
@@ -1967,7 +1990,7 @@ void propagate_backwards_rhs(uint64_t* lo, uint64_t* up, uint8_t mints_num, uint
       }
     }
 
-    store_constrained_memory(vaddrs[to_tc], lo_prop, up_prop, mints_num, step_prop, ld_froms[to_tc], hasmns[to_tc], addsub_corrs[to_tc], muldivrem_corrs[to_tc], corr_validitys[to_tc], to_tc);
+    store_constrained_memory(vaddrs[to_tc], lo_prop, up_prop, mints_num, step_prop, ld_froms[to_tc].vaddrs, ld_froms_idx[to_tc], hasmns[to_tc], addsub_corrs[to_tc], muldivrem_corrs[to_tc], corr_validitys[to_tc], to_tc);
     if (sd_to_idxs[mr_to_tc]) {
       propagate_backwards_rhs(lo_prop, up_prop, mints_num, mr_to_tc);
     }
@@ -1983,8 +2006,8 @@ void propagate_backwards(uint64_t vaddr, uint64_t lo_before_op) {
   uint64_t mrvc_x;
 
   mrvc_y = load_symbolic_memory(pt, vaddr);
-  mrvc_x = load_symbolic_memory(pt, ld_froms[mrvc_y]);
-  if (mr_sds[mrvc_x] > ld_froms_tc[mrvc_y]) {
+  mrvc_x = load_symbolic_memory(pt, ld_froms[mrvc_y].vaddrs[0]);
+  if (mr_sds[mrvc_x] > ld_froms_tc[mrvc_y].vaddrs[0]) {
     return;
   }
   apply_correction(mints[mrvc_y].los, mints[mrvc_y].ups, mints_idxs[mrvc_y], hasmns[mrvc_y], addsub_corrs[mrvc_y], muldivrem_corrs[mrvc_y], corr_validitys[mrvc_y], lo_before_op, steps[mrvc_y], mrvc_x);
@@ -1994,13 +2017,15 @@ void constrain_memory(uint64_t reg, uint64_t* lo, uint64_t* up, uint8_t mints_nu
   uint64_t mrvc;
 
   if (reg_symb_typ[reg] == SYMBOLIC && assert_zone == false) {
-    mrvc = (reg == rs1) ? current_rs1_tc : current_rs2_tc;
-
-    if (only_reachable_branch == true && reg_corr_validity[reg] <= 5) {
-      lo = mints[mrvc].los;
-      up = mints[mrvc].ups;
-      store_constrained_memory(reg_vaddr[reg], lo, up, mints_idxs[mrvc], steps[mrvc], ld_froms[mrvc], hasmns[mrvc], addsub_corrs[mrvc], muldivrem_corrs[mrvc], corr_validitys[mrvc], mrvc);
+    if (only_reachable_branch == true) {
+      for (uint8_t i = 0; i < reg_addrs_idx[reg]; i++) {
+        mrvc = load_symbolic_memory(pt, reg_addr[reg].vaddrs[i]);
+        lo = mints[mrvc].los;
+        up = mints[mrvc].ups;
+        store_constrained_memory(reg_addr[reg].vaddrs[i], lo, up, mints_idxs[mrvc], steps[mrvc], ld_froms[mrvc].vaddrs, ld_froms_idx[mrvc], hasmns[mrvc], addsub_corrs[mrvc], muldivrem_corrs[mrvc], corr_validitys[mrvc], mrvc);
+      }
     } else {
+      mrvc = (reg == rs1) ? current_rs1_tc : current_rs2_tc;
       uint64_t min = reg_mints[reg].los[0];
       for (uint8_t i = 1; i < reg_mints_idx[reg]; i++) {
         if (reg_mints[reg].los[i] < min)
@@ -2012,13 +2037,16 @@ void constrain_memory(uint64_t reg, uint64_t* lo, uint64_t* up, uint8_t mints_nu
   }
 }
 
-void set_constraint(uint64_t reg, uint64_t hasco, uint64_t vaddr, uint64_t hasmn) {
-  reg_symb_typ[reg] = hasco;
-  reg_vaddr[reg]    = vaddr;
-  reg_hasmn[reg]    = hasmn;
+void set_vaddrs(uint64_t reg, uint64_t* vaddrs, uint8_t start_idx, uint8_t vaddr_num) {
+  reg_addrs_idx[reg] = vaddr_num;
+  for (uint8_t i = 0; i < vaddr_num; i++) {
+    reg_addr[reg].vaddrs[start_idx++] = vaddrs[i];
+  }
 }
 
-void set_correction(uint64_t reg, uint64_t addsub_corr, uint64_t muldivrem_corr, uint64_t corr_validity) {
+void set_correction(uint64_t reg, uint8_t hasco, uint8_t hasmn, uint64_t addsub_corr, uint64_t muldivrem_corr, uint64_t corr_validity) {
+  reg_symb_typ[reg]       = hasco;
+  reg_hasmn[reg]          = hasmn;
   reg_addsub_corr[reg]    = addsub_corr;
   reg_muldivrem_corr[reg] = muldivrem_corr;
   reg_corr_validity[reg]  = corr_validity;
@@ -2040,9 +2068,9 @@ void take_branch(uint64_t b, uint64_t how_many_more) {
     reg_mints[rd].los[0] = b;
     reg_mints[rd].ups[0] = b;
     reg_mints_idx[rd]    = 1;
+    reg_addrs_idx[rd]    = 0;
 
-    set_constraint(rd, 0, 0, 0);
-    set_correction(rd, 0, 0, 0);
+    set_correction(rd, 0, 0, 0, 0, 0);
   }
 }
 
@@ -2583,10 +2611,10 @@ void backtrack_sltu() {
       reg_mints[vaddr].los[0] = mints[tc].los[0];
       reg_mints[vaddr].ups[0] = mints[tc].ups[0];
       reg_mints_idx[vaddr]    = 1;
-      *(reg_steps    + vaddr) = 1;
+      reg_steps[vaddr]        = 1;
+      reg_addrs_idx[rd]       = 0;
 
-      set_constraint(vaddr, 0, 0, 0);
-      set_correction(vaddr, 0, 0, 0);
+      set_correction(vaddr, 0, 0, 0, 0, 0);
 
       // restoring mrcc
       mrcc = *(tcs + tc);
@@ -2611,8 +2639,9 @@ void backtrack_sd() {
     print_symbolic_memory(tc);
   }
 
-  if (ld_froms[tc] != 0) {
-    uint64_t idx = load_symbolic_memory(pt, ld_froms[tc]);
+  uint64_t idx;
+  for (uint8_t i = 0; i < ld_froms_idx[tc]; i++) {
+    idx = load_symbolic_memory(pt, ld_froms[tc].vaddrs[i]);
     sd_to_idxs[idx]--;
   }
 
