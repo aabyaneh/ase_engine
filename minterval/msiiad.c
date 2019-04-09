@@ -1814,14 +1814,32 @@ uint64_t reverse_division_up(uint64_t ups_mrvc, uint64_t up, uint64_t codiv) {
 // consider y = x op a;
 // mrvc is mrvc of x
 // lo_before_op is previouse lo of y
-void apply_correction(uint64_t* lo, uint64_t* up, uint8_t mints_num, bool hasmn, uint64_t addsub_corr, uint64_t muldivrem_corr, uint64_t corr_validity, uint64_t lo_before_op, uint64_t step, uint64_t mrvc) {
+void apply_correction(uint64_t* lo, uint64_t* up, uint8_t mints_num, bool hasmn, uint64_t addsub_corr, uint64_t muldivrem_corr, uint64_t corr_validity, uint64_t* lo_before_op, uint64_t* up_before_op, uint64_t step, uint64_t mrvc) {
   uint64_t lo_p[MAX_NUM_OF_INTERVALS];
   uint64_t up_p[MAX_NUM_OF_INTERVALS];
+  uint8_t  idxs[MAX_NUM_OF_INTERVALS];
   bool     is_lo_p_up_p_used = false;
 
+  uint8_t j;
+  // bool is_found;
   for (uint8_t i = 0; i < mints_num; i++) {
-    lo_prop[i] = compute_lower_bound(lo_before_op, step, lo[i]);
-    up_prop[i] = compute_upper_bound(lo_before_op, step, up[i]);
+    // is_found = false;
+    for (j = 0; j < mints_idxs[mrvc]; j++) {
+      if (up_before_op[j] - lo_before_op[j] >= lo[i] - lo_before_op[j]) {
+        // is_found = true;
+        break;
+      }
+    }
+
+    // assert: is_found == true
+    // if (is_found == false) {
+    //   printf("OUTPUT: lo_before_op not found at %x\n", pc - entry_point);
+    //   exit(EXITCODE_SYMBOLICEXECUTIONERROR);
+    // }
+
+    idxs[i] = j;
+    lo_prop[i] = compute_lower_bound(lo_before_op[j], step, lo[i]);
+    up_prop[i] = compute_upper_bound(lo_before_op[j], step, up[i]);
   }
 
   // add, sub
@@ -1844,8 +1862,8 @@ void apply_correction(uint64_t* lo, uint64_t* up, uint8_t mints_num, bool hasmn,
     // <9223372036854775808, 2^64 - 1, 1> * 2 = <0, 2^64 - 2, 2>
     // <9223372036854775809, 15372286728091293014, 1> * 3 = <9223372036854775811, 9223372036854775810, 3>
     for (uint8_t i = 0; i < mints_num; i++) {
-      lo_prop[i] = mints_min_lo[mrvc] + (lo_prop[i] - lo_before_op) / muldivrem_corr; // lo_op_before_cmp
-      up_prop[i] = mints_min_lo[mrvc] + (up_prop[i] - lo_before_op) / muldivrem_corr; // lo_op_before_cmp
+      lo_prop[i] = mints[mrvc].los[idxs[i]] + (lo_prop[i] - lo_before_op[idxs[i]]) / muldivrem_corr; // lo_op_before_cmp
+      up_prop[i] = mints[mrvc].los[idxs[i]] + (up_prop[i] - lo_before_op[idxs[i]]) / muldivrem_corr; // lo_op_before_cmp
     }
 
   } else if (corr_validity == DIVU_T) {
@@ -1922,7 +1940,7 @@ void apply_correction(uint64_t* lo, uint64_t* up, uint8_t mints_num, bool hasmn,
       up_p[i] = up_prop[i];
     }
     is_lo_p_up_p_used = true;
-    propagate_backwards(vaddrs[mrvc], mints_min_lo[mrvc]);
+    propagate_backwards(vaddrs[mrvc], mints[mrvc].los, mints[mrvc].ups, mrvc);
   }
 
   if (sd_to_idxs[mrvc]) {
@@ -2001,7 +2019,7 @@ void propagate_backwards_rhs(uint64_t* lo, uint64_t* up, uint8_t mints_num, uint
 // if (y)
 // vaddr of y -> new y
 // lo_before_op for y -> before new y
-void propagate_backwards(uint64_t vaddr, uint64_t lo_before_op) {
+void propagate_backwards(uint64_t vaddr, uint64_t* lo_before_op, uint64_t* up_before_op, uint64_t original_mrvc_y) {
   uint64_t mrvc_y;
   uint64_t mrvc_x;
 
@@ -2010,7 +2028,11 @@ void propagate_backwards(uint64_t vaddr, uint64_t lo_before_op) {
   if (mr_sds[mrvc_x] > ld_froms_tc[mrvc_y].vaddrs[0]) {
     return;
   }
-  apply_correction(mints[mrvc_y].los, mints[mrvc_y].ups, mints_idxs[mrvc_y], hasmns[mrvc_y], addsub_corrs[mrvc_y], muldivrem_corrs[mrvc_y], corr_validitys[mrvc_y], lo_before_op, steps[mrvc_y], mrvc_x);
+  // because same notion as use for current_rs1_tc and current_rs2_tc
+  while (mrvc_x > original_mrvc_y) {
+    mrvc_x = tcs[mrvc_x];
+  }
+  apply_correction(mints[mrvc_y].los, mints[mrvc_y].ups, mints_idxs[mrvc_y], hasmns[mrvc_y], addsub_corrs[mrvc_y], muldivrem_corrs[mrvc_y], corr_validitys[mrvc_y], lo_before_op, up_before_op, steps[mrvc_y], mrvc_x);
 }
 
 void constrain_memory(uint64_t reg, uint64_t* lo, uint64_t* up, uint8_t mints_num, uint64_t trb, bool only_reachable_branch) {
@@ -2026,12 +2048,7 @@ void constrain_memory(uint64_t reg, uint64_t* lo, uint64_t* up, uint8_t mints_nu
       }
     } else {
       mrvc = (reg == rs1) ? current_rs1_tc : current_rs2_tc;
-      uint64_t min = reg_mints[reg].los[0];
-      for (uint8_t i = 1; i < reg_mints_idx[reg]; i++) {
-        if (reg_mints[reg].los[i] < min)
-          min = reg_mints[reg].los[i];
-      }
-      apply_correction(lo, up, mints_num, reg_hasmn[reg], reg_addsub_corr[reg], reg_muldivrem_corr[reg], reg_corr_validity[reg], min, reg_steps[reg], mrvc);
+      apply_correction(lo, up, mints_num, reg_hasmn[reg], reg_addsub_corr[reg], reg_muldivrem_corr[reg], reg_corr_validity[reg], reg_mints[reg].los, reg_mints[reg].ups, reg_steps[reg], mrvc);
     }
 
   }
@@ -2075,8 +2092,6 @@ void take_branch(uint64_t b, uint64_t how_many_more) {
 }
 
 void create_true_false_constraints(uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t up2) {
-  mint_num_sym = 0;
-
   if (lo1 <= up1) {
     // rs1 interval is not wrapped around
     if (lo2 <= up2) {

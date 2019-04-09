@@ -169,7 +169,7 @@ void store_constrained_memory(uint64_t vaddr, uint64_t* lo, uint64_t* up, uint8_
 void store_register_memory(uint64_t reg, uint64_t* value);
 
 void constrain_memory(uint64_t reg, uint64_t* lo, uint64_t* up, uint8_t mints_num, uint64_t trb, bool only_reachable_branch);
-void propagate_backwards(uint64_t vaddr, uint64_t lo_before_op);
+void propagate_backwards(uint64_t vaddr, uint64_t* lo_before_op, uint64_t* up_before_op, uint64_t original_mrvc_y);
 void propagate_mul(uint64_t step, uint64_t k);
 void propagate_divu(uint64_t step, uint64_t k, uint64_t step_rd);
 void propagate_remu(uint64_t step, uint64_t divisor);
