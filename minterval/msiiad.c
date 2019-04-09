@@ -76,14 +76,7 @@ uint8_t* mints_idxs    = (uint8_t*) 0;
 //   uint64_t los[MAX_NUM_OF_INTERVALS];
 //   uint64_t ups[MAX_NUM_OF_INTERVALS];
 // } *reg_mints, *mints;
-uint64_t* mints_min_lo = (uint64_t*) 0;
-// temporaries to pass as function parameters
-uint64_t mint_lo_sym[MAX_NUM_OF_INTERVALS];
-uint64_t mint_up_sym[MAX_NUM_OF_INTERVALS];
-uint64_t mint_lo_crt[MAX_NUM_OF_INTERVALS];
-uint64_t mint_up_crt[MAX_NUM_OF_INTERVALS];
-uint8_t  mint_num_sym = 0;
-uint64_t val_ptr[1];
+uint64_t  val_ptr[1];
 // for minterval managment in eq/diseq
 struct minterval mint_true_rs1;
 struct minterval mint_true_rs2;
@@ -145,7 +138,6 @@ void init_symbolic_engine() {
   reg_mints          = malloc(NUMBEROFREGISTERS * sizeof(struct minterval));
   mints_idxs         = malloc(MAX_TRACE_LENGTH  * sizeof(uint8_t));
   reg_mints_idx      = malloc(NUMBEROFREGISTERS * sizeof(uint8_t));
-  mints_min_lo       = malloc(MAX_TRACE_LENGTH  * SIZEOFUINT64);
 
   read_values        = malloc(MAX_TRACE_LENGTH  * SIZEOFUINT64);
   read_los           = malloc(MAX_TRACE_LENGTH  * SIZEOFUINT64);
@@ -180,7 +172,6 @@ void init_symbolic_engine() {
   mr_sds[0]          = 0;
   sd_to_idxs[0]      = 0;
   ld_froms_idx[0]    = 0;
-  mints_min_lo[0]    = 0;
 
   TWO_TO_THE_POWER_OF_32 = two_to_the_power_of(32);
 
@@ -998,10 +989,10 @@ void constrain_sltu() {
 
     if (reg_data_typ[rs1] == POINTER_T) {
       if (reg_data_typ[rs2] != POINTER_T) {
-        create_constraints(registers[rs1], registers[rs1], reg_mints[rs2].los[0], reg_mints[rs2].ups[0], mrcc);
+        create_mconstraints_lptr(registers[rs1], registers[rs1], reg_mints[rs2].los, reg_mints[rs2].ups, mrcc);
       }
     } else if (reg_data_typ[rs2] == POINTER_T) {
-      create_constraints(reg_mints[rs1].los[0], reg_mints[rs1].ups[0], registers[rs2], registers[rs2], mrcc);
+      create_mconstraints_rptr(reg_mints[rs1].los, reg_mints[rs1].ups, registers[rs2], registers[rs2], mrcc);
     } else {
       create_mconstraints(reg_mints[rs1].los, reg_mints[rs1].ups, reg_mints[rs2].los, reg_mints[rs2].ups, mrcc);
     }
@@ -1010,470 +1001,6 @@ void constrain_sltu() {
   pc = pc + INSTRUCTIONSIZE;
 
   ic_sltu = ic_sltu + 1;
-}
-
-
-bool create_xor_true_false_constraints(uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t up2) {
-  bool cannot_handle = false;
-
-  if (lo1 <= up1) {
-    // rs1 non-wrapped
-    if (lo2 <= up2) {
-      // rs2 non-wrapped
-      if (up1 < lo2) {
-        // rs1 interval is strictly less than rs2 interval
-        mint_true_rs1.los[mint_num_true_rs1]   = lo1;
-        mint_true_rs1.ups[mint_num_true_rs1++] = up1;
-        mint_true_rs2.los[mint_num_true_rs2]   = lo2;
-        mint_true_rs2.ups[mint_num_true_rs2++] = up2;
-
-      } else if (up2 < lo1) {
-        // rs2 interval is strictly less than rs1 interval
-        mint_true_rs1.los[mint_num_true_rs1]   = lo1;
-        mint_true_rs1.ups[mint_num_true_rs1++] = up1;
-        mint_true_rs2.los[mint_num_true_rs2]   = lo2;
-        mint_true_rs2.ups[mint_num_true_rs2++] = up2;
-
-      } else if (lo2 == up2) {
-        // rs2 interval is a singleton
-        /* one of the true cases are definitly happens since rs1 at least has two values. */
-        mint_true_rs2.los[mint_num_true_rs2]   = lo2;
-        mint_true_rs2.ups[mint_num_true_rs2++] = up2;
-        // true case 1
-        if (lo2 != lo1) {
-          // non empty
-          mint_true_rs1.los[mint_num_true_rs1]   = lo1;
-          mint_true_rs1.ups[mint_num_true_rs1++] = lo2 - 1;
-        }
-        // true case 2
-        if (lo2 != up1) {
-          // non empty
-          mint_true_rs1.los[mint_num_true_rs1]   = lo2 + 1;
-          mint_true_rs1.ups[mint_num_true_rs1++] = up1;
-        }
-
-        // check emptiness of false case
-        if ((lo2 - lo1) % reg_steps[rs1] == 0) {
-          mint_false_rs1.los[mint_num_false_rs1]   = lo2;
-          mint_false_rs1.ups[mint_num_false_rs1++] = up2;
-          mint_false_rs2.los[mint_num_false_rs2]   = lo2;
-          mint_false_rs2.ups[mint_num_false_rs2++] = up2;
-        }
-
-      } else if (lo1 == up1) {
-        // rs1 interval is a singleton
-        mint_true_rs1.los[mint_num_true_rs1]   = lo1;
-        mint_true_rs1.ups[mint_num_true_rs1++] = up1;
-        // true case 1
-        if (lo1 != lo2) {
-          mint_true_rs2.los[mint_num_true_rs2]   = lo2;
-          mint_true_rs2.ups[mint_num_true_rs2++] = lo1 - 1;
-        }
-        // true case 2
-        if (lo1 != up2) {
-          // non empty
-          mint_true_rs2.los[mint_num_true_rs2]   = lo1 + 1;
-          mint_true_rs2.ups[mint_num_true_rs2++] = up2;
-        }
-
-        // check emptiness of false case
-        if ( (lo1 - lo2) % reg_steps[rs2] == 0) {
-          mint_false_rs1.los[mint_num_false_rs1]   = lo1;
-          mint_false_rs1.ups[mint_num_false_rs1++] = up1;
-          mint_false_rs2.los[mint_num_false_rs2]   = lo1;
-          mint_false_rs2.ups[mint_num_false_rs2++] = up1;
-        }
-
-      } else {
-        // we cannot handle
-        cannot_handle = true;
-      }
-    } else {
-      // rs2 wrapped
-      if (up1 < lo2 && up2 < lo1) {
-        // true case
-        mint_true_rs1.los[mint_num_true_rs1]   = lo1;
-        mint_true_rs1.ups[mint_num_true_rs1++] = up1;
-        mint_true_rs2.los[mint_num_true_rs2]   = lo2;
-        mint_true_rs2.ups[mint_num_true_rs2++] = up2;
-
-      } else if (lo1 == up1) {
-        mint_true_rs1.los[mint_num_true_rs1]   = lo1;
-        mint_true_rs1.ups[mint_num_true_rs1++] = up1;
-        // true case 1
-        if (lo1 != lo2) {
-          // non empty
-          mint_true_rs2.los[mint_num_true_rs2]   = lo2;
-          mint_true_rs2.ups[mint_num_true_rs2++] = lo1 - 1;
-        }
-        // true case 2
-        if (lo1 != up2) {
-          // non empty
-          mint_true_rs2.los[mint_num_true_rs2]   = lo1 + 1;
-          mint_true_rs2.ups[mint_num_true_rs2++] = up2;
-        }
-
-        // check emptiness of false case
-        if ((lo1 - lo2) % reg_steps[rs2] == 0) {
-          mint_false_rs1.los[mint_num_false_rs1]   = lo1;
-          mint_false_rs1.ups[mint_num_false_rs1++] = up1;
-          mint_false_rs2.los[mint_num_false_rs2]   = lo1;
-          mint_false_rs2.ups[mint_num_false_rs2++] = up1;
-        }
-
-      } else {
-        // we cannot handle
-        cannot_handle = true;
-      }
-    }
-
-  } else if (lo2 <= up2) {
-    // rs1 wrapped, rs2 non-wrapped
-    if (up2 < lo1 && up1 < lo2) {
-      // true case
-      mint_true_rs1.los[mint_num_true_rs1]   = lo1;
-      mint_true_rs1.ups[mint_num_true_rs1++] = up1;
-      mint_true_rs2.los[mint_num_true_rs2]   = lo2;
-      mint_true_rs2.ups[mint_num_true_rs2++] = up2;
-
-    } else if (lo2 == up2) {
-      mint_true_rs2.los[mint_num_true_rs2]   = lo2;
-      mint_true_rs2.ups[mint_num_true_rs2++] = up2;
-      // true case 1
-      if (lo2 != lo1) {
-        // non empty
-        mint_true_rs1.los[mint_num_true_rs1]   = lo1;
-        mint_true_rs1.ups[mint_num_true_rs1++] = lo2 - 1;
-      }
-      // true case 2
-      if (lo2 != up1) {
-        // non empty
-        mint_true_rs1.los[mint_num_true_rs1]   = lo2 + 1;
-        mint_true_rs1.ups[mint_num_true_rs1++] = up1;
-      }
-
-      // check emptiness of false case
-      if ((lo2 - lo1) % reg_steps[rs1] == 0) {
-        mint_false_rs1.los[mint_num_false_rs1]   = lo2;
-        mint_false_rs1.ups[mint_num_false_rs1++] = up2;
-        mint_false_rs2.los[mint_num_false_rs2]   = lo2;
-        mint_false_rs2.ups[mint_num_false_rs2++] = up2;
-      }
-
-    } else {
-      // we cannot handle
-      cannot_handle = true;
-    }
-
-  } else {
-    // rs1 wrapped, rs2 wrapped
-    // we cannot handle: they have common vlaues and they canont be singleton
-    cannot_handle = true;
-  }
-
-  return cannot_handle;
-}
-
-// multi intervals are managed
-void create_xor_mconstraints(uint64_t* lo1_p, uint64_t* up1_p, uint64_t* lo2_p, uint64_t* up2_p, uint64_t trb) {
-  bool cannot_handle   = false;
-  bool true_reachable  = false;
-  bool false_reachable = false;
-  uint64_t lo1;
-  uint64_t up1;
-  uint64_t lo2;
-  uint64_t up2;
-
-  mint_num_true_rs1  = 0;
-  mint_num_true_rs2  = 0;
-  mint_num_false_rs1 = 0;
-  mint_num_false_rs2 = 0;
-
-  for (uint8_t i = 0; i < reg_mints_idx[rs1]; i++) {
-    lo1 = lo1_p[i];
-    up1 = up1_p[i];
-    for (uint8_t j = 0; j < reg_mints_idx[rs2]; j++) {
-      lo2 = lo2_p[j];
-      up2 = up2_p[j];
-      cannot_handle = create_xor_true_false_constraints(lo1, up1, lo2, up2);
-    }
-  }
-
-  if (cannot_handle) {
-    if (reg_mints_idx[rs1] == 1 && reg_mints_idx[rs2] == 1) {
-      if (steps[current_rs1_tc] > 1) {
-        if (steps[current_rs2_tc] > 1) {
-          uint64_t los_diff = (mints[current_rs1_tc].los[0] >= mints[current_rs2_tc].los[0]) ? (mints[current_rs1_tc].los[0] - mints[current_rs2_tc].los[0]) : (mints[current_rs2_tc].los[0] - mints[current_rs1_tc].los[0]);
-          if ( los_diff % gcd(steps[current_rs1_tc], steps[current_rs2_tc]) != 0) {
-            constrain_memory(rs1, (uint64_t*) 0, (uint64_t*) 0, 0, trb, true);
-            constrain_memory(rs2, (uint64_t*) 0, (uint64_t*) 0, 0, trb, true);
-
-            is_only_one_branch_reachable = true;
-            take_branch(1, 0);
-
-            cannot_handle = false;
-          }
-        }
-      }
-    }
-
-    if (cannot_handle) {
-      printf("OUTPUT: detected non-singleton interval intersection %x\n", pc - entry_point);
-      exit(EXITCODE_SYMBOLICEXECUTIONERROR);
-    }
-
-  } else {
-    if (mint_num_true_rs1 > 0 && mint_num_true_rs2 > 0)
-      true_reachable  = true;
-    if (mint_num_false_rs1 > 0 && mint_num_false_rs2 > 0)
-      false_reachable = true;
-
-    if (true_reachable) {
-      if (false_reachable) {
-        constrain_memory(rs1, mint_true_rs1.los, mint_true_rs1.ups, mint_num_true_rs1, trb, false);
-        constrain_memory(rs2, mint_true_rs2.los, mint_true_rs2.ups, mint_num_true_rs2, trb, false);
-        take_branch(1, 1);
-        constrain_memory(rs1, mint_false_rs1.los, mint_false_rs1.ups,mint_num_false_rs1, trb, false);
-        constrain_memory(rs2, mint_false_rs2.los, mint_false_rs2.ups,mint_num_false_rs2, trb, false);
-        take_branch(0, 0);
-      } else {
-        constrain_memory(rs1, mint_true_rs1.los, mint_true_rs1.ups, mint_num_true_rs1, trb, true);
-        constrain_memory(rs2, mint_true_rs2.los, mint_true_rs2.ups, mint_num_true_rs2, trb, true);
-        is_only_one_branch_reachable = true;
-        take_branch(1, 0);
-      }
-    } else if (false_reachable) {
-      constrain_memory(rs1, mint_false_rs1.los, mint_false_rs1.ups,mint_num_false_rs1, trb, true);
-      constrain_memory(rs2, mint_false_rs2.los, mint_false_rs2.ups,mint_num_false_rs2, trb, true);
-      is_only_one_branch_reachable = true;
-      take_branch(0, 0);
-    } else {
-      printf("OUTPUT: both branches unreachable!!! %x\n", pc - entry_point);
-      exit(EXITCODE_SYMBOLICEXECUTIONERROR);
-    }
-  }
-
-}
-
-void create_xor_constraints(uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t up2, uint64_t trb) {
-  bool cannot_handle = false;
-  bool empty;
-
-  if (reg_mints_idx[rs1] > 1 || reg_mints_idx[rs2] > 1) {
-    printf("OUTPUT: unsupported minterval xor %x \n", pc - entry_point);
-    exit(EXITCODE_SYMBOLICEXECUTIONERROR);
-  }
-
-  mint_num_sym = 0;
-
-  if (rd == REG_ZR)
-    return;
-
-  if (lo1 <= up1) {
-    // rs1 non-wrapped
-    if (lo2 <= up2) {
-      // rs2 non-wrapped
-      if (up1 < lo2) {
-        // rs1 interval is strictly less than rs2 interval
-        constrain_memory(rs1, (uint64_t*) 0, (uint64_t*) 0, 0, trb, true);
-        constrain_memory(rs2, (uint64_t*) 0, (uint64_t*) 0, 0, trb, true);
-        take_branch(1, 0);
-        is_only_one_branch_reachable = true;
-
-      } else if (up2 < lo1) {
-        // rs2 interval is strictly less than rs1 interval
-        constrain_memory(rs1, (uint64_t*) 0, (uint64_t*) 0, 0, trb, true);
-        constrain_memory(rs2, (uint64_t*) 0, (uint64_t*) 0, 0, trb, true);
-        take_branch(1, 0);
-        is_only_one_branch_reachable = true;
-
-      } else if (lo2 == up2) {
-        // rs2 interval is a singleton
-        /* one of the true cases are definitly happens since rs1 at least has two values. */
-        mint_lo_crt[0] = lo2;
-        mint_up_crt[0] = up2;
-        // true case 1
-        if (lo2 != lo1) {
-          // non empty
-          mint_lo_sym[mint_num_sym]   = lo1;
-          mint_up_sym[mint_num_sym++] = lo2 - 1;
-        }
-        // true case 2
-        if (lo2 != up1) {
-          // non empty
-          mint_lo_sym[mint_num_sym]   = lo2 + 1;
-          mint_up_sym[mint_num_sym++] = up1;
-        }
-        constrain_memory(rs1, mint_lo_sym, mint_up_sym, mint_num_sym, trb, false);
-        constrain_memory(rs2, mint_lo_crt, mint_up_crt, 1           , trb, false);
-
-        // check emptiness of false case
-        if ((lo2 - lo1) % reg_steps[rs1]) {
-          // is empty
-          take_branch(1, 0);
-          is_only_one_branch_reachable = true;
-        } else {
-          take_branch(1, 1);
-
-          // false case
-          constrain_memory(rs1, mint_lo_crt, mint_up_crt, 1, trb, false);
-          constrain_memory(rs2, mint_lo_crt, mint_up_crt, 1, trb, false);
-          take_branch(0, 0);
-        }
-
-      } else if (lo1 == up1) {
-        // rs1 interval is a singleton
-        mint_lo_crt[0] = lo1;
-        mint_up_crt[0] = up1;
-        // true case 1
-        if (lo1 != lo2) { // otherwise rhs is empty
-          mint_lo_sym[mint_num_sym]   = lo2;
-          mint_up_sym[mint_num_sym++] = lo1 - 1;
-        }
-        // true case 2
-        if (lo1 != up2) {
-          // non empty
-          mint_lo_sym[mint_num_sym]   = lo1 + 1;
-          mint_up_sym[mint_num_sym++] = up2;
-        }
-        constrain_memory(rs1, mint_lo_crt, mint_up_crt, 1           , trb, false);
-        constrain_memory(rs2, mint_lo_sym, mint_up_sym, mint_num_sym, trb, false);
-
-        // check emptiness of false case
-        if ( (lo1 - lo2) % reg_steps[rs2]) {
-          // is empty
-          take_branch(1, 0);
-          is_only_one_branch_reachable = true;
-        } else {
-          take_branch(1, 1);
-
-          // false case
-          constrain_memory(rs1, mint_lo_crt, mint_up_crt, 1, trb, false);
-          constrain_memory(rs2, mint_lo_crt, mint_up_crt, 1, trb, false);
-          take_branch(0, 0);
-        }
-
-      } else {
-        // we cannot handle
-        cannot_handle = true;
-      }
-    } else {
-      // rs2 wrapped
-      if (up1 < lo2 && up2 < lo1) {
-        // true case
-        constrain_memory(rs1, (uint64_t*) 0, (uint64_t*) 0, 0, trb, true);
-        constrain_memory(rs2, (uint64_t*) 0, (uint64_t*) 0, 0, trb, true);
-        take_branch(1, 0);
-        is_only_one_branch_reachable = true;
-      } else if (lo1 == up1) {
-        mint_lo_crt[0] = lo1;
-        mint_up_crt[0] = up1;
-        // true case 1
-        if (lo1 != lo2) {
-          // non empty
-          mint_lo_sym[mint_num_sym]   = lo2;
-          mint_up_sym[mint_num_sym++] = lo1 - 1;
-        }
-        // true case 2
-        if (lo1 != up2) {
-          // non empty
-          mint_lo_sym[mint_num_sym]   = lo1 + 1;
-          mint_up_sym[mint_num_sym++] = up2;
-        }
-        constrain_memory(rs1, mint_lo_crt, mint_up_crt, 1           , trb, false);
-        constrain_memory(rs2, mint_lo_sym, mint_up_sym, mint_num_sym, trb, false);
-
-        // check emptiness of false case
-        if ((lo1 - lo2) % reg_steps[rs2]) {
-          // flase case is empty
-          take_branch(1, 0);
-          is_only_one_branch_reachable = true;
-        } else {
-          take_branch(1, 1);
-
-          // true case
-          constrain_memory(rs1, mint_lo_crt, mint_up_crt, 1, trb, false);
-          constrain_memory(rs2, mint_lo_crt, mint_up_crt, 1, trb, false);
-          take_branch(0, 0);
-        }
-
-      } else {
-        // we cannot handle
-        cannot_handle = true;
-      }
-    }
-
-  } else if (lo2 <= up2) {
-    // rs1 wrapped, rs2 non-wrapped
-    if (up2 < lo1 && up1 < lo2) {
-      // true case
-      constrain_memory(rs1, (uint64_t*) 0, (uint64_t*) 0, 0, trb, true);
-      constrain_memory(rs2, (uint64_t*) 0, (uint64_t*) 0, 0, trb, true);
-      take_branch(1, 0);
-      is_only_one_branch_reachable = true;
-    } else if (lo2 == up2) {
-      mint_lo_crt[0] = lo2;
-      mint_up_crt[0] = up2;
-      // true case 1
-      if (lo2 != lo1) {
-        // non empty
-        mint_lo_sym[mint_num_sym]   = lo1;
-        mint_up_sym[mint_num_sym++] = lo2 - 1;
-      }
-      // true case 2
-      if (lo2 != up1) {
-        // non empty
-        mint_lo_sym[mint_num_sym]   = lo2 + 1;
-        mint_up_sym[mint_num_sym++] = up1;
-      } // else empty
-      constrain_memory(rs1, mint_lo_sym, mint_up_sym, mint_num_sym, trb, false);
-      constrain_memory(rs2, mint_lo_crt, mint_up_crt, 1           , trb, false);
-
-      // check emptiness of false case
-      if ((lo2 - lo1) % reg_steps[rs1]) {
-        // is empty
-        take_branch(1, 0);
-        is_only_one_branch_reachable = true;
-      } else {
-        take_branch(1, 1);
-
-        // construct constraint for true case
-        constrain_memory(rs1, mint_lo_crt, mint_up_crt, 1, trb, false);
-        constrain_memory(rs2, mint_lo_crt, mint_up_crt, 1, trb, false);
-        take_branch(0, 0);
-      }
-    } else {
-      // we cannot handle
-      cannot_handle = true;
-    }
-
-  } else {
-    // rs1 wrapped, rs2 wrapped
-    // we cannot handle: they have common vlaues and they canont be singleton
-    cannot_handle = true;
-  }
-
-  if (cannot_handle) {
-    if (steps[current_rs1_tc] > 1) {
-      if (steps[current_rs2_tc] > 1) {
-        uint64_t los_diff = (mints[current_rs1_tc].los[0] >= mints[current_rs2_tc].los[0]) ? (mints[current_rs1_tc].los[0] - mints[current_rs2_tc].los[0]) : (mints[current_rs2_tc].los[0] - mints[current_rs1_tc].los[0]);
-        if ( los_diff % gcd(steps[current_rs1_tc], steps[current_rs2_tc]) != 0) {
-          constrain_memory(rs1, (uint64_t*) 0, (uint64_t*) 0, 0, trb, true);
-          constrain_memory(rs2, (uint64_t*) 0, (uint64_t*) 0, 0, trb, true);
-
-          take_branch(1, 0);
-          is_only_one_branch_reachable = true;
-
-          cannot_handle = false;
-        }
-      }
-    }
-
-    if (cannot_handle) {
-      printf("OUTPUT: detected non-singleton interval intersection %x\n", pc - entry_point);
-      exit(EXITCODE_SYMBOLICEXECUTIONERROR);
-    }
-  }
 }
 
 void constrain_xor() {
@@ -1509,10 +1036,10 @@ void constrain_xor() {
 
   if (reg_data_typ[rs1] == POINTER_T) {
     if (reg_data_typ[rs2] != POINTER_T) {
-      create_xor_constraints(registers[rs1], registers[rs1], reg_mints[rs2].los[0], reg_mints[rs2].ups[0], mrcc);
+      create_xor_mconstraints_lptr(registers[rs1], registers[rs1], reg_mints[rs2].los, reg_mints[rs2].ups, mrcc);
     }
   } else if (reg_data_typ[rs2] == POINTER_T)
-    create_xor_constraints(reg_mints[rs1].los[0], reg_mints[rs1].ups[0], registers[rs2], registers[rs2], mrcc);
+    create_xor_mconstraints_rptr(reg_mints[rs1].los, reg_mints[rs1].ups, registers[rs2], registers[rs2], mrcc);
   else
     create_xor_mconstraints(reg_mints[rs1].los, reg_mints[rs1].ups, reg_mints[rs2].los, reg_mints[rs2].ups, mrcc);
 
@@ -1732,12 +1259,9 @@ void store_symbolic_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, uint8_t
     *(vaddrs     + tc) = vaddr;
 
     *(mints_idxs   + tc) = mints_num;
-    *(mints_min_lo + tc) = lo[0];
     for (uint8_t i = 0; i < mints_num; i++) {
       mints[tc].los[i] = lo[i];
       mints[tc].ups[i] = up[i];
-      if (lo[i] < mints_min_lo[tc])
-        mints_min_lo[tc] = lo[i];
     }
 
     *(hasmns          + tc) = hasmn;
@@ -2346,266 +1870,490 @@ void create_mconstraints(uint64_t* lo1_p, uint64_t* up1_p, uint64_t* lo2_p, uint
 
 }
 
-void create_constraints(uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t up2, uint64_t trb) {
+void create_mconstraints_lptr(uint64_t lo1, uint64_t up1, uint64_t* lo2_p, uint64_t* up2_p, uint64_t trb) {
+  bool cannot_handle   = false;
+  bool true_reachable  = false;
+  bool false_reachable = false;
+  uint64_t lo2;
+  uint64_t up2;
 
-  if (reg_mints_idx[rs1] > 1 || reg_mints_idx[rs2] > 1) {
-    printf("OUTPUT: unsupported minterval 6 %x \n", pc - entry_point);
-    exit(EXITCODE_SYMBOLICEXECUTIONERROR);
+  mint_num_true_rs1  = 0;
+  mint_num_true_rs2  = 0;
+  mint_num_false_rs1 = 0;
+  mint_num_false_rs2 = 0;
+
+  for (uint8_t j = 0; j < reg_mints_idx[rs2]; j++) {
+    lo2 = lo2_p[j];
+    up2 = up2_p[j];
+    create_true_false_constraints(lo1, up1, lo2, up2);
   }
 
-  mint_num_sym = 0;
+  if (mint_num_true_rs1 > 0 && mint_num_true_rs2 > 0)
+    true_reachable  = true;
+  if (mint_num_false_rs1 > 0 && mint_num_false_rs2 > 0)
+    false_reachable = true;
+
+  if (true_reachable) {
+    if (false_reachable) {
+      constrain_memory(rs1, mint_true_rs1.los, mint_true_rs1.ups, mint_num_true_rs1, trb, false);
+      constrain_memory(rs2, mint_true_rs2.los, mint_true_rs2.ups, mint_num_true_rs2, trb, false);
+      take_branch(1, 1);
+      constrain_memory(rs1, mint_false_rs1.los, mint_false_rs1.ups,mint_num_false_rs1, trb, false);
+      constrain_memory(rs2, mint_false_rs2.los, mint_false_rs2.ups,mint_num_false_rs2, trb, false);
+      take_branch(0, 0);
+    } else {
+      constrain_memory(rs1, mint_true_rs1.los, mint_true_rs1.ups, mint_num_true_rs1, trb, true);
+      constrain_memory(rs2, mint_true_rs2.los, mint_true_rs2.ups, mint_num_true_rs2, trb, true);
+      is_only_one_branch_reachable = true;
+      take_branch(1, 0);
+    }
+  } else if (false_reachable) {
+    constrain_memory(rs1, mint_false_rs1.los, mint_false_rs1.ups,mint_num_false_rs1, trb, true);
+    constrain_memory(rs2, mint_false_rs2.los, mint_false_rs2.ups,mint_num_false_rs2, trb, true);
+    is_only_one_branch_reachable = true;
+    take_branch(0, 0);
+  } else {
+    printf("OUTPUT: both branches unreachable!!! %x\n", pc - entry_point);
+    exit(EXITCODE_SYMBOLICEXECUTIONERROR);
+  }
+}
+
+void create_mconstraints_rptr(uint64_t* lo1_p, uint64_t* up1_p, uint64_t lo2, uint64_t up2, uint64_t trb) {
+  bool cannot_handle   = false;
+  bool true_reachable  = false;
+  bool false_reachable = false;
+  uint64_t lo1;
+  uint64_t up1;
+
+  mint_num_true_rs1  = 0;
+  mint_num_true_rs2  = 0;
+  mint_num_false_rs1 = 0;
+  mint_num_false_rs2 = 0;
+
+  for (uint8_t i = 0; i < reg_mints_idx[rs1]; i++) {
+    lo1 = lo1_p[i];
+    up1 = up1_p[i];
+    create_true_false_constraints(lo1, up1, lo2, up2);
+  }
+
+  if (mint_num_true_rs1 > 0 && mint_num_true_rs2 > 0)
+    true_reachable  = true;
+  if (mint_num_false_rs1 > 0 && mint_num_false_rs2 > 0)
+    false_reachable = true;
+
+  if (true_reachable) {
+    if (false_reachable) {
+      constrain_memory(rs1, mint_true_rs1.los, mint_true_rs1.ups, mint_num_true_rs1, trb, false);
+      constrain_memory(rs2, mint_true_rs2.los, mint_true_rs2.ups, mint_num_true_rs2, trb, false);
+      take_branch(1, 1);
+      constrain_memory(rs1, mint_false_rs1.los, mint_false_rs1.ups,mint_num_false_rs1, trb, false);
+      constrain_memory(rs2, mint_false_rs2.los, mint_false_rs2.ups,mint_num_false_rs2, trb, false);
+      take_branch(0, 0);
+    } else {
+      constrain_memory(rs1, mint_true_rs1.los, mint_true_rs1.ups, mint_num_true_rs1, trb, true);
+      constrain_memory(rs2, mint_true_rs2.los, mint_true_rs2.ups, mint_num_true_rs2, trb, true);
+      is_only_one_branch_reachable = true;
+      take_branch(1, 0);
+    }
+  } else if (false_reachable) {
+    constrain_memory(rs1, mint_false_rs1.los, mint_false_rs1.ups,mint_num_false_rs1, trb, true);
+    constrain_memory(rs2, mint_false_rs2.los, mint_false_rs2.ups,mint_num_false_rs2, trb, true);
+    is_only_one_branch_reachable = true;
+    take_branch(0, 0);
+  } else {
+    printf("OUTPUT: both branches unreachable!!! %x\n", pc - entry_point);
+    exit(EXITCODE_SYMBOLICEXECUTIONERROR);
+  }
+}
+
+bool create_xor_true_false_constraints(uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t up2) {
+  bool cannot_handle = false;
 
   if (lo1 <= up1) {
-    // rs1 interval is not wrapped around
+    // rs1 non-wrapped
     if (lo2 <= up2) {
-      // both rs1 and rs2 intervals are not wrapped around
+      // rs2 non-wrapped
       if (up1 < lo2) {
         // rs1 interval is strictly less than rs2 interval
-        constrain_memory(rs1, (uint64_t*) 0, (uint64_t*) 0, 0, trb, true);
-        constrain_memory(rs2, (uint64_t*) 0, (uint64_t*) 0, 0, trb, true);
+        mint_true_rs1.los[mint_num_true_rs1]   = lo1;
+        mint_true_rs1.ups[mint_num_true_rs1++] = up1;
+        mint_true_rs2.los[mint_num_true_rs2]   = lo2;
+        mint_true_rs2.ups[mint_num_true_rs2++] = up2;
 
-        is_only_one_branch_reachable = true;
-        take_branch(1, 0);
-      } else if (up2 <= lo1) {
-        // rs2 interval is less than or equal to rs1 interval
-        constrain_memory(rs1, (uint64_t*) 0, (uint64_t*) 0, 0, trb, true);
-        constrain_memory(rs2, (uint64_t*) 0, (uint64_t*) 0, 0, trb, true);
+      } else if (up2 < lo1) {
+        // rs2 interval is strictly less than rs1 interval
+        mint_true_rs1.los[mint_num_true_rs1]   = lo1;
+        mint_true_rs1.ups[mint_num_true_rs1++] = up1;
+        mint_true_rs2.los[mint_num_true_rs2]   = lo2;
+        mint_true_rs2.ups[mint_num_true_rs2++] = up2;
 
-        is_only_one_branch_reachable = true;
-        take_branch(0, 0);
       } else if (lo2 == up2) {
         // rs2 interval is a singleton
-        // a case where lo1 = up1 shouldn't be reach here
-        // false case
-        mint_lo_crt[0] = lo2;
-        mint_up_crt[0] = up2;
-        mint_lo_sym[0] = lo2;
-        mint_up_sym[0] = up1;
-        constrain_memory(rs1, mint_lo_sym, mint_up_sym, 1, trb, false);
-        constrain_memory(rs2, mint_lo_crt, mint_up_crt, 1, trb, false);
-        // record false
-        take_branch(0, 1);
+        /* one of the true cases are definitly happens since rs1 at least has two values. */
+        mint_true_rs2.los[mint_num_true_rs2]   = lo2;
+        mint_true_rs2.ups[mint_num_true_rs2++] = up2;
+        // true case 1
+        if (lo2 != lo1) {
+          // non empty
+          mint_true_rs1.los[mint_num_true_rs1]   = lo1;
+          mint_true_rs1.ups[mint_num_true_rs1++] = lo2 - 1;
+        }
+        // true case 2
+        if (lo2 != up1) {
+          // non empty
+          mint_true_rs1.los[mint_num_true_rs1]   = lo2 + 1;
+          mint_true_rs1.ups[mint_num_true_rs1++] = up1;
+        }
 
-        // true case
-        mint_lo_sym[0] = lo1;
-        mint_up_sym[0] = lo2 - 1;
-        constrain_memory(rs1, mint_lo_sym, mint_up_sym, 1, trb, false);
-        constrain_memory(rs2, mint_lo_crt, mint_up_crt, 1, trb, false);
-        take_branch(1, 0);
+        // check emptiness of false case
+        if ((lo2 - lo1) % reg_steps[rs1] == 0) {
+          mint_false_rs1.los[mint_num_false_rs1]   = lo2;
+          mint_false_rs1.ups[mint_num_false_rs1++] = up2;
+          mint_false_rs2.los[mint_num_false_rs2]   = lo2;
+          mint_false_rs2.ups[mint_num_false_rs2++] = up2;
+        }
+
       } else if (lo1 == up1) {
         // rs1 interval is a singleton
-        // false case
-        mint_lo_crt[0] = lo1;
-        mint_up_crt[0] = up1;
-        mint_lo_sym[0] = lo2;
-        mint_up_sym[0] = lo1;
-        constrain_memory(rs1, mint_lo_crt, mint_up_crt, 1, trb, false);
-        constrain_memory(rs2, mint_lo_sym, mint_up_sym, 1, trb, false);
-        // record false
-        take_branch(0, 1);
+        mint_true_rs1.los[mint_num_true_rs1]   = lo1;
+        mint_true_rs1.ups[mint_num_true_rs1++] = up1;
+        // true case 1
+        if (lo1 != lo2) {
+          mint_true_rs2.los[mint_num_true_rs2]   = lo2;
+          mint_true_rs2.ups[mint_num_true_rs2++] = lo1 - 1;
+        }
+        // true case 2
+        if (lo1 != up2) {
+          // non empty
+          mint_true_rs2.los[mint_num_true_rs2]   = lo1 + 1;
+          mint_true_rs2.ups[mint_num_true_rs2++] = up2;
+        }
 
-        // true case
-        mint_lo_sym[0] = lo1 + 1;
-        mint_up_sym[0] = up2;
-        constrain_memory(rs1, mint_lo_crt, mint_up_crt, 1, trb, false);
-        constrain_memory(rs2, mint_lo_sym, mint_up_sym, 1, trb, false); // never overflow
-        take_branch(1, 0);
-      } else {
-        // be careful about case [10, 20] < [20, 30] where needs a relation
-        // we cannot handle non-singleton interval intersections in comparison
-        printf("OUTPUT: detected non-singleton interval intersection at %x \n", pc - entry_point);
-        exit(EXITCODE_SYMBOLICEXECUTIONERROR);
-      }
-    } else {
-      // rs1 interval is not wrapped around but rs2 is
-      if (up1 < lo2 && up2 <= lo1) {
-        // false
-        mint_lo_crt[0] = lo1;
-        mint_up_crt[0] = up1;
-        mint_lo_sym[0] = 0;
-        mint_up_sym[0] = up2;
-        constrain_memory(rs1, mint_lo_crt, mint_up_crt, 1, trb, false);
-        constrain_memory(rs2, mint_lo_sym, mint_up_sym, 1, trb, false);
-        // record false
-        take_branch(0, 1);
-
-        // true
-        mint_lo_sym[0] = lo2;
-        mint_up_sym[0] = UINT64_MAX_T;
-        constrain_memory(rs1, mint_lo_crt, mint_up_crt, 1, trb, false);
-        constrain_memory(rs2, mint_lo_sym, mint_up_sym, 1, trb, false);
-        take_branch(1, 0);
-      } else if (lo1 == up1) {
-        uint64_t lo_p;
-        uint64_t up_p;
-
-        mint_lo_crt[0] = lo1;
-        mint_up_crt[0] = up1;
-
-        if (lo1 >= lo2) { // upper part
-          // non-empty false case 1
-          mint_lo_sym[mint_num_sym]   = lo2;
-          mint_up_sym[mint_num_sym++] = lo1;
-
-          // non-empty false case 2
-          mint_lo_sym[mint_num_sym]   = 0;
-          mint_up_sym[mint_num_sym++] = up2;
-          constrain_memory(rs1, mint_lo_crt, mint_up_crt, 1           , trb, false);
-          constrain_memory(rs2, mint_lo_sym, mint_up_sym, mint_num_sym, trb, false);
-
-          // true case
-          if (lo1 != UINT64_MAX_T) {
-            lo_p = compute_lower_bound(lo2, reg_steps[rs1], lo1 + 1);
-            up_p = compute_upper_bound(lo1, reg_steps[rs1], UINT64_MAX_T);
-            if (lo_p <= up_p) {
-              take_branch(0, 1);
-
-              mint_lo_sym[0] = lo_p;
-              mint_up_sym[0] = up_p;
-              constrain_memory(rs1, mint_lo_crt, mint_up_crt, 1, trb, false);
-              constrain_memory(rs2, mint_lo_sym, mint_up_sym, 1, trb, false);
-              take_branch(1, 0);
-
-            } else {
-              // else empty
-              is_only_one_branch_reachable = true;
-              take_branch(0, 0);
-            }
-          } else {
-            // else empty
-            is_only_one_branch_reachable = true;
-            take_branch(0, 0);
-          }
-
-        } else { // lower part
-          // false case
-          lo_p = compute_lower_bound(lo2, reg_steps[rs1], 0);
-          up_p = compute_upper_bound(lo1, reg_steps[rs1], lo1);
-          if (lo_p <= up_p) {
-            mint_lo_sym[0] = lo_p;
-            mint_up_sym[0] = up_p;
-            constrain_memory(rs1, mint_lo_crt, mint_up_crt, 1, trb, false);
-            constrain_memory(rs2, mint_lo_sym, mint_up_sym, 1, trb, false);
-            take_branch(0, 1);
-
-          } else {
-            // else empty
-            is_only_one_branch_reachable = true;
-          }
-
-          // non-empty true case 1
-          mint_lo_sym[mint_num_sym]   = lo1 + 1;
-          mint_up_sym[mint_num_sym++] = up2;
-          // non-empty true case 2
-          mint_lo_sym[mint_num_sym]   = lo2;
-          mint_up_sym[mint_num_sym++] = UINT64_MAX_T;
-          constrain_memory(rs1, mint_lo_crt, mint_up_crt, 1           , trb, false);
-          constrain_memory(rs2, mint_lo_sym, mint_up_sym, mint_num_sym, trb, false);
-          take_branch(1, 0);
+        // check emptiness of false case
+        if ( (lo1 - lo2) % reg_steps[rs2] == 0) {
+          mint_false_rs1.los[mint_num_false_rs1]   = lo1;
+          mint_false_rs1.ups[mint_num_false_rs1++] = up1;
+          mint_false_rs2.los[mint_num_false_rs2]   = lo1;
+          mint_false_rs2.ups[mint_num_false_rs2++] = up1;
         }
 
       } else {
-        // we cannot handle non-singleton interval intersections in comparison
-        printf("OUTPUT: detected non-singleton interval intersection at %x \n", pc - entry_point);
-        exit(EXITCODE_SYMBOLICEXECUTIONERROR);
+        // we cannot handle
+        cannot_handle = true;
+      }
+    } else {
+      // rs2 wrapped
+      if (up1 < lo2 && up2 < lo1) {
+        // true case
+        mint_true_rs1.los[mint_num_true_rs1]   = lo1;
+        mint_true_rs1.ups[mint_num_true_rs1++] = up1;
+        mint_true_rs2.los[mint_num_true_rs2]   = lo2;
+        mint_true_rs2.ups[mint_num_true_rs2++] = up2;
+
+      } else if (lo1 == up1) {
+        mint_true_rs1.los[mint_num_true_rs1]   = lo1;
+        mint_true_rs1.ups[mint_num_true_rs1++] = up1;
+        // true case 1
+        if (lo1 != lo2) {
+          // non empty
+          mint_true_rs2.los[mint_num_true_rs2]   = lo2;
+          mint_true_rs2.ups[mint_num_true_rs2++] = lo1 - 1;
+        }
+        // true case 2
+        if (lo1 != up2) {
+          // non empty
+          mint_true_rs2.los[mint_num_true_rs2]   = lo1 + 1;
+          mint_true_rs2.ups[mint_num_true_rs2++] = up2;
+        }
+
+        // check emptiness of false case
+        if ((lo1 - lo2) % reg_steps[rs2] == 0) {
+          mint_false_rs1.los[mint_num_false_rs1]   = lo1;
+          mint_false_rs1.ups[mint_num_false_rs1++] = up1;
+          mint_false_rs2.los[mint_num_false_rs2]   = lo1;
+          mint_false_rs2.ups[mint_num_false_rs2++] = up1;
+        }
+
+      } else {
+        // we cannot handle
+        cannot_handle = true;
       }
     }
+
   } else if (lo2 <= up2) {
-    // rs2 interval is not wrapped around but rs1 is
-    if (up1 < lo2 && up2 <= lo1) {
-      // false case
-      mint_lo_crt[0] = lo2;
-      mint_up_crt[0] = up2;
-      mint_lo_sym[0] = lo1;
-      mint_up_sym[0] = UINT64_MAX_T;
-      constrain_memory(rs1, mint_lo_sym, mint_up_sym, 1, trb, false);
-      constrain_memory(rs2, mint_lo_crt  , mint_up_crt  , 1, trb, false);
-      take_branch(0, 1);
-
+    // rs1 wrapped, rs2 non-wrapped
+    if (up2 < lo1 && up1 < lo2) {
       // true case
-      mint_lo_sym[0] = 0;
-      mint_up_sym[0] = up1;
-      constrain_memory(rs1, mint_lo_sym, mint_up_sym, 1, trb, false);
-      constrain_memory(rs2, mint_lo_crt, mint_up_crt, 1, trb, false);
-      take_branch(1, 0);
+      mint_true_rs1.los[mint_num_true_rs1]   = lo1;
+      mint_true_rs1.ups[mint_num_true_rs1++] = up1;
+      mint_true_rs2.los[mint_num_true_rs2]   = lo2;
+      mint_true_rs2.ups[mint_num_true_rs2++] = up2;
+
     } else if (lo2 == up2) {
-      // construct constraint for true case
-      uint64_t lo_p;
-      uint64_t up_p;
+      mint_true_rs2.los[mint_num_true_rs2]   = lo2;
+      mint_true_rs2.ups[mint_num_true_rs2++] = up2;
+      // true case 1
+      if (lo2 != lo1) {
+        // non empty
+        mint_true_rs1.los[mint_num_true_rs1]   = lo1;
+        mint_true_rs1.ups[mint_num_true_rs1++] = lo2 - 1;
+      }
+      // true case 2
+      if (lo2 != up1) {
+        // non empty
+        mint_true_rs1.los[mint_num_true_rs1]   = lo2 + 1;
+        mint_true_rs1.ups[mint_num_true_rs1++] = up1;
+      }
 
-      mint_lo_crt[0] = lo2;
-      mint_up_crt[0] = up2;
-
-      if (lo2 > lo1) { // upper part
-        // false case
-        lo_p = compute_lower_bound(lo1, reg_steps[rs1], lo2);
-        up_p = compute_upper_bound(lo1, reg_steps[rs1], UINT64_MAX_T);
-        if (lo_p <= up_p) {
-          mint_lo_sym[0] = lo_p;
-          mint_up_sym[0] = up_p;
-          constrain_memory(rs1, mint_lo_sym, mint_up_sym, 1, trb, false);
-          constrain_memory(rs2, mint_lo_crt, mint_up_crt, 1, trb, false);
-          take_branch(0, 1);
-        } else {
-          // else empty
-          is_only_one_branch_reachable = true;
-        }
-
-        // non-empty true 1
-        mint_lo_sym[mint_num_sym]   = lo1;
-        mint_up_sym[mint_num_sym++] = lo2 - 1; // never lo2 = 0
-        // non-empty true 2
-        mint_lo_sym[mint_num_sym]   = 0;
-        mint_up_sym[mint_num_sym++] = up1;
-        constrain_memory(rs1, mint_lo_sym, mint_up_sym, mint_num_sym, trb, false);
-        constrain_memory(rs2, mint_lo_crt, mint_up_crt, 1           , trb, false);
-        take_branch(1, 0);
-      } else {
-        // non-empty false case 1
-        mint_lo_sym[mint_num_sym]   = lo2;
-        mint_up_sym[mint_num_sym++] = up1;
-        // non-empty false case 2
-        mint_lo_sym[mint_num_sym]   = lo1;
-        mint_up_sym[mint_num_sym++] = UINT64_MAX_T;
-        constrain_memory(rs1, mint_lo_sym, mint_up_sym, mint_num_sym, trb, false);
-        constrain_memory(rs2, mint_lo_crt, mint_up_crt, 1           , trb, false);
-
-        // true case
-        if (lo2 != 0) {
-          lo_p = compute_lower_bound(lo1, reg_steps[rs1], 0);
-          up_p = compute_upper_bound(lo1, reg_steps[rs1], lo2 - 1);
-          if (lo_p <= up_p) {
-            take_branch(0, 1);
-
-            mint_lo_sym[0] = lo_p;
-            mint_up_sym[0] = up_p;
-            constrain_memory(rs1, mint_lo_sym, mint_up_sym, 1, trb, false);
-            constrain_memory(rs2, mint_lo_crt, mint_up_crt, 1, trb, false);
-            take_branch(1, 0);
-          } else {
-            // else empty
-            is_only_one_branch_reachable = true;
-            take_branch(0, 0);
-          }
-        } else {
-          // else empty 0 < 0
-          is_only_one_branch_reachable = true;
-          take_branch(0, 0);
-        }
-
+      // check emptiness of false case
+      if ((lo2 - lo1) % reg_steps[rs1] == 0) {
+        mint_false_rs1.los[mint_num_false_rs1]   = lo2;
+        mint_false_rs1.ups[mint_num_false_rs1++] = up2;
+        mint_false_rs2.los[mint_num_false_rs2]   = lo2;
+        mint_false_rs2.ups[mint_num_false_rs2++] = up2;
       }
 
     } else {
-      // we cannot handle non-singleton interval intersections in comparison
-      printf("OUTPUT: detected non-singleton interval intersection at %x \n", pc - entry_point);
+      // we cannot handle
+      cannot_handle = true;
+    }
+
+  } else {
+    // rs1 wrapped, rs2 wrapped
+    // we cannot handle: they have common vlaues and they canont be singleton
+    cannot_handle = true;
+  }
+
+  return cannot_handle;
+}
+
+// multi intervals are managed
+void create_xor_mconstraints(uint64_t* lo1_p, uint64_t* up1_p, uint64_t* lo2_p, uint64_t* up2_p, uint64_t trb) {
+  bool cannot_handle   = false;
+  bool true_reachable  = false;
+  bool false_reachable = false;
+  uint64_t lo1;
+  uint64_t up1;
+  uint64_t lo2;
+  uint64_t up2;
+
+  mint_num_true_rs1  = 0;
+  mint_num_true_rs2  = 0;
+  mint_num_false_rs1 = 0;
+  mint_num_false_rs2 = 0;
+
+  for (uint8_t i = 0; i < reg_mints_idx[rs1]; i++) {
+    lo1 = lo1_p[i];
+    up1 = up1_p[i];
+    for (uint8_t j = 0; j < reg_mints_idx[rs2]; j++) {
+      lo2 = lo2_p[j];
+      up2 = up2_p[j];
+      cannot_handle = create_xor_true_false_constraints(lo1, up1, lo2, up2);
+    }
+  }
+
+  if (cannot_handle) {
+    if (reg_mints_idx[rs1] == 1 && reg_mints_idx[rs2] == 1) {
+      if (steps[current_rs1_tc] > 1) {
+        if (steps[current_rs2_tc] > 1) {
+          uint64_t los_diff = (mints[current_rs1_tc].los[0] >= mints[current_rs2_tc].los[0]) ? (mints[current_rs1_tc].los[0] - mints[current_rs2_tc].los[0]) : (mints[current_rs2_tc].los[0] - mints[current_rs1_tc].los[0]);
+          if ( los_diff % gcd(steps[current_rs1_tc], steps[current_rs2_tc]) != 0) {
+            constrain_memory(rs1, (uint64_t*) 0, (uint64_t*) 0, 0, trb, true);
+            constrain_memory(rs2, (uint64_t*) 0, (uint64_t*) 0, 0, trb, true);
+
+            is_only_one_branch_reachable = true;
+            take_branch(1, 0);
+
+            cannot_handle = false;
+          }
+        }
+      }
+    }
+
+    if (cannot_handle) {
+      printf("OUTPUT: detected non-singleton interval intersection %x\n", pc - entry_point);
       exit(EXITCODE_SYMBOLICEXECUTIONERROR);
     }
 
   } else {
-    // both rs1 and rs2 intervals are wrapped around
-    printf("OUTPUT: < of two non-wrapped intervals are not supported for now at %x \n", pc - entry_point);
-    exit(EXITCODE_SYMBOLICEXECUTIONERROR);
+    if (mint_num_true_rs1 > 0 && mint_num_true_rs2 > 0)
+      true_reachable  = true;
+    if (mint_num_false_rs1 > 0 && mint_num_false_rs2 > 0)
+      false_reachable = true;
+
+    if (true_reachable) {
+      if (false_reachable) {
+        constrain_memory(rs1, mint_true_rs1.los, mint_true_rs1.ups, mint_num_true_rs1, trb, false);
+        constrain_memory(rs2, mint_true_rs2.los, mint_true_rs2.ups, mint_num_true_rs2, trb, false);
+        take_branch(1, 1);
+        constrain_memory(rs1, mint_false_rs1.los, mint_false_rs1.ups,mint_num_false_rs1, trb, false);
+        constrain_memory(rs2, mint_false_rs2.los, mint_false_rs2.ups,mint_num_false_rs2, trb, false);
+        take_branch(0, 0);
+      } else {
+        constrain_memory(rs1, mint_true_rs1.los, mint_true_rs1.ups, mint_num_true_rs1, trb, true);
+        constrain_memory(rs2, mint_true_rs2.los, mint_true_rs2.ups, mint_num_true_rs2, trb, true);
+        is_only_one_branch_reachable = true;
+        take_branch(1, 0);
+      }
+    } else if (false_reachable) {
+      constrain_memory(rs1, mint_false_rs1.los, mint_false_rs1.ups,mint_num_false_rs1, trb, true);
+      constrain_memory(rs2, mint_false_rs2.los, mint_false_rs2.ups,mint_num_false_rs2, trb, true);
+      is_only_one_branch_reachable = true;
+      take_branch(0, 0);
+    } else {
+      printf("OUTPUT: both branches unreachable!!! %x\n", pc - entry_point);
+      exit(EXITCODE_SYMBOLICEXECUTIONERROR);
+    }
   }
+
+}
+
+void create_xor_mconstraints_lptr(uint64_t lo1, uint64_t up1, uint64_t* lo2_p, uint64_t* up2_p, uint64_t trb) {
+  bool cannot_handle   = false;
+  bool true_reachable  = false;
+  bool false_reachable = false;
+  uint64_t lo2;
+  uint64_t up2;
+
+  mint_num_true_rs1  = 0;
+  mint_num_true_rs2  = 0;
+  mint_num_false_rs1 = 0;
+  mint_num_false_rs2 = 0;
+
+  for (uint8_t j = 0; j < reg_mints_idx[rs2]; j++) {
+    lo2 = lo2_p[j];
+    up2 = up2_p[j];
+    cannot_handle = create_xor_true_false_constraints(lo1, up1, lo2, up2);
+  }
+
+  if (cannot_handle) {
+    if (reg_mints_idx[rs1] == 1 && reg_mints_idx[rs2] == 1) {
+      if (steps[current_rs1_tc] > 1) {
+        if (steps[current_rs2_tc] > 1) {
+          uint64_t los_diff = (mints[current_rs1_tc].los[0] >= mints[current_rs2_tc].los[0]) ? (mints[current_rs1_tc].los[0] - mints[current_rs2_tc].los[0]) : (mints[current_rs2_tc].los[0] - mints[current_rs1_tc].los[0]);
+          if ( los_diff % gcd(steps[current_rs1_tc], steps[current_rs2_tc]) != 0) {
+            constrain_memory(rs1, (uint64_t*) 0, (uint64_t*) 0, 0, trb, true);
+            constrain_memory(rs2, (uint64_t*) 0, (uint64_t*) 0, 0, trb, true);
+
+            is_only_one_branch_reachable = true;
+            take_branch(1, 0);
+
+            cannot_handle = false;
+          }
+        }
+      }
+    }
+
+    if (cannot_handle) {
+      printf("OUTPUT: detected non-singleton interval intersection %x\n", pc - entry_point);
+      exit(EXITCODE_SYMBOLICEXECUTIONERROR);
+    }
+
+  } else {
+    if (mint_num_true_rs1 > 0 && mint_num_true_rs2 > 0)
+      true_reachable  = true;
+    if (mint_num_false_rs1 > 0 && mint_num_false_rs2 > 0)
+      false_reachable = true;
+
+    if (true_reachable) {
+      if (false_reachable) {
+        constrain_memory(rs1, mint_true_rs1.los, mint_true_rs1.ups, mint_num_true_rs1, trb, false);
+        constrain_memory(rs2, mint_true_rs2.los, mint_true_rs2.ups, mint_num_true_rs2, trb, false);
+        take_branch(1, 1);
+        constrain_memory(rs1, mint_false_rs1.los, mint_false_rs1.ups,mint_num_false_rs1, trb, false);
+        constrain_memory(rs2, mint_false_rs2.los, mint_false_rs2.ups,mint_num_false_rs2, trb, false);
+        take_branch(0, 0);
+      } else {
+        constrain_memory(rs1, mint_true_rs1.los, mint_true_rs1.ups, mint_num_true_rs1, trb, true);
+        constrain_memory(rs2, mint_true_rs2.los, mint_true_rs2.ups, mint_num_true_rs2, trb, true);
+        is_only_one_branch_reachable = true;
+        take_branch(1, 0);
+      }
+    } else if (false_reachable) {
+      constrain_memory(rs1, mint_false_rs1.los, mint_false_rs1.ups,mint_num_false_rs1, trb, true);
+      constrain_memory(rs2, mint_false_rs2.los, mint_false_rs2.ups,mint_num_false_rs2, trb, true);
+      is_only_one_branch_reachable = true;
+      take_branch(0, 0);
+    } else {
+      printf("OUTPUT: both branches unreachable!!! %x\n", pc - entry_point);
+      exit(EXITCODE_SYMBOLICEXECUTIONERROR);
+    }
+  }
+
+}
+
+void create_xor_mconstraints_rptr(uint64_t* lo1_p, uint64_t* up1_p, uint64_t lo2, uint64_t up2, uint64_t trb) {
+  bool cannot_handle   = false;
+  bool true_reachable  = false;
+  bool false_reachable = false;
+  uint64_t lo1;
+  uint64_t up1;
+
+  mint_num_true_rs1  = 0;
+  mint_num_true_rs2  = 0;
+  mint_num_false_rs1 = 0;
+  mint_num_false_rs2 = 0;
+
+  for (uint8_t i = 0; i < reg_mints_idx[rs1]; i++) {
+    lo1 = lo1_p[i];
+    up1 = up1_p[i];
+    cannot_handle = create_xor_true_false_constraints(lo1, up1, lo2, up2);
+  }
+
+  if (cannot_handle) {
+    if (reg_mints_idx[rs1] == 1 && reg_mints_idx[rs2] == 1) {
+      if (steps[current_rs1_tc] > 1) {
+        if (steps[current_rs2_tc] > 1) {
+          uint64_t los_diff = (mints[current_rs1_tc].los[0] >= mints[current_rs2_tc].los[0]) ? (mints[current_rs1_tc].los[0] - mints[current_rs2_tc].los[0]) : (mints[current_rs2_tc].los[0] - mints[current_rs1_tc].los[0]);
+          if ( los_diff % gcd(steps[current_rs1_tc], steps[current_rs2_tc]) != 0) {
+            constrain_memory(rs1, (uint64_t*) 0, (uint64_t*) 0, 0, trb, true);
+            constrain_memory(rs2, (uint64_t*) 0, (uint64_t*) 0, 0, trb, true);
+
+            is_only_one_branch_reachable = true;
+            take_branch(1, 0);
+
+            cannot_handle = false;
+          }
+        }
+      }
+    }
+
+    if (cannot_handle) {
+      printf("OUTPUT: detected non-singleton interval intersection %x\n", pc - entry_point);
+      exit(EXITCODE_SYMBOLICEXECUTIONERROR);
+    }
+
+  } else {
+    if (mint_num_true_rs1 > 0 && mint_num_true_rs2 > 0)
+      true_reachable  = true;
+    if (mint_num_false_rs1 > 0 && mint_num_false_rs2 > 0)
+      false_reachable = true;
+
+    if (true_reachable) {
+      if (false_reachable) {
+        constrain_memory(rs1, mint_true_rs1.los, mint_true_rs1.ups, mint_num_true_rs1, trb, false);
+        constrain_memory(rs2, mint_true_rs2.los, mint_true_rs2.ups, mint_num_true_rs2, trb, false);
+        take_branch(1, 1);
+        constrain_memory(rs1, mint_false_rs1.los, mint_false_rs1.ups,mint_num_false_rs1, trb, false);
+        constrain_memory(rs2, mint_false_rs2.los, mint_false_rs2.ups,mint_num_false_rs2, trb, false);
+        take_branch(0, 0);
+      } else {
+        constrain_memory(rs1, mint_true_rs1.los, mint_true_rs1.ups, mint_num_true_rs1, trb, true);
+        constrain_memory(rs2, mint_true_rs2.los, mint_true_rs2.ups, mint_num_true_rs2, trb, true);
+        is_only_one_branch_reachable = true;
+        take_branch(1, 0);
+      }
+    } else if (false_reachable) {
+      constrain_memory(rs1, mint_false_rs1.los, mint_false_rs1.ups,mint_num_false_rs1, trb, true);
+      constrain_memory(rs2, mint_false_rs2.los, mint_false_rs2.ups,mint_num_false_rs2, trb, true);
+      is_only_one_branch_reachable = true;
+      take_branch(0, 0);
+    } else {
+      printf("OUTPUT: both branches unreachable!!! %x\n", pc - entry_point);
+      exit(EXITCODE_SYMBOLICEXECUTIONERROR);
+    }
+  }
+
 }
 
 void backtrack_sltu() {
