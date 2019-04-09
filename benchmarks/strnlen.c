@@ -1,12 +1,3 @@
-/*
-  Function: size_t strnlen (const char *s, size_t maxlen)
-
-  If the array s of size maxlen contains a null byte, the strnlen function returns the length of the string s in bytes. Otherwise it returns maxlen. Therefore this function is equivalent to (strlen (s) < maxlen ? strlen (s) : maxlen) but it is more efficient and works even if s is not null-terminated so long as maxlen does not exceed the size of s’s array.
-
-  source code: https://opensource.apple.com/source/Libc/Libc-825.26/string/FreeBSD/strnlen.c.auto.html
-  help:  http://www.gnu.org/software/libc/manual/html_mono/libc.html#String-Length
-*/
-
 uint64_t strnlen(uint64_t* s, uint64_t maxlen) {
 	uint64_t len;
   uint64_t loop;
@@ -31,12 +22,7 @@ uint64_t strnlen(uint64_t* s, uint64_t maxlen) {
 uint64_t main() {
   uint64_t* str;
   uint64_t  len;
-  /*
-  symbolic code:
-    - input: an array of symbolic characters with a fixed *max length*.
-      - each symbolic character interval may contain 0 (which means end of string)
-  */
-
+  
   str = malloc(16 * 8);
   *(str + 0)  = '/';
   *(str + 1)  = 'x';

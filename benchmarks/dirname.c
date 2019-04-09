@@ -1,19 +1,5 @@
-/*
-  dirname - return directory part of PATH.
-
-  source code:
-  glibc-2.28/misc/dirname.c
-  glibc-2.28/string/
-  https://github.com/lattera/glibc/blob/895ef79e04a953cac1493863bcae29ad85657ee1/misc/dirname.c
-  https://github.com/lattera/glibc/blob/895ef79e04a953cac1493863bcae29ad85657ee1/string/strrchr.c
-  https://opensource.apple.com/source/BerkeleyDB/BerkeleyDB-18/db/clib/strchr.c.auto.html
-
-  help:  http://www.gnu.org/software/libc/manual/html_mono/libc.html
-*/
-
 uint64_t* dot;
 
-// find the first occurrence of c in s
 uint64_t* strchr(uint64_t* s, uint64_t c) {
   while (1) {
     if (*s == c)
@@ -25,7 +11,6 @@ uint64_t* strchr(uint64_t* s, uint64_t c) {
   }
 }
 
-// find the last occurrence of c in s
 uint64_t* strrchr(uint64_t* s, uint64_t c) {
   uint64_t* found;
   uint64_t* p;
@@ -51,7 +36,6 @@ uint64_t* dirname(uint64_t* path) {
 
   dot = (uint64_t*) ".";
 
-  /* Find last '/'.  */
   if (path != (uint64_t*) 0)
     last_slash = strrchr(path, '/');
   else
@@ -61,7 +45,6 @@ uint64_t* dirname(uint64_t* path) {
     if (last_slash != path) {
       if (*(last_slash + 1) == 0) {
 
-        // Determine whether all remaining characters are slashes.
         runp = last_slash;
         loop = 1;
         while (loop) {
@@ -74,7 +57,6 @@ uint64_t* dirname(uint64_t* path) {
             loop = 0;
         }
 
-        /* The '/' is the last character, we have to look further.  */
         loop = 1;
         while (loop) {
           if (runp != path) {
@@ -94,7 +76,6 @@ uint64_t* dirname(uint64_t* path) {
   }
 
   if (last_slash != (uint64_t*) 0) {
-    // Determine whether all remaining characters are slashes.
     runp = last_slash;
     loop = 1;
     while (loop) {
@@ -126,22 +107,17 @@ uint64_t* dirname(uint64_t* path) {
 uint64_t main() {
   uint64_t* str;
   uint64_t* ptr;
+  uint64_t  cnt;
+  uint64_t  i;
 
-  /*
-  symbolic code:
-    - input: an array of symbolic characters with a fixed length.
-      - in fact the length of input string can be symbolic as each symbolic character
-        interval can contain 0 (which means end of string)
-  */
-
-  /* code */
-  str = malloc(6 * 8);
-  *(str + 0) = '/';
-  *(str + 1) = 'x';
-  *(str + 2) = 'y';
-  *(str + 3) = '/';
-  *(str + 4) = 'r';
-  *(str + 5) = 0;
+  cnt = 17;
+  str = malloc(cnt * 8);
+  i = 0;
+  while (i < cnt-1) {
+    *(str + i) = input(0, 125, 1);
+    i = i + 1;
+  }
+  *(str + cnt - 1) = 0;
 
   ptr = dirname(str);
 

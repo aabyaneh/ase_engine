@@ -1,9 +1,3 @@
-/*
-  Function: uint64_t atoi(uint64_t* s)
-
-  source code: https://github.com/cksystemsteaching/selfie
-*/
-
 uint64_t UINT64_MAX_T = -1;
 
 uint64_t atoi(uint64_t* s) {
@@ -50,12 +44,6 @@ uint64_t atoi(uint64_t* s) {
 uint64_t main() {
   uint64_t* str;
   uint64_t  int_val;
-
-  /*
-  symbolic code:
-    - input: a symbolic character arrays with the following condition:
-      interval [0-9] must be subset of any of character intervals in the symbolic array.
-  */
 
   str = malloc(6 * 8);
   *(str + 0) = '3';

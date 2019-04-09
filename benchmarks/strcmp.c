@@ -1,11 +1,3 @@
-/*
-  Function: int strcmp (const char *s1, const char *s2)
-
-  return 0 if equal, 1 if < and 2 otherwise.
-
-  help:  http://www.gnu.org/software/libc/manual/html_mono/libc.html#String_002fArray-Comparison
-*/
-
 uint64_t strcmp(uint64_t* s1, uint64_t* s2) {
   while (*s1 == *s2) {
     if (*s1 == 0)
@@ -24,11 +16,6 @@ uint64_t main() {
   uint64_t* str1;
   uint64_t* str2;
   uint64_t  cmp;
-
-  /*
-  symbolic code:
-    - input: two character arrays where at most one of them is symbolic.
-  */
 
   str1 = malloc(6 * 8);
   *(str1 + 0) = '/';

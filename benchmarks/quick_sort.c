@@ -1,21 +1,18 @@
-uint64_t  read(uint64_t fd, uint64_t* buffer, uint64_t bytes_to_read);
-uint64_t  open(uint64_t* filename, uint64_t flags, uint64_t mode);
+uint64_t* malloc(uint64_t size);
 
 uint64_t* power_of_two_table;
-uint64_t* character_buffer;
-uint64_t  character;
 uint64_t  INT64_MIN_T;
 
 uint64_t signed_less_than(uint64_t a, uint64_t b) {
   return a + INT64_MIN_T < b + INT64_MIN_T;
 }
 
-void swap(uint64_t* op1, uint64_t* op2) {
-  uint64_t temp;
+void swap(uint64_t* a, uint64_t* b) {
+  uint64_t t;
 
-  temp = *op1;
-  *op1 = *op2;
-  *op2 = temp;
+  t  = *a;
+  *a = *b;
+  *b = t;
 }
 
 uint64_t partition(uint64_t* arr, uint64_t low, uint64_t high) {
@@ -40,14 +37,14 @@ uint64_t partition(uint64_t* arr, uint64_t low, uint64_t high) {
   return i + 1;
 }
 
-void quick_sort(uint64_t* arr, uint64_t low, uint64_t high) {
+void quickSort(uint64_t* arr, uint64_t low, uint64_t high) {
   uint64_t pi;
 
   if (signed_less_than(low, high)) {
     pi = partition(arr, low, high);
 
-    quick_sort(arr, low, pi - 1);
-    quick_sort(arr, pi + 1, high);
+    quickSort(arr, low, pi - 1);
+    quickSort(arr, pi + 1, high);
   }
 }
 
@@ -67,8 +64,6 @@ void init() {
 
     i = i + 1;
   }
-
-  character_buffer  = malloc(8);
 }
 
 uint64_t two_to_the_power_of(uint64_t p) {
@@ -76,55 +71,27 @@ uint64_t two_to_the_power_of(uint64_t p) {
   return *(power_of_two_table + p);
 }
 
-uint64_t sign_extend(uint64_t n, uint64_t b) {
-  // assert: 0 <= n <= 2^b
-  // assert: 0 < b < CPUBITWIDTH
-  if (n < two_to_the_power_of(b - 1))
-    return n;
-  else
-    return n - two_to_the_power_of(b);
-}
-
 uint64_t main(uint64_t argc, uint64_t* argv) {
   uint64_t v1;
-  uint64_t v2;
-  uint64_t* source_name;
-  uint64_t source_fd;
-  uint64_t number_of_read_bytes;
   uint64_t cnt;
   uint64_t* arr;
 
   init();
-
-  source_name = (uint64_t*) "in.c";
-
-  source_fd = sign_extend(open(source_name, 32768, 0), 32);
-
-  number_of_read_bytes = read(source_fd, character_buffer, 1);
-
-  if (number_of_read_bytes == 1) {
-    // store the read character in the global variable called character
-    character = *character_buffer;
-  } else if (number_of_read_bytes == 0) {
-    character = -1;
-  }
-
   INT64_MIN_T = two_to_the_power_of(63);
-  cnt = 500;
+
+  cnt = 300;
   arr = malloc(cnt * 8);
 
-  if (cnt < 2)
-    return 0;
-
   v1 = 0;
-  while (v1 < cnt - 1) {
-    *(arr + v1) = cnt - v1;
+  while (v1 < cnt) {
+    if (v1 != cnt/2)
+      *(arr + v1) = cnt - v1;
     v1 = v1 + 1;
   }
 
-  *(arr + cnt - 1) = character;
+  *(arr + cnt/2) = input(0, 2*cnt-1, 1);
 
-  quick_sort(arr, 0, cnt - 1);
+  quickSort(arr, 0, cnt - 1);
 
   return 0;
 }

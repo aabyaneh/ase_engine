@@ -12,6 +12,8 @@ void selectionSort(uint64_t* arr, uint64_t n) {
   uint64_t i;
   uint64_t j;
   uint64_t min_idx;
+  uint64_t x;
+  uint64_t y;
 
   i = 0;
   while (i < n - 1) {
@@ -25,8 +27,39 @@ void selectionSort(uint64_t* arr, uint64_t n) {
 
     swap(arr + min_idx, arr + i);
 
+    assert_begin();
+    x = 0;
+    while (x < i) {
+      y = x + 1;
+      while (y < i) {
+        assert(*(arr + x) <= *(arr + y));
+        y = y + 1;
+      }
+      x = x + 1;
+    }
+
+    x = i;
+    while (x < n) {
+      assert(*(arr + x) >= *(arr + i));
+      x = x + 1;
+    }
+    assert_end();
+
     i = i + 1;
   }
+
+  assert_begin();
+  x = 0;
+  while (x < n) {
+    y = x + 1;
+    while (y < n) {
+      assert(*(arr + x) <= *(arr + y));
+      y = y + 1;
+    }
+    x = x + 1;
+  }
+  assert_end();
+
 }
 
 uint64_t main(uint64_t argc, uint64_t* argv) {
