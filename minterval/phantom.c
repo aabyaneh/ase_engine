@@ -2375,16 +2375,24 @@ void implement_read(uint64_t* context) {
 
   if (symbolic) {
     if (sase_symbolic) {
-      if (*(get_regs(context) + REG_A0) < two_to_the_power_of_32)
-        sase_regs[REG_A0] = boolector_unsigned_int(btor, *(get_regs(context) + REG_A0), bv_sort);
-      else
+      if (*(get_regs(context) + REG_A0) < two_to_the_power_of_32) {
+        sase_regs[REG_A0]     = boolector_unsigned_int(btor, *(get_regs(context) + REG_A0), bv_sort);
+        sase_regs_typ[REG_A0] = CONCRETE_T;
+      } else
         printf2((uint64_t*) "%s: big read in read syscall: %d\n", exe_name, (uint64_t*) *(get_regs(context) + REG_A0));
     } else {
       *(reg_data_typ + REG_A0) = 0;
 
-      reg_mints[REG_A0].los[0] = *(get_regs(context) + REG_A0);
-      reg_mints[REG_A0].ups[0] = *(get_regs(context) + REG_A0);
-      reg_mints_idx[REG_A0]    = 1;
+      reg_mints[REG_A0].los[0]   = *(get_regs(context) + REG_A0);
+      reg_mints[REG_A0].ups[0]   = *(get_regs(context) + REG_A0);
+      reg_mints_idx[REG_A0]      = 1;
+      reg_steps[REG_A0]          = 1;
+      reg_addrs_idx[REG_A0]      = 0;
+      reg_symb_typ[REG_A0]       = CONCRETE;
+      reg_hasmn[REG_A0]          = 0;
+      reg_addsub_corr[REG_A0]    = 0;
+      reg_muldivrem_corr[REG_A0] = 0;
+      reg_corr_validity[REG_A0]  = 0;
     }
   }
 
@@ -2593,16 +2601,24 @@ void implement_write(uint64_t* context) {
 
   if (symbolic) {
     if (sase_symbolic) {
-      if (*(get_regs(context) + REG_A0) < two_to_the_power_of_32)
-        sase_regs[REG_A0] = boolector_unsigned_int(btor, *(get_regs(context) + REG_A0), bv_sort);
-      else
+      if (*(get_regs(context) + REG_A0) < two_to_the_power_of_32) {
+        sase_regs[REG_A0]     = boolector_unsigned_int(btor, *(get_regs(context) + REG_A0), bv_sort);
+        sase_regs_typ[REG_A0] = CONCRETE_T;
+      } else
         printf2((uint64_t*) "%s: big write in write syscall: %d\n", exe_name, (uint64_t*) *(get_regs(context) + REG_A0));
     } else {
       *(reg_data_typ + REG_A0) = 0;
 
-      reg_mints[REG_A0].los[0] = *(get_regs(context) + REG_A0);
-      reg_mints[REG_A0].ups[0] = *(get_regs(context) + REG_A0);
-      reg_mints_idx[REG_A0]    = 1;
+      reg_mints[REG_A0].los[0]   = *(get_regs(context) + REG_A0);
+      reg_mints[REG_A0].ups[0]   = *(get_regs(context) + REG_A0);
+      reg_mints_idx[REG_A0]      = 1;
+      reg_steps[REG_A0]          = 1;
+      reg_addrs_idx[REG_A0]      = 0;
+      reg_symb_typ[REG_A0]       = CONCRETE;
+      reg_hasmn[REG_A0]          = 0;
+      reg_addsub_corr[REG_A0]    = 0;
+      reg_muldivrem_corr[REG_A0] = 0;
+      reg_corr_validity[REG_A0]  = 0;
     }
   }
 
@@ -2717,13 +2733,21 @@ void implement_open(uint64_t* context) {
   if (symbolic) {
     if (sase_symbolic) {
       // assert: *(get_regs(context) + REG_A0) < 2^32
-      sase_regs[REG_A0] = boolector_unsigned_int(btor, *(get_regs(context) + REG_A0), bv_sort);
+      sase_regs[REG_A0]     = boolector_unsigned_int(btor, *(get_regs(context) + REG_A0), bv_sort);
+      sase_regs_typ[REG_A0] = CONCRETE_T;
     } else {
       *(reg_data_typ + REG_A0) = 0;
 
-      reg_mints[REG_A0].los[0] = *(get_regs(context) + REG_A0);
-      reg_mints[REG_A0].ups[0] = *(get_regs(context) + REG_A0);
-      reg_mints_idx[REG_A0]    = 1;
+      reg_mints[REG_A0].los[0]   = *(get_regs(context) + REG_A0);
+      reg_mints[REG_A0].ups[0]   = *(get_regs(context) + REG_A0);
+      reg_mints_idx[REG_A0]      = 1;
+      reg_steps[REG_A0]          = 1;
+      reg_addrs_idx[REG_A0]      = 0;
+      reg_symb_typ[REG_A0]       = CONCRETE;
+      reg_hasmn[REG_A0]          = 0;
+      reg_addsub_corr[REG_A0]    = 0;
+      reg_muldivrem_corr[REG_A0] = 0;
+      reg_corr_validity[REG_A0]  = 0;
     }
   }
 
@@ -2772,8 +2796,9 @@ void implement_brk(uint64_t* context) {
 
     if (symbolic) {
       if (sase_symbolic) {
-        // assert: program_break < 2^32
-        sase_regs[REG_A0] = boolector_unsigned_int(btor, program_break, bv_sort);
+        // assert: previous_program_break < 2^32
+        sase_regs[REG_A0]     = boolector_unsigned_int(btor, previous_program_break, bv_sort);
+        sase_regs_typ[REG_A0] = CONCRETE_T;
       } else {
         size = program_break - previous_program_break;
 
@@ -2828,7 +2853,8 @@ void implement_brk(uint64_t* context) {
 
     if (symbolic) {
       if (sase_symbolic) {
-        sase_regs[REG_A0] = boolector_unsigned_int(btor, 0, bv_sort);
+        sase_regs[REG_A0]     = boolector_unsigned_int(btor, 0, bv_sort);
+        sase_regs_typ[REG_A0] = CONCRETE_T;
       } else {
         *(reg_data_typ + REG_A0)   = VALUE_T;
         reg_mints[REG_A0].los[0]   = 0;
@@ -3669,9 +3695,10 @@ void decode_execute() {
       if (funct7 == F7_XOR) {
         if (debug) {
           if (symbolic) {
-            // if (sase_symbolic)
-            //   sase_xor();
-            // else
+            if (sase_symbolic) {
+              do_xor();
+              sase_xor();
+            } else
               constrain_xor();
           } else if (backtrack)
             backtrack_sltu();
@@ -4215,13 +4242,21 @@ void up_load_arguments(uint64_t* context, uint64_t argc, uint64_t* argv) {
   if (symbolic) {
     if (sase_symbolic) {
       // assert: SP < 2^32
-      sase_regs[REG_SP] = boolector_unsigned_int(btor, SP, bv_sort);
+      sase_regs[REG_SP]     = boolector_unsigned_int(btor, SP, bv_sort);
+      sase_regs_typ[REG_SP] = CONCRETE_T;
     } else {
       *(reg_data_typ + REG_SP) = 0;
 
-      reg_mints[REG_SP].los[0] = SP;
-      reg_mints[REG_SP].ups[0] = SP;
-      reg_mints_idx[REG_SP]    = 1;
+      reg_mints[REG_SP].los[0]   = SP;
+      reg_mints[REG_SP].ups[0]   = SP;
+      reg_mints_idx[REG_SP]      = 1;
+      reg_steps[REG_SP]          = 1;
+      reg_addrs_idx[REG_SP]      = 0;
+      reg_symb_typ[REG_SP]       = CONCRETE;
+      reg_hasmn[REG_SP]          = 0;
+      reg_addsub_corr[REG_SP]    = 0;
+      reg_muldivrem_corr[REG_SP] = 0;
+      reg_corr_validity[REG_SP]  = 0;
     }
   }
 }

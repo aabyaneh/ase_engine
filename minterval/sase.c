@@ -340,6 +340,17 @@ void sase_remu() {
   }
 }
 
+void sase_xor() {
+  if (rd != REG_ZR) {
+    sase_regs[rd] = boolector_xor(btor, sase_regs[rs1], sase_regs[rs2]);
+
+    if (sase_regs_typ[rs1] == CONCRETE_T && sase_regs_typ[rs2] == CONCRETE_T)
+      sase_regs_typ[rd] = CONCRETE_T;
+    else
+      sase_regs_typ[rd] = SYMBOLIC_T;
+  }
+}
+
 void sase_sltu() {
   uint8_t  is_branch;
   uint64_t op;
@@ -447,8 +458,6 @@ void sase_ld() {
   uint64_t mrv;
   uint64_t vaddr = *(registers + rs1) + imm;
 
-  ic_ld = ic_ld + 1;
-
   if (is_valid_virtual_address(vaddr)) {
     if (is_virtual_address_mapped(pt, vaddr)) {
       if (rd != REG_ZR) {
@@ -478,6 +487,7 @@ void sase_ld() {
         *(registers + rd) = *(values + mrv);
 
         pc = pc + INSTRUCTIONSIZE;
+        ic_ld = ic_ld + 1;
       }
     } else
       throw_exception(EXCEPTION_PAGEFAULT, get_page_of_virtual_address(vaddr));
@@ -487,8 +497,6 @@ void sase_ld() {
 
 void sase_sd() {
   uint64_t vaddr = *(registers + rs1) + imm;
-
-  ic_sd = ic_sd + 1;
 
   if (is_valid_virtual_address(vaddr)) {
     if (is_virtual_address_mapped(pt, vaddr)) {
@@ -500,6 +508,7 @@ void sase_sd() {
       }
 
       pc = pc + INSTRUCTIONSIZE;
+      ic_sd = ic_sd + 1;
     } else
       throw_exception(EXCEPTION_PAGEFAULT, get_page_of_virtual_address(vaddr));
   } else
@@ -509,7 +518,7 @@ void sase_sd() {
 void sase_jal_jalr() {
   if (rd != REG_ZR) {
     // assert: pc + INSTRUCTIONSIZE < 2^32
-    sase_regs[rd] = boolector_unsigned_int(btor, pc + INSTRUCTIONSIZE, bv_sort);
+    sase_regs[rd] = boolector_unsigned_int(btor, *(registers + rd), bv_sort);
 
     sase_regs_typ[rd] = CONCRETE_T;
   }

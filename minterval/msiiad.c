@@ -1400,12 +1400,10 @@ void apply_correction(uint64_t* lo, uint64_t* up, uint8_t mints_num, bool hasmn,
 
     if (mints[mrvc].los[0] <= mints[mrvc].ups[0]) {
       // non-wrapped
-      lo_prop[0] = (lo_prop[0] == 0) ? mints[mrvc].los[0] : lo_prop[0] * divisor;
-
-      // if (lo * divisor >= los[mrvc])
-      //   lo = compute_lower_bound(los[mrvc], steps[mrvc], lo * divisor);
-      // else
-      //   lo = los[mrvc];
+      if (lo_prop[0] * divisor > mints[mrvc].los[0])
+        lo_prop[0] = compute_lower_bound(mints[mrvc].los[0], steps[mrvc], lo_prop[0] * divisor);
+      else
+        lo_prop[0] = mints[mrvc].los[0];
 
       up_prop[0] = compute_upper_bound(mints[mrvc].los[0], steps[mrvc], up_prop[0] * divisor + reverse_division_up(mints[mrvc].ups[0], up_prop[0], divisor));
     } else {
@@ -1415,11 +1413,17 @@ void apply_correction(uint64_t* lo, uint64_t* up, uint8_t mints_num, bool hasmn,
       uint64_t lo_2;
       uint64_t up_2;
       uint64_t max = compute_upper_bound(mints[mrvc].los[0], steps[mrvc], UINT64_MAX_T);
+      uint64_t min = (max + steps[mrvc]);
       uint8_t  which_is_empty;
 
-      lo_prop[0] = (lo_prop[0] == 0) ? (max + steps[mrvc]) : lo_prop[0] * divisor;
+      if (lo_prop[0] * divisor > min)
+        lo_prop[0] = compute_lower_bound(mints[mrvc].los[0], steps[mrvc], lo_prop[0] * divisor);
+      else
+        lo_prop[0] = min;
+
       up_prop[0] = compute_upper_bound(mints[mrvc].los[0], steps[mrvc], up_prop[0] * divisor + reverse_division_up(max, up_prop[0], divisor));
 
+      // intersection of [lo_prop, up_prop] with original interval
       which_is_empty = 0;
       if (lo_prop[0] <= mints[mrvc].ups[0]) {
         lo_1 = lo_prop[0];
@@ -1435,7 +1439,7 @@ void apply_correction(uint64_t* lo, uint64_t* up, uint8_t mints_num, bool hasmn,
         which_is_empty = (which_is_empty == 1) ? 4 : 2;
       }
 
-      if (which_is_empty == 4) {
+      if (which_is_empty == 0) {
         if (up_1 + steps[mrvc] >= lo_2) {
           lo_prop[0] = lo_1;
           up_prop[0] = up_2;
@@ -1443,7 +1447,17 @@ void apply_correction(uint64_t* lo, uint64_t* up, uint8_t mints_num, bool hasmn,
           printf("OUTPUT: reverse of division results two intervals at %x\n", pc - entry_point);
           exit(EXITCODE_SYMBOLICEXECUTIONERROR);
         }
+      } else if (which_is_empty == 1) {
+        lo_prop[0] = lo_2;
+        up_prop[0] = up_2;
+      } else if (which_is_empty == 2) {
+        lo_prop[0] = lo_1;
+        up_prop[0] = up_1;
+      } else if (which_is_empty == 4) {
+        printf("OUTPUT: reverse of division results empty intervals at %x\n", pc - entry_point);
+        exit(EXITCODE_SYMBOLICEXECUTIONERROR);
       }
+
     }
 
   } else if (corr_validity == REMU_T) {

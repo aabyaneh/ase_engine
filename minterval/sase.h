@@ -137,6 +137,7 @@ void sase_sub();
 void sase_mul();
 void sase_divu();
 void sase_remu();
+void sase_xor();
 void sase_sltu();
 void sase_backtrack_sltu(int is_true_branch_unreachable);
 void sase_ld();
