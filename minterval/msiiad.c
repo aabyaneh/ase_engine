@@ -107,7 +107,6 @@ uint8_t  DEQ  = 5;
 
 // assertion
 bool is_only_one_branch_reachable = false;
-bool assert_zone = false;
 
 // ------------------------- INITIALIZATION ------------------------
 

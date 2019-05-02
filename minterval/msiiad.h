@@ -42,13 +42,15 @@ extern uint64_t* registers;
 extern uint64_t* loads_per_instruction;
 extern uint64_t* stores_per_instruction;
 
+extern uint64_t entry_point;
+extern bool     assert_zone;
+
 extern uint64_t ic_addi;
 extern uint64_t ic_sub;
 extern uint64_t ic_sltu;
 extern uint64_t ic_ld;
 extern uint64_t ic_sd;
 extern uint64_t ic_xor;
-extern uint64_t entry_point;
 
 uint64_t* zalloc(uint64_t size);
 uint64_t is_valid_virtual_address(uint64_t vaddr);

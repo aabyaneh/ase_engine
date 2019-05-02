@@ -525,6 +525,7 @@ uint64_t SYSCALL_ASSERT          = 45;
 uint64_t SYSCALL_ASSERT_ZONE_END = 46;
 
 uint64_t symbolic_input_cnt = 0;
+bool     assert_zone = false;
 
 // *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~
 // -----------------------------------------------------------------
@@ -2411,47 +2412,70 @@ void implement_read(uint64_t* context) {
 void implement_assert_begin(uint64_t* context) {
   if (symbolic) {
     assert_zone = true;
-    set_pc(context, get_pc(context) + INSTRUCTIONSIZE);
   }
+
+  set_pc(context, get_pc(context) + INSTRUCTIONSIZE);
 }
 
 void implement_assert_end(uint64_t* context) {
   if (symbolic) {
     assert_zone = false;
-    set_pc(context, get_pc(context) + INSTRUCTIONSIZE);
   }
+
+  set_pc(context, get_pc(context) + INSTRUCTIONSIZE);
 }
 
 void implement_assert(uint64_t* context) {
   uint64_t res;
 
+  res = *(get_regs(context) + REG_A0);
+
   if (symbolic) {
-    res = *(get_regs(context) + REG_A0);
-    if (res == 0 || is_only_one_branch_reachable == false) {
-      printf("OUTPUT: assertion failed %llu, %d at %x", res, is_only_one_branch_reachable, pc - entry_point);
-      exit(EXITCODE_SYMBOLICEXECUTIONERROR);
+    if (sase_symbolic) {
+      if (which_branch) {
+        if (res == 0) {
+          printf(RED "assertion failed 1 at %llx\n" RESET, pc - entry_point);
+          exit(EXITCODE_SYMBOLICEXECUTIONERROR);
+        }
+      } else {
+        boolector_push(btor, 1);
+        boolector_assert(btor, sase_false_branchs[sase_tc]);
+        if (boolector_sat(btor) == BOOLECTOR_SAT) {
+          printf(RED "assertion failed 2 at %llx\n" RESET, pc - entry_point);
+          exit(EXITCODE_SYMBOLICEXECUTIONERROR);
+        }
+        boolector_pop(btor, 1);
+      }
+
+      which_branch = 0;
+
+    } else {
+      if (res == 0 || is_only_one_branch_reachable == false) {
+        printf("OUTPUT: assertion failed %llu, %d at %x", res, is_only_one_branch_reachable, pc - entry_point);
+        exit(EXITCODE_SYMBOLICEXECUTIONERROR);
+      }
+
+      is_only_one_branch_reachable = false;
     }
-
-    is_only_one_branch_reachable = false;
-
-    set_pc(context, get_pc(context) + INSTRUCTIONSIZE);
   }
+
+  set_pc(context, get_pc(context) + INSTRUCTIONSIZE);
 }
 
 void implement_printsv(uint64_t* context) {
   uint64_t id;
   uint64_t addr;
 
-  id   = *(get_regs(context) + REG_A0);
-  addr = (reg_addrs_idx[REG_A1] > 0) ? ld_froms[load_symbolic_memory(get_pt(context), reg_addr[REG_A1].vaddrs[0])].vaddrs[0] : 0;
+  if (symbolic && sase_symbolic == 0) {
+    id   = *(get_regs(context) + REG_A0);
+    addr = (reg_addrs_idx[REG_A1] > 0) ? ld_froms[load_symbolic_memory(get_pt(context), reg_addr[REG_A1].vaddrs[0])].vaddrs[0] : 0;
 
-  if (symbolic) {
     for (uint8_t i = 0; i < reg_mints_idx[REG_A1]; i++) {
       printf("PRINTSV :=) id: %-3llu, mint: %-2u; vaddr: %-10llu => lo: %-5llu, up: %-5llu, step: %-5llu\n", id, i, addr, reg_mints[REG_A1].los[i], reg_mints[REG_A1].ups[i], reg_steps[REG_A1]);
     }
-
-    set_pc(context, get_pc(context) + INSTRUCTIONSIZE);
   }
+
+  set_pc(context, get_pc(context) + INSTRUCTIONSIZE);
 }
 
 void implement_symbolic_input(uint64_t* context) {
