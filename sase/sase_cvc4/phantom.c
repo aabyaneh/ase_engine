@@ -490,6 +490,10 @@ void     implement_open(uint64_t* context);
 
 void implement_brk(uint64_t* context);
 
+void implement_assert_begin(uint64_t* context);
+void implement_assert(uint64_t* context);
+void implement_assert_end(uint64_t* context);
+
 void implement_symbolic_input(uint64_t* context);
 
 // ------------------------ GLOBAL CONSTANTS -----------------------
@@ -499,12 +503,15 @@ uint64_t debug_write = 0;
 uint64_t debug_open  = 0;
 uint64_t debug_brk   = 0;
 
-uint64_t SYSCALL_EXIT  = 93;
-uint64_t SYSCALL_READ  = 63;
-uint64_t SYSCALL_WRITE = 64;
-uint64_t SYSCALL_OPEN  = 1024;
-uint64_t SYSCALL_BRK   = 214;
-uint64_t SYSCALL_SYMPOLIC_INPUT = 42;
+uint64_t SYSCALL_EXIT   = 93;
+uint64_t SYSCALL_READ   = 63;
+uint64_t SYSCALL_WRITE  = 64;
+uint64_t SYSCALL_OPEN   = 1024;
+uint64_t SYSCALL_BRK    = 214;
+uint64_t SYSCALL_SYMPOLIC_INPUT  = 42;
+uint64_t SYSCALL_ASSERT_ZONE_BGN = 44;
+uint64_t SYSCALL_ASSERT          = 45;
+uint64_t SYSCALL_ASSERT_ZONE_END = 46;
 
 uint64_t symbolic_input_cnt = 0;
 
@@ -2465,7 +2472,8 @@ void implement_read(uint64_t* context) {
 
   if (symbolic) {
     if (sase_symbolic) {
-      sase_regs[REG_A0] = slv.mkBitVector(bv_size, *(get_regs(context) + REG_A0));
+      sase_regs[REG_A0]     = slv.mkBitVector(bv_size, *(get_regs(context) + REG_A0));
+      sase_regs_typ[REG_A0] = CONCRETE_T;
     } else {
       *(reg_typ + REG_A0) = 0;
 
@@ -2483,6 +2491,50 @@ void implement_read(uint64_t* context) {
     print((uint64_t*) " -> ");
     print_register_value(REG_A0);
     println();
+  }
+}
+
+void implement_assert_begin(uint64_t* context) {
+  if (sase_symbolic) {
+    assert_zone = 1;
+    set_pc(context, get_pc(context) + INSTRUCTIONSIZE);
+  }
+}
+
+void implement_assert_end(uint64_t* context) {
+  if (sase_symbolic) {
+    assert_zone = 0;
+    set_pc(context, get_pc(context) + INSTRUCTIONSIZE);
+  }
+}
+
+void implement_assert(uint64_t* context) {
+  uint64_t res = *(get_regs(context) + REG_A0);
+
+  if (sase_symbolic) {
+    if (which_branch) {
+      if (res == 0) {
+        printf(RED "assertion failed 1 at %llx\n" RESET, pc - entry_point);
+        exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
+      }
+    } else {
+      slv.push();
+      slv.assertFormula(sase_false_branchs[sase_tc]);
+      if (slv.checkSat().isSat()) {
+        printf(RED "assertion failed 2 at %llx\n" RESET, pc - entry_point);
+        exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
+      }
+      slv.pop();
+    }
+
+    which_branch = 0;
+
+    set_pc(context, get_pc(context) + INSTRUCTIONSIZE);
+  } else {
+    print(exe_name);
+    print((uint64_t*) ": symbolic input syscall during concrete execution ");
+    println();
+    exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
   }
 }
 
@@ -2609,7 +2661,8 @@ void implement_write(uint64_t* context) {
 
   if (symbolic) {
     if (sase_symbolic) {
-      sase_regs[REG_A0] = slv.mkBitVector(bv_size, *(get_regs(context) + REG_A0));
+      sase_regs[REG_A0]     = slv.mkBitVector(bv_size, *(get_regs(context) + REG_A0));
+      sase_regs_typ[REG_A0] = CONCRETE_T;
     } else {
       *(reg_typ + REG_A0) = 0;
 
@@ -2728,7 +2781,8 @@ void implement_open(uint64_t* context) {
 
   if (symbolic) {
     if (sase_symbolic) {
-      sase_regs[REG_A0] = slv.mkBitVector(bv_size, *(get_regs(context) + REG_A0));
+      sase_regs[REG_A0]     = slv.mkBitVector(bv_size, *(get_regs(context) + REG_A0));
+      sase_regs_typ[REG_A0] = CONCRETE_T;
     } else {
       *(reg_typ + REG_A0) = 0;
 
@@ -2782,7 +2836,8 @@ void implement_brk(uint64_t* context) {
 
     if (symbolic) {
       if (sase_symbolic) {
-        sase_regs[REG_A0] = slv.mkBitVector(bv_size, program_break);
+        sase_regs[REG_A0]     = slv.mkBitVector(bv_size, program_break);
+        sase_regs_typ[REG_A0] = CONCRETE_T;
       } else {
         size = program_break - previous_program_break;
 
@@ -2827,7 +2882,8 @@ void implement_brk(uint64_t* context) {
 
     if (symbolic) {
       if (sase_symbolic) {
-        sase_regs[REG_A0] = zero_bv;
+        sase_regs[REG_A0]     = zero_bv;
+        sase_regs_typ[REG_A0] = CONCRETE_T;
       } else {
         *(reg_typ + REG_A0) = 0;
 
@@ -5125,7 +5181,8 @@ void up_load_arguments(uint64_t* context, uint64_t argc, uint64_t* argv) {
   // set bounds to register value for symbolic execution
   if (symbolic) {
     if (sase_symbolic) {
-      sase_regs[REG_SP] = slv.mkBitVector(bv_size, SP);
+      sase_regs[REG_SP]     = slv.mkBitVector(bv_size, SP);
+      sase_regs_typ[REG_SP] = CONCRETE_T;
     } else {
       *(reg_typ + REG_SP) = 0;
 
@@ -5157,7 +5214,13 @@ uint64_t handle_system_call(uint64_t* context) {
 
     // TODO: exit only if all contexts have exited
     return EXIT;
-  } else {
+  } else if (a7 == SYSCALL_ASSERT_ZONE_BGN)
+    implement_assert_begin(context);
+  else if (a7 == SYSCALL_ASSERT)
+    implement_assert(context);
+  else if (a7 == SYSCALL_ASSERT_ZONE_END)
+    implement_assert_end(context);
+  else {
     printf2((uint64_t*) "%s: unknown system call %d\n", exe_name, (uint64_t*) a7);
 
     set_exit_code(context, EXITCODE_UNKNOWNSYSCALL);

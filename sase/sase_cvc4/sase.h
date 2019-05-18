@@ -6,6 +6,9 @@
 #include <unistd.h>
 #include "api/cvc4cpp.h"
 
+#define RED   "\x1B[31m"
+#define RESET "\x1B[0m"
+
 using namespace CVC4::api;
 
 // -----------------------------------------------------------------
@@ -95,6 +98,8 @@ extern uint64_t  b;               // counting total number of backtracking
 extern uint64_t  SASE;            // Solver Aided Symbolic Execution
 extern uint64_t  CONCRETE_T;
 extern uint64_t  SYMBOLIC_T;
+extern uint8_t   which_branch;
+extern uint8_t   assert_zone;
 
 // symbolic registers
 extern Term*     sase_regs;           // array of pointers to SMT expressions

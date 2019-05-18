@@ -20,6 +20,9 @@ uint64_t SASE = 8;        // Solver Aided Symbolic Execution
 uint64_t CONCRETE_T = 0;
 uint64_t SYMBOLIC_T = 1;
 
+uint8_t  which_branch = 0;
+uint8_t  assert_zone  = 0;
+
 // symbolic registers
 Term*      sase_regs;         // array of pointers to SMT expressions
 uint64_t*  sase_regs_typ;     // CONCRETE_T or SYMBOLIC_T
@@ -188,14 +191,15 @@ uint8_t check_next_3_instrs() {
       if (opcode_ == OP_OP) {
         if (match_sub(rd_)) {
           rd = get_rd(ir);
-          pc = saved_pc + 3 * INSTRUCTIONSIZE;
-          fetch();
-          opcode_ = get_opcode(ir);
+          // pc = saved_pc + 3 * INSTRUCTIONSIZE;
+          // fetch();
+          // opcode_ = get_opcode(ir);
           pc = saved_pc;
-          if (opcode_ == OP_BRANCH)
-            return 2;
-          else
-            return 2;
+          return 2;
+          // if (opcode_ == OP_BRANCH)
+          //   return 2;
+          // else
+          //   return 2;
         }
       }
     }
@@ -319,6 +323,7 @@ void sase_sltu() {
   ic_sltu = ic_sltu + 1;
 
   if (rd != REG_ZR) {
+    which_branch = 0;
 
     // concrete semantics
     if (sase_regs_typ[rs1] == CONCRETE_T && sase_regs_typ[rs2] == CONCRETE_T) {
@@ -329,6 +334,8 @@ void sase_sltu() {
         *(registers + rd) = 0;
         sase_regs[rd]     = zero_bv;
       }
+
+      which_branch = 1;
 
       sase_regs_typ[rd] = CONCRETE_T;
       pc = pc + INSTRUCTIONSIZE;
@@ -362,22 +369,26 @@ void sase_sltu() {
       pc = pc + INSTRUCTIONSIZE;
     }
 
-    // symbolic semantics
-    sase_program_brks[sase_tc]     = get_program_break(current_context);
-    sase_read_trace_ptrs[sase_tc]  = read_tc_current;
-    sase_store_trace_ptrs[sase_tc] = mrif;
-    mrif = tc;
-    store_registers_fp_sp_rd(); // after mrif =
-    sase_tc++;
+    if (assert_zone == 0) {
+      // symbolic semantics
+      sase_program_brks[sase_tc]     = get_program_break(current_context);
+      sase_read_trace_ptrs[sase_tc]  = read_tc_current;
+      sase_store_trace_ptrs[sase_tc] = mrif;
+      mrif = tc;
+      store_registers_fp_sp_rd(); // after mrif =
+      sase_tc++;
 
-    if (slv.checkSat().isSat()) {
-      sase_regs[rd]     = one_bv;
-      sase_regs_typ[rd] = CONCRETE_T;
-      *(registers + rd) = 1;
+      if (slv.checkSat().isSat()) {
+        sase_regs[rd]     = one_bv;
+        sase_regs_typ[rd] = CONCRETE_T;
+        *(registers + rd) = 1;
+      } else {
+        // printf("%s\n", "unreachable branch true!");
+        // b++;
+        sase_backtrack_sltu(1);
+      }
     } else {
-      // printf("%s\n", "unreachable branch true!");
-      // b++;
-      sase_backtrack_sltu(1);
+      slv.pop();
     }
 
   }
@@ -418,8 +429,6 @@ void sase_ld() {
   uint64_t mrv;
   uint64_t vaddr = *(registers + rs1) + imm;
 
-  ic_ld = ic_ld + 1;
-
   if (is_valid_virtual_address(vaddr)) {
     if (is_virtual_address_mapped(pt, vaddr)) {
       if (rd != REG_ZR) {
@@ -444,6 +453,7 @@ void sase_ld() {
         *(registers + rd) = *(values + mrv);
 
         pc = pc + INSTRUCTIONSIZE;
+        ic_ld = ic_ld + 1;
       }
     } else
       throw_exception(EXCEPTION_PAGEFAULT, get_page_of_virtual_address(vaddr));
@@ -453,8 +463,6 @@ void sase_ld() {
 
 void sase_sd() {
   uint64_t vaddr = *(registers + rs1) + imm;
-
-  ic_sd = ic_sd + 1;
 
   if (is_valid_virtual_address(vaddr)) {
     if (is_virtual_address_mapped(pt, vaddr)) {
@@ -466,6 +474,7 @@ void sase_sd() {
       }
 
       pc = pc + INSTRUCTIONSIZE;
+      ic_sd = ic_sd + 1;
     } else
       throw_exception(EXCEPTION_PAGEFAULT, get_page_of_virtual_address(vaddr));
   } else
@@ -475,7 +484,7 @@ void sase_sd() {
 void sase_jal_jalr() {
   if (rd != REG_ZR) {
     // if (rd != 1) // REG_RA
-      sase_regs[rd] = slv.mkBitVector(bv_size, pc + INSTRUCTIONSIZE);
+      sase_regs[rd] = slv.mkBitVector(bv_size, *(registers + rd));
     // else
     //   sase_regs[rd] = zero_int;
 
