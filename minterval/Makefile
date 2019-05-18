@@ -3,4 +3,4 @@ CFLAGS := -w -g -O3 -m64 -D'main(a,b)=main(int argc, char** argv)' -I ../boolect
 
 # Compile selfie.c into selfie executable
 phantom: phantom.c sase.c msiiad.c
-	$(CC) $(CFLAGS) $^ -o $@ -lboolector -lbtor2parser -llgl
+	$(CXX) $(CFLAGS) $^ -o $@ -lboolector -lbtor2parser -llgl

@@ -1,5 +1,9 @@
 #include "stdint.h"
-#include "stdbool.h"
+// #include "stdbool.h"
+
+#include <iostream>
+#include <fcntl.h>
+#include <unistd.h>
 
 #define MAX_SD_TO_NUM        100
 #define MAX_NUM_OF_INTERVALS 100
@@ -56,12 +60,14 @@ uint64_t* zalloc(uint64_t size);
 uint64_t is_valid_virtual_address(uint64_t vaddr);
 uint64_t get_page_of_virtual_address(uint64_t vaddr);
 uint64_t is_virtual_address_mapped(uint64_t* table, uint64_t vaddr);
+uint64_t load_virtual_memory(uint64_t* table, uint64_t vaddr);
 void     store_virtual_memory(uint64_t* table, uint64_t vaddr, uint64_t data);
 uint64_t load_symbolic_memory(uint64_t* pt, uint64_t vaddr);
 void     throw_exception(uint64_t exception, uint64_t faulting_page);
 uint64_t get_program_break(uint64_t* context);
 void     set_program_break(uint64_t* context, uint64_t brk);
 void     fetch();
+void     decode_execute();
 uint64_t load_instruction(uint64_t baddr);
 uint64_t get_opcode(uint64_t instruction);
 uint64_t get_funct7(uint64_t instruction);
@@ -72,6 +78,7 @@ uint64_t get_rs2(uint64_t instruction);
 uint64_t get_immediate_i_format(uint64_t instruction);
 uint64_t two_to_the_power_of(uint64_t p);
 uint64_t get_bits(uint64_t n, uint64_t i, uint64_t b);
+void     set_pc(uint64_t* context, uint64_t pc);
 
 // ---------------------------- SYMBOLIC----------------------------
 
@@ -108,14 +115,19 @@ extern uint64_t* data_types;
 struct minterval {
   uint64_t los[MAX_NUM_OF_INTERVALS];
   uint64_t ups[MAX_NUM_OF_INTERVALS];
-} *reg_mints, *mints;
+};
+extern struct minterval* reg_mints;
+extern struct minterval* mints;
 extern uint32_t* reg_mints_idx;
 
 extern uint32_t* reg_addrs_idx;
 extern uint32_t* ld_froms_idx;
 struct addr {
   uint64_t vaddrs[MAX_NUM_OF_OP_VADDRS];
-} *reg_addr, *ld_froms, *ld_froms_tc;
+};
+extern struct addr* reg_addr;
+extern struct addr* ld_froms;
+extern struct addr* ld_froms_tc;
 
 extern uint64_t mrcc;
 
@@ -123,11 +135,11 @@ extern uint64_t mrcc;
 // ----------------------- BUILTIN PROCEDURES ----------------------
 // -----------------------------------------------------------------
 
-void      exit(uint64_t code);
-uint64_t  read(uint64_t fd, uint64_t* buffer, uint64_t bytes_to_read);
-uint64_t  write(uint64_t fd, uint64_t* buffer, uint64_t bytes_to_write);
-uint64_t  open(uint64_t* filename, uint64_t flags, uint64_t mode);
-void*     malloc(uint64_t size);
+// void      exit(uint64_t code);
+// uint64_t  read(uint64_t fd, uint64_t* buffer, uint64_t bytes_to_read);
+// uint64_t  write(uint64_t fd, uint64_t* buffer, uint64_t bytes_to_write);
+// uint64_t  open(uint64_t* filename, uint64_t flags, uint64_t mode);
+// void*     malloc(uint64_t size);
 
 // ------------------------ INSTRUCTIONS -----------------------
 

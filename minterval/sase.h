@@ -1,5 +1,9 @@
-#include "stdio.h"
+#include <iostream>
+// #include "stdio.h"
 #include "boolector.h"
+
+#include <fcntl.h>
+#include <unistd.h>
 
 #define RED   "\x1B[31m"
 #define RESET "\x1B[0m"
@@ -68,11 +72,11 @@ uint64_t get_bits(uint64_t n, uint64_t i, uint64_t b);
 // ----------------------- BUILTIN PROCEDURES ----------------------
 // -----------------------------------------------------------------
 
-void      exit(uint64_t code);
-uint64_t  read(uint64_t fd, uint64_t* buffer, uint64_t bytes_to_read);
-uint64_t  write(uint64_t fd, uint64_t* buffer, uint64_t bytes_to_write);
-uint64_t  open(uint64_t* filename, uint64_t flags, uint64_t mode);
-void*     malloc(uint64_t size);
+// void      exit(uint64_t code);
+// uint64_t  read(uint64_t fd, uint64_t* buffer, uint64_t bytes_to_read);
+// uint64_t  write(uint64_t fd, uint64_t* buffer, uint64_t bytes_to_write);
+// uint64_t  open(uint64_t* filename, uint64_t flags, uint64_t mode);
+// void*     malloc(uint64_t size);
 
 // -----------------------------------------------------------------
 // ---------------- Solver Aided Symbolic Execution ----------------

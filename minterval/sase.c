@@ -73,29 +73,29 @@ void init_sase() {
 
   two_to_the_power_of_32 = two_to_the_power_of(32);
 
-  sase_regs     = malloc(sizeof(BoolectorNode*) * NUMBEROFREGISTERS);
-  sase_regs_typ = malloc(sizeof(uint64_t)       * NUMBEROFREGISTERS);
+  sase_regs     = (BoolectorNode**) malloc(sizeof(BoolectorNode*) * NUMBEROFREGISTERS);
+  sase_regs_typ = (uint64_t*)       malloc(sizeof(uint64_t)       * NUMBEROFREGISTERS);
   for (size_t i = 0; i < NUMBEROFREGISTERS; i++) {
     sase_regs_typ[i] = CONCRETE_T;
   }
   sase_regs[REG_ZR] = zero_bv;
   sase_regs[REG_FP] = zero_bv;
 
-  sase_pcs              = malloc(sizeof(uint64_t)       * sase_trace_size);
-  sase_false_branchs    = malloc(sizeof(BoolectorNode*) * sase_trace_size);
-  sase_read_trace_ptrs  = malloc(sizeof(uint64_t)       * sase_trace_size);
-  sase_program_brks     = malloc(sizeof(uint64_t)       * sase_trace_size);
-  sase_store_trace_ptrs = malloc(sizeof(uint64_t)       * sase_trace_size);
-  sase_rds              = malloc(sizeof(uint64_t)       * sase_trace_size);
+  sase_pcs              = (uint64_t*)       malloc(sizeof(uint64_t)       * sase_trace_size);
+  sase_false_branchs    = (BoolectorNode**) malloc(sizeof(BoolectorNode*) * sase_trace_size);
+  sase_read_trace_ptrs  = (uint64_t*)       malloc(sizeof(uint64_t)       * sase_trace_size);
+  sase_program_brks     = (uint64_t*)       malloc(sizeof(uint64_t)       * sase_trace_size);
+  sase_store_trace_ptrs = (uint64_t*)       malloc(sizeof(uint64_t)       * sase_trace_size);
+  sase_rds              = (uint64_t*)       malloc(sizeof(uint64_t)       * sase_trace_size);
 
-  tcs             = malloc(sizeof(uint64_t)       * sase_trace_size);
-  vaddrs          = malloc(sizeof(uint64_t)       * sase_trace_size);
-  values          = malloc(sizeof(uint64_t)       * sase_trace_size);
-  is_symbolics    = malloc(sizeof(uint8_t)        * sase_trace_size);
-  symbolic_values = malloc(sizeof(BoolectorNode*) * sase_trace_size);
+  tcs             = (uint64_t*)       malloc(sizeof(uint64_t)       * sase_trace_size);
+  vaddrs          = (uint64_t*)       malloc(sizeof(uint64_t)       * sase_trace_size);
+  values          = (uint64_t*)       malloc(sizeof(uint64_t)       * sase_trace_size);
+  is_symbolics    = (uint8_t*)        malloc(sizeof(uint8_t)        * sase_trace_size);
+  symbolic_values = (BoolectorNode**) malloc(sizeof(BoolectorNode*) * sase_trace_size);
 
-  concrete_reads        = malloc(sizeof(uint64_t)       * sase_trace_size);
-  constrained_reads     = malloc(sizeof(BoolectorNode*) * sase_trace_size);
+  concrete_reads        = (uint64_t*)       malloc(sizeof(uint64_t)       * sase_trace_size);
+  constrained_reads     = (BoolectorNode**) malloc(sizeof(BoolectorNode*) * sase_trace_size);
 }
 
 BoolectorNode* boolector_unsigned_int_64(uint64_t value) {

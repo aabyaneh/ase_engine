@@ -128,7 +128,7 @@ uint64_t* binary_buffer;    // buffer for binary I/O
 // WINDOWS: 32768 = 0x8000 = _O_BINARY (0x8000) | _O_RDONLY (0x0000)
 // since LINUX/MAC do not seem to mind about _O_BINARY set
 // we use the WINDOWS flags as default
-uint64_t O_RDONLY = 32768;
+// uint64_t O_RDONLY = 32768;
 
 // flags for opening write-only files
 // MAC: 1537 = 0x0601 = O_CREAT (0x0200) | O_TRUNC (0x0400) | O_WRONLY (0x0001)
@@ -1237,7 +1237,7 @@ uint64_t atoi(uint64_t* s) {
     if (c > 9) {
       printf2((uint64_t*) "%s: cannot convert non-decimal number %s\n", exe_name, s);
 
-      exit(EXITCODE_BADARGUMENTS);
+      exit((int) EXITCODE_BADARGUMENTS);
     }
 
     // assert: s contains a decimal number
@@ -1252,13 +1252,13 @@ uint64_t atoi(uint64_t* s) {
         // s contains a decimal number larger than UINT64_MAX
         printf2((uint64_t*) "%s: cannot convert out-of-bound number %s\n", exe_name, s);
 
-        exit(EXITCODE_BADARGUMENTS);
+        exit((int) EXITCODE_BADARGUMENTS);
       }
     else {
       // s contains a decimal number larger than UINT64_MAX
       printf2((uint64_t*) "%s: cannot convert out-of-bound number %s\n", exe_name, s);
 
-      exit(EXITCODE_BADARGUMENTS);
+      exit((int) EXITCODE_BADARGUMENTS);
     }
 
     // go to the next digit
@@ -1407,7 +1407,7 @@ void put_character(uint64_t c) {
       printf2((uint64_t*) "%s: could not write character to output file %s\n", exe_name, output_name);
     }
 
-    exit(EXITCODE_IOERROR);
+    exit((int) EXITCODE_IOERROR);
   }
 }
 
@@ -1631,7 +1631,7 @@ uint64_t* smalloc(uint64_t size) {
   // if no memory can be allocated
   uint64_t* memory;
 
-  memory = malloc(size);
+  memory = (uint64_t*) malloc(size);
 
   if (size == 0)
     // any address including null
@@ -1639,7 +1639,7 @@ uint64_t* smalloc(uint64_t size) {
   else if ((uint64_t) memory == 0) {
     printf1((uint64_t*) "%s: malloc out of memory\n", exe_name);
 
-    exit(EXITCODE_OUTOFVIRTUALMEMORY);
+    exit((int) EXITCODE_OUTOFVIRTUALMEMORY);
   }
 
   return memory;
@@ -2042,15 +2042,15 @@ uint64_t open_write_only(uint64_t* name) {
   uint64_t fd;
 
   // try Mac flags
-  fd = sign_extend(open(name, MAC_O_CREAT_TRUNC_WRONLY, S_IRUSR_IWUSR_IRGRP_IROTH), SYSCALL_BITWIDTH);
+  fd = sign_extend((uint64_t) open(reinterpret_cast<char*>(name), (int) MAC_O_CREAT_TRUNC_WRONLY, (mode_t) S_IRUSR_IWUSR_IRGRP_IROTH), SYSCALL_BITWIDTH);
 
   if (signed_less_than(fd, 0)) {
     // try Linux flags
-    fd = sign_extend(open(name, LINUX_O_CREAT_TRUNC_WRONLY, S_IRUSR_IWUSR_IRGRP_IROTH), SYSCALL_BITWIDTH);
+    fd = sign_extend((uint64_t) open(reinterpret_cast<char*>(name), (int) LINUX_O_CREAT_TRUNC_WRONLY, (mode_t) S_IRUSR_IWUSR_IRGRP_IROTH), SYSCALL_BITWIDTH);
 
     if (signed_less_than(fd, 0))
       // try Windows flags
-      fd = sign_extend(open(name, WINDOWS_O_BINARY_CREAT_TRUNC_WRONLY, S_IRUSR_IWUSR_IRGRP_IROTH), SYSCALL_BITWIDTH);
+      fd = sign_extend((uint64_t) open(reinterpret_cast<char*>(name), (int) WINDOWS_O_BINARY_CREAT_TRUNC_WRONLY, (mode_t) S_IRUSR_IWUSR_IRGRP_IROTH), SYSCALL_BITWIDTH);
   }
 
   return fd;
@@ -2096,12 +2096,12 @@ void selfie_load() {
 
   // assert: binary_name is mapped and not longer than MAX_FILENAME_LENGTH
 
-  fd = sign_extend(open(binary_name, O_RDONLY, 0), SYSCALL_BITWIDTH);
+  fd = sign_extend((uint64_t) open(reinterpret_cast<char*>(binary_name), (int) O_RDONLY, (mode_t) 0), SYSCALL_BITWIDTH);
 
   if (signed_less_than(fd, 0)) {
     printf2((uint64_t*) "%s: could not open input file %s\n", exe_name, binary_name);
 
-    exit(EXITCODE_IOERROR);
+    exit((int) EXITCODE_IOERROR);
   }
 
   // make sure binary is mapped for reading into it
@@ -2153,7 +2153,7 @@ void selfie_load() {
 
   printf2((uint64_t*) "%s: failed to load code from input file %s\n", exe_name, binary_name);
 
-  exit(EXITCODE_IOERROR);
+  exit((int) EXITCODE_IOERROR);
 }
 
 // -----------------------------------------------------------------
@@ -2435,14 +2435,14 @@ void implement_assert(uint64_t* context) {
       if (which_branch) {
         if (res == 0) {
           printf(RED "assertion failed 1 at %llx\n" RESET, pc - entry_point);
-          exit(EXITCODE_SYMBOLICEXECUTIONERROR);
+          exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
         }
       } else {
         boolector_push(btor, 1);
         boolector_assert(btor, sase_false_branchs[sase_tc]);
         if (boolector_sat(btor) == BOOLECTOR_SAT) {
           printf(RED "assertion failed 2 at %llx\n" RESET, pc - entry_point);
-          exit(EXITCODE_SYMBOLICEXECUTIONERROR);
+          exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
         }
         boolector_pop(btor, 1);
       }
@@ -2452,7 +2452,7 @@ void implement_assert(uint64_t* context) {
     } else {
       if (res == 0 || is_only_one_branch_reachable == false) {
         printf("OUTPUT: assertion failed %llu, %d at %x", res, is_only_one_branch_reachable, pc - entry_point);
-        exit(EXITCODE_SYMBOLICEXECUTIONERROR);
+        exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
       }
 
       is_only_one_branch_reachable = false;
@@ -2531,7 +2531,7 @@ void implement_symbolic_input(uint64_t* context) {
     print(exe_name);
     print((uint64_t*) ": symbolic input syscall during concrete execution ");
     println();
-    exit(EXITCODE_SYMBOLICEXECUTIONERROR);
+    exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
   }
 }
 
@@ -2679,7 +2679,7 @@ uint64_t down_load_string(uint64_t* table, uint64_t vaddr, uint64_t* s) {
               print_symbolic_memory(mrvc);
               print((uint64_t*) " in filename of open call\n");
 
-              exit(EXITCODE_SYMBOLICEXECUTIONERROR);
+              exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
             }
           } else {
             mrvc = load_symbolic_memory(table, vaddr);
@@ -2741,7 +2741,7 @@ void implement_open(uint64_t* context) {
   mode      = *(get_regs(context) + REG_A2);
 
   if (down_load_string(get_pt(context), vfilename, filename_buffer)) {
-    fd = sign_extend(open(filename_buffer, flags, mode), SYSCALL_BITWIDTH);
+    fd = sign_extend((uint64_t) open(reinterpret_cast<char*>(filename_buffer), (int) flags, (mode_t) mode), SYSCALL_BITWIDTH);
 
     *(get_regs(context) + REG_A0) = fd;
 
@@ -3550,7 +3550,7 @@ void throw_exception(uint64_t exception, uint64_t faulting_page) {
       print_exception(get_exception(current_context), get_faulting_page(current_context));
       print((uint64_t*) " exception\n");
 
-      exit(EXITCODE_MULTIPLEEXCEPTIONERROR);
+      exit((int) EXITCODE_MULTIPLEEXCEPTIONERROR);
     }
 
   set_exception(current_context, exception);
@@ -3817,7 +3817,7 @@ void decode_execute() {
 
     printf2((uint64_t*) "%s: unknown instruction with %x opcode detected\n", exe_name, (uint64_t*) opcode);
 
-    exit(EXITCODE_UNKNOWNINSTRUCTION);
+    exit((int) EXITCODE_UNKNOWNINSTRUCTION);
   }
 }
 
@@ -4097,7 +4097,7 @@ uint64_t* palloc() {
       print(exe_name);
       print((uint64_t*) ": palloc out of physical memory\n");
 
-      exit(EXITCODE_OUTOFPHYSICALMEMORY);
+      exit((int) EXITCODE_OUTOFPHYSICALMEMORY);
     }
   }
 
@@ -4130,7 +4130,7 @@ void map_and_store(uint64_t* context, uint64_t vaddr, uint64_t data) {
       } else {
         printf1((uint64_t*) "%s: ealloc out of memory\n", exe_name);
 
-        exit(EXITCODE_OUTOFTRACEMEMORY);
+        exit((int) EXITCODE_OUTOFTRACEMEMORY);
       }
     } else {
       if (data < two_to_the_power_of_32)
@@ -4360,7 +4360,7 @@ uint64_t handle_max_trace(uint64_t* context) {
   set_exit_code(context, EXITCODE_OUTOFTRACEMEMORY);
 
   printf("OUTPUT: max trace is reached\n");
-  exit(EXITCODE_SYMBOLICEXECUTIONERROR);
+  exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
 
   return EXIT;
 }
@@ -4574,7 +4574,7 @@ void print_usage() {
   printf("usage: executable -l binary -sase fuzz \n");
 }
 
-uint64_t main(uint64_t argc, uint64_t* argv) {
+int main(uint64_t argc, uint64_t* argv) {
   uint64_t* option;
 
   init_selfie((uint64_t) argc, (uint64_t*) argv);
