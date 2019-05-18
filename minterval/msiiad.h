@@ -2,8 +2,8 @@
 #include "stdbool.h"
 
 #define MAX_SD_TO_NUM        100
-#define MAX_NUM_OF_INTERVALS 10
-#define MAX_NUM_OF_OP_VADDRS 10
+#define MAX_NUM_OF_INTERVALS 100
+#define MAX_NUM_OF_OP_VADDRS 100
 
 // ------ shared variables and procedures between source files -----
 
@@ -90,13 +90,13 @@ extern uint64_t* read_los;
 extern uint64_t* read_ups;
 
 extern uint64_t* reg_steps;
-extern uint8_t*  reg_data_typ;
-extern uint8_t   VALUE_T;
-extern uint8_t   POINTER_T;
-extern uint8_t*  reg_symb_typ;
-extern uint8_t   CONCRETE;
-extern uint8_t   SYMBOLIC_CONCRETE;
-extern uint8_t   SYMBOLIC;
+extern uint32_t* reg_data_typ;
+extern uint32_t  VALUE_T;
+extern uint32_t  POINTER_T;
+extern uint32_t* reg_symb_typ;
+extern uint32_t  CONCRETE;
+extern uint32_t  SYMBOLIC_CONCRETE;
+extern uint32_t  SYMBOLIC;
 extern bool*     reg_hasmn;
 extern uint64_t* reg_addsub_corr;
 extern uint64_t* reg_muldivrem_corr;
@@ -109,10 +109,10 @@ struct minterval {
   uint64_t los[MAX_NUM_OF_INTERVALS];
   uint64_t ups[MAX_NUM_OF_INTERVALS];
 } *reg_mints, *mints;
-extern uint8_t* reg_mints_idx;
+extern uint32_t* reg_mints_idx;
 
-extern uint8_t* reg_addrs_idx;
-extern uint8_t* ld_froms_idx;
+extern uint32_t* reg_addrs_idx;
+extern uint32_t* ld_froms_idx;
 struct addr {
   uint64_t vaddrs[MAX_NUM_OF_OP_VADDRS];
 } *reg_addr, *ld_froms, *ld_froms_tc;
@@ -159,19 +159,19 @@ uint64_t is_trace_space_available();
 void ealloc();
 void efree();
 
-void store_symbolic_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, uint8_t data_type, uint64_t* lo, uint64_t* up, uint8_t mints_num, uint64_t step, uint64_t* ld_from, uint8_t ld_from_num, bool hasmn, uint64_t addsub_corr, uint64_t muldivrem_corr, uint64_t corr_validity, uint64_t trb, uint64_t to_tc);
-void store_constrained_memory(uint64_t vaddr, uint64_t* lo, uint64_t* up, uint8_t mints_num, uint64_t step, uint64_t* ld_from, uint8_t ld_from_num, bool hasmn, uint64_t addsub_corr, uint64_t muldivrem_corr, uint64_t corr_validity, uint64_t to_tc);
+void store_symbolic_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, uint32_t data_type, uint64_t* lo, uint64_t* up, uint32_t mints_num, uint64_t step, uint64_t* ld_from, uint32_t ld_from_num, bool hasmn, uint64_t addsub_corr, uint64_t muldivrem_corr, uint64_t corr_validity, uint64_t trb, uint64_t to_tc);
+void store_constrained_memory(uint64_t vaddr, uint64_t* lo, uint64_t* up, uint32_t mints_num, uint64_t step, uint64_t* ld_from, uint32_t ld_from_num, bool hasmn, uint64_t addsub_corr, uint64_t muldivrem_corr, uint64_t corr_validity, uint64_t to_tc);
 void store_register_memory(uint64_t reg, uint64_t* value);
 
-void constrain_memory(uint64_t reg, uint64_t* lo, uint64_t* up, uint8_t mints_num, uint64_t trb, bool only_reachable_branch);
+void constrain_memory(uint64_t reg, uint64_t* lo, uint64_t* up, uint32_t mints_num, uint64_t trb, bool only_reachable_branch);
 void propagate_backwards(uint64_t vaddr, uint64_t* lo_before_op, uint64_t* up_before_op, uint64_t original_mrvc_y);
 void propagate_mul(uint64_t step, uint64_t k);
 void propagate_divu(uint64_t step, uint64_t k, uint64_t step_rd);
 void propagate_remu(uint64_t step, uint64_t divisor);
-void propagate_backwards_rhs(uint64_t* lo, uint64_t* up, uint8_t mints_num, uint64_t mrvc);
+void propagate_backwards_rhs(uint64_t* lo, uint64_t* up, uint32_t mints_num, uint64_t mrvc);
 
-void set_vaddrs(uint64_t reg, uint64_t* vaddrs, uint8_t start_idx, uint8_t vaddr_num);
-void set_correction(uint64_t reg, uint8_t hasco, uint8_t hasmn, uint64_t addsub_corr, uint64_t muldivrem_corr, uint64_t corr_validity);
+void set_vaddrs(uint64_t reg, uint64_t* vaddrs, uint32_t start_idx, uint32_t vaddr_num);
+void set_correction(uint64_t reg, uint32_t hasco, uint32_t hasmn, uint64_t addsub_corr, uint64_t muldivrem_corr, uint64_t corr_validity);
 
 void take_branch(uint64_t b, uint64_t how_many_more);
 void create_mconstraints(uint64_t* lo1_p, uint64_t* up1_p, uint64_t* lo2_p, uint64_t* up2_p, uint64_t trb);

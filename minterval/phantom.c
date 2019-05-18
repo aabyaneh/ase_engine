@@ -2470,7 +2470,7 @@ void implement_printsv(uint64_t* context) {
     id   = *(get_regs(context) + REG_A0);
     addr = (reg_addrs_idx[REG_A1] > 0) ? ld_froms[load_symbolic_memory(get_pt(context), reg_addr[REG_A1].vaddrs[0])].vaddrs[0] : 0;
 
-    for (uint8_t i = 0; i < reg_mints_idx[REG_A1]; i++) {
+    for (uint32_t i = 0; i < reg_mints_idx[REG_A1]; i++) {
       printf("PRINTSV :=) id: %-3llu, mint: %-2u; vaddr: %-10llu => lo: %-5llu, up: %-5llu, step: %-5llu\n", id, i, addr, reg_mints[REG_A1].los[i], reg_mints[REG_A1].ups[i], reg_steps[REG_A1]);
     }
   }
@@ -2823,6 +2823,8 @@ void implement_brk(uint64_t* context) {
         // assert: previous_program_break < 2^32
         sase_regs[REG_A0]     = boolector_unsigned_int(btor, previous_program_break, bv_sort);
         sase_regs_typ[REG_A0] = CONCRETE_T;
+
+        *(get_regs(context) + REG_A0) = previous_program_break;
       } else {
         size = program_break - previous_program_break;
 
@@ -4357,6 +4359,9 @@ uint64_t handle_max_trace(uint64_t* context) {
 
   set_exit_code(context, EXITCODE_OUTOFTRACEMEMORY);
 
+  printf("OUTPUT: max trace is reached\n");
+  exit(EXITCODE_SYMBOLICEXECUTIONERROR);
+
   return EXIT;
 }
 
@@ -4489,7 +4494,7 @@ uint64_t selfie_run(uint64_t machine) {
     symbolic = 1;
 
     init_symbolic_engine();
-    init_memory(round_up(4 * MAX_TRACE_LENGTH * SIZEOFUINT64, MEGABYTE) / MEGABYTE + 1);
+    init_memory(round_up(40 * MAX_TRACE_LENGTH * SIZEOFUINT64, MEGABYTE) / MEGABYTE + 1);
   }
 
   fuzz = atoi(peek_argument());
