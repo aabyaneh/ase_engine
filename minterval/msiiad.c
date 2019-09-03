@@ -160,7 +160,6 @@ void init_symbolic_engine() {
   reg_corr_validity  = (uint64_t*) zalloc(NUMBEROFREGISTERS * REGISTERSIZE);
 
   is_inputs          = (uint64_t*) malloc(MAX_TRACE_LENGTH  * SIZEOFUINT64);
-  // input_table        = (uint64_t*) malloc(MAX_TRACE_LENGTH  * SIZEOFUINT64);
   is_inputs[0]       = 0;
 
   for (uint32_t i = 0; i < NUMBEROFREGISTERS; i++) {
@@ -1100,11 +1099,7 @@ uint64_t constrain_ld() {
 
         // assert: vaddr == *(vaddrs + mrvc)
 
-        if (mints_idxs[mrvc] > 1) {
-          set_correction(rd, SYMBOLIC, 0, 0, 0, 0);
-          reg_addrs_idx[rd]      = 1;
-          reg_addr[rd].vaddrs[0] = vaddr;
-        } else if (is_symbolic_value(reg_data_typ[rd], reg_mints[rd].los[0], reg_mints[rd].ups[0])) {
+        if (is_symbolic_value(reg_data_typ[rd], mints_idxs[mrvc], reg_mints[rd].los[0], reg_mints[rd].ups[0])) {
           // vaddr is constrained by rd if value interval is not singleton
           set_correction(rd, SYMBOLIC, 0, 0, 0, 0);
           reg_addrs_idx[rd]      = 1;
@@ -1189,10 +1184,12 @@ void print_symbolic_memory(uint64_t svc) {
 
 }
 
-uint64_t is_symbolic_value(uint64_t type, uint64_t lo, uint64_t up) {
+bool is_symbolic_value(uint64_t type, uint32_t mints_num, uint64_t lo, uint64_t up) {
   if (type)
     // memory range
     return 0;
+  else if (mints_num > 1)
+    return 1;
   else if (lo == up)
     // singleton interval
     return 0;
@@ -1247,6 +1244,16 @@ void efree() {
   tc = tc - 1;
 }
 
+bool is_pure_concrete_value(uint32_t data_type, uint32_t mints_num, uint64_t lo, uint64_t up, uint32_t ld_from_num, uint64_t is_input) {
+  if (is_symbolic_value(data_type, mints_num, lo, up))
+    return false;
+
+  if (ld_from_num == 0 && is_input == 0)
+    return true;
+
+  return false;
+}
+
 void store_symbolic_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, uint32_t data_type, uint64_t* lo, uint64_t* up, uint32_t mints_num, uint64_t step, uint64_t* ld_from, uint32_t ld_from_num, bool hasmn, uint64_t addsub_corr, uint64_t muldivrem_corr, uint64_t corr_validity, uint64_t trb, uint64_t to_tc, uint64_t is_input) {
   uint64_t mrvc;
   uint64_t idx;
@@ -1260,6 +1267,28 @@ void store_symbolic_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, uint32_
   else {
     // assert: vaddr is valid and mapped
     mrvc = load_symbolic_memory(pt, vaddr);
+
+    bool is_this_value_symbolic = is_pure_concrete_value(data_type, mints_num, lo[0], up[0], ld_from_num, is_input);
+    bool is_prev_value_symbolic = is_pure_concrete_value(data_types[mrvc], mints_idxs[mrvc], mints[mrvc].los[0], mints[mrvc].ups[0], ld_froms_idx[mrvc], is_inputs[mrvc]);
+
+    if (is_this_value_symbolic && is_prev_value_symbolic && trb < mrvc) {
+      if (mints_num > MAX_NUM_OF_INTERVALS) {
+        printf("OUTPUT: maximum number of possible intervals is reached at %x\n", pc - entry_point);
+        exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
+      }
+
+      *(data_types   + mrvc) = data_type;
+      *(values       + mrvc) = value;
+      *(steps        + mrvc) = step;
+      *(mints_idxs   + mrvc) = mints_num;
+      for (uint32_t i = 0; i < mints_num; i++) {
+        mints[mrvc].los[i] = lo[i];
+        mints[mrvc].ups[i] = up[i];
+      }
+
+      return;
+    }
+
   }
 
   if (is_trace_space_available()) {

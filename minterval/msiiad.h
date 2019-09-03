@@ -171,7 +171,7 @@ void backtrack_trace(uint64_t* context);
 
 void init_symbolic_engine();
 void print_symbolic_memory(uint64_t svc);
-uint64_t is_symbolic_value(uint64_t type, uint64_t lo, uint64_t up);
+bool is_symbolic_value(uint64_t type, uint32_t mints_num, uint64_t lo, uint64_t up);
 uint64_t is_safe_address(uint64_t vaddr, uint64_t reg);
 uint64_t load_symbolic_memory(uint64_t* pt, uint64_t vaddr);
 uint64_t is_trace_space_available();

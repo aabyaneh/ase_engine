@@ -2681,7 +2681,7 @@ uint64_t down_load_string(uint64_t* table, uint64_t vaddr, uint64_t* s) {
 
             *(s + i) = *(values + mrvc);
 
-            if (is_symbolic_value(*(data_types + mrvc), mints[mrvc].los[0], mints[mrvc].ups[0])) {
+            if (is_symbolic_value(data_types[mrvc], mints_idxs[mrvc], mints[mrvc].los[0], mints[mrvc].ups[0])) {
               printf1((uint64_t*) "%s: detected symbolic value ", exe_name);
               print_symbolic_memory(mrvc);
               print((uint64_t*) " in filename of open call\n");
