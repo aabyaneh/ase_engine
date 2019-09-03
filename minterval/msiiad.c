@@ -113,6 +113,10 @@ uint32_t  DEQ  = 5;
 // assertion
 bool is_only_one_branch_reachable = false;
 
+// managing symbolic inputs
+uint64_t* is_inputs;
+std::vector<uint64_t> input_table;
+
 // ------------------------- INITIALIZATION ------------------------
 
 void init_symbolic_engine() {
@@ -154,6 +158,10 @@ void init_symbolic_engine() {
   reg_addsub_corr    = (uint64_t*) zalloc(NUMBEROFREGISTERS * REGISTERSIZE);
   reg_muldivrem_corr = (uint64_t*) zalloc(NUMBEROFREGISTERS * REGISTERSIZE);
   reg_corr_validity  = (uint64_t*) zalloc(NUMBEROFREGISTERS * REGISTERSIZE);
+
+  is_inputs          = (uint64_t*) malloc(MAX_TRACE_LENGTH  * SIZEOFUINT64);
+  // input_table        = (uint64_t*) malloc(MAX_TRACE_LENGTH  * SIZEOFUINT64);
+  is_inputs[0]       = 0;
 
   for (uint32_t i = 0; i < NUMBEROFREGISTERS; i++) {
     reg_steps[i]     = 1;
@@ -861,7 +869,8 @@ void constrain_divu() {
       }
     } else
       throw_exception(EXCEPTION_DIVISIONBYZERO, 0);
-  }
+  } else
+    throw_exception(EXCEPTION_DIVISIONBYZERO, 0);
 }
 
 void constrain_remu() {
@@ -1136,7 +1145,10 @@ uint64_t constrain_sd() {
   if (is_safe_address(vaddr, rs1)) {
     if (is_virtual_address_mapped(pt, vaddr)) {
       // interval semantics of sd
-      store_symbolic_memory(pt, vaddr, registers[rs2], reg_data_typ[rs2], reg_mints[rs2].los, reg_mints[rs2].ups, reg_mints_idx[rs2], reg_steps[rs2], reg_addr[rs2].vaddrs, reg_addrs_idx[rs2], reg_hasmn[rs2], reg_addsub_corr[rs2], reg_muldivrem_corr[rs2], reg_corr_validity[rs2], mrcc, 0);
+      if (reg_symb_typ[rs2] == SYMBOLIC && reg_addrs_idx[rs2] == 0) // means it is an x = input();
+        store_symbolic_memory(pt, vaddr, registers[rs2], reg_data_typ[rs2], reg_mints[rs2].los, reg_mints[rs2].ups, reg_mints_idx[rs2], reg_steps[rs2], reg_addr[rs2].vaddrs, reg_addrs_idx[rs2], reg_hasmn[rs2], reg_addsub_corr[rs2], reg_muldivrem_corr[rs2], reg_corr_validity[rs2], mrcc, 0, symbolic_input_cnt - 1);
+      else
+        store_symbolic_memory(pt, vaddr, registers[rs2], reg_data_typ[rs2], reg_mints[rs2].los, reg_mints[rs2].ups, reg_mints_idx[rs2], reg_steps[rs2], reg_addr[rs2].vaddrs, reg_addrs_idx[rs2], reg_hasmn[rs2], reg_addsub_corr[rs2], reg_muldivrem_corr[rs2], reg_corr_validity[rs2], mrcc, 0, 0);
 
       // keep track of instruction address for profiling stores
       a = (pc - entry_point) / INSTRUCTIONSIZE;
@@ -1235,7 +1247,7 @@ void efree() {
   tc = tc - 1;
 }
 
-void store_symbolic_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, uint32_t data_type, uint64_t* lo, uint64_t* up, uint32_t mints_num, uint64_t step, uint64_t* ld_from, uint32_t ld_from_num, bool hasmn, uint64_t addsub_corr, uint64_t muldivrem_corr, uint64_t corr_validity, uint64_t trb, uint64_t to_tc) {
+void store_symbolic_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, uint32_t data_type, uint64_t* lo, uint64_t* up, uint32_t mints_num, uint64_t step, uint64_t* ld_from, uint32_t ld_from_num, bool hasmn, uint64_t addsub_corr, uint64_t muldivrem_corr, uint64_t corr_validity, uint64_t trb, uint64_t to_tc, uint64_t is_input) {
   uint64_t mrvc;
   uint64_t idx;
 
@@ -1261,6 +1273,13 @@ void store_symbolic_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, uint32_
     *(values     + tc) = value;
     *(steps      + tc) = step;
     *(vaddrs     + tc) = vaddr;
+
+    // keep track of symbolic inputs
+    is_inputs[tc]      = is_input;
+    if (is_input && to_tc == 0) // when sd
+      input_table.push_back(tc);
+    else if (is_input)          // when sltu
+      input_table.at(is_input - 1) = tc;
 
     *(mints_idxs   + tc) = mints_num;
     if (mints_num > MAX_NUM_OF_INTERVALS) {
@@ -1328,16 +1347,117 @@ void store_symbolic_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, uint32_
     throw_exception(EXCEPTION_MAXTRACE, 0);
 }
 
-void store_constrained_memory(uint64_t vaddr, uint64_t* lo, uint64_t* up, uint32_t mints_num, uint64_t step, uint64_t* ld_from, uint32_t ld_from_num, bool hasmn, uint64_t addsub_corr, uint64_t muldivrem_corr, uint64_t corr_validity, uint64_t to_tc) {
+// store temporarily an updated symbolic variable on trace without updating the memory and tc++; just for passing args
+void store_tmp_constrained_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, uint32_t data_type, uint64_t* lo, uint64_t* up, uint32_t mints_num, uint64_t step, uint64_t* ld_from, uint32_t ld_from_num, bool hasmn, uint64_t addsub_corr, uint64_t muldivrem_corr, uint64_t corr_validity, uint64_t trb, uint64_t to_tc) {
+  uint64_t mrvc;
+  uint64_t idx;
+
+  if (is_trace_space_available()) {
+    ealloc();
+
+    *(pcs        + tc) = pc;
+    *(tcs        + tc) = to_tc;
+    *(data_types + tc) = data_type;
+    *(values     + tc) = value;
+    *(steps      + tc) = step;
+    *(vaddrs     + tc) = vaddr;
+
+    is_inputs[tc]      = 0;
+
+    *(mints_idxs   + tc) = mints_num;
+    if (mints_num > MAX_NUM_OF_INTERVALS) {
+      printf("OUTPUT: maximum number of possible intervals is reached at %x\n", pc - entry_point);
+      exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
+    }
+    for (uint32_t i = 0; i < mints_num; i++) {
+      mints[tc].los[i] = lo[i];
+      mints[tc].ups[i] = up[i];
+    }
+
+    *(hasmns          + tc) = hasmn;
+    *(addsub_corrs    + tc) = addsub_corr;
+    *(muldivrem_corrs + tc) = muldivrem_corr;
+    *(corr_validitys  + tc) = corr_validity;
+
+    *(ld_froms_idx    + tc) = ld_from_num;
+    if (ld_from_num > MAX_NUM_OF_OP_VADDRS) {
+      printf("OUTPUT: maximum number of possible vaddrs is reached at %x\n", pc - entry_point);
+      exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
+    }
+    for (uint32_t i = 0; i < ld_from_num; i++) {
+      ld_froms[tc].vaddrs[i] = ld_from[i];
+    }
+
+    for (uint32_t i = 0; i < ld_from_num; i++) {
+      ld_froms_tc[tc].vaddrs[i] = ld_froms_tc[to_tc].vaddrs[i];
+    }
+
+    efree();
+
+  } else
+    throw_exception(EXCEPTION_MAXTRACE, 0);
+}
+
+// store an updated symbolic input on trace without updating the memory; new data type of 3
+void store_input_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, uint32_t data_type, uint64_t* lo, uint64_t* up, uint32_t mints_num, uint64_t step, uint64_t* ld_from, uint32_t ld_from_num, bool hasmn, uint64_t addsub_corr, uint64_t muldivrem_corr, uint64_t corr_validity, uint64_t trb, uint64_t to_tc, uint64_t is_input) {
+  uint64_t mrvc;
+  uint64_t idx;
+
+  if (is_trace_space_available()) {
+    ealloc();
+
+    *(pcs        + tc) = pc;
+    *(tcs        + tc) = input_table.at(is_input - 1);
+    *(data_types + tc) = 3;
+    *(values     + tc) = value;
+    *(steps      + tc) = step;
+    *(vaddrs     + tc) = vaddr;
+
+    input_table.at(is_input - 1) = tc;
+    is_inputs[tc]      = is_input;
+
+    *(mints_idxs   + tc) = mints_num;
+    if (mints_num > MAX_NUM_OF_INTERVALS) {
+      printf("OUTPUT: maximum number of possible intervals is reached at %x\n", pc - entry_point);
+      exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
+    }
+    for (uint32_t i = 0; i < mints_num; i++) {
+      mints[tc].los[i] = lo[i];
+      mints[tc].ups[i] = up[i];
+    }
+
+    *(hasmns          + tc) = hasmn;
+    *(addsub_corrs    + tc) = addsub_corr;
+    *(muldivrem_corrs + tc) = muldivrem_corr;
+    *(corr_validitys  + tc) = corr_validity;
+
+    *(ld_froms_idx    + tc) = ld_from_num;
+    if (ld_from_num > MAX_NUM_OF_OP_VADDRS) {
+      printf("OUTPUT: maximum number of possible vaddrs is reached at %x\n", pc - entry_point);
+      exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
+    }
+    for (uint32_t i = 0; i < ld_from_num; i++) {
+      ld_froms[tc].vaddrs[i] = ld_from[i];
+    }
+
+    for (uint32_t i = 0; i < ld_from_num; i++) {
+      ld_froms_tc[tc].vaddrs[i] = ld_froms_tc[to_tc].vaddrs[i];
+    }
+
+  } else
+    throw_exception(EXCEPTION_MAXTRACE, 0);
+}
+
+void store_constrained_memory(uint64_t vaddr, uint64_t* lo, uint64_t* up, uint32_t mints_num, uint64_t step, uint64_t* ld_from, uint32_t ld_from_num, bool hasmn, uint64_t addsub_corr, uint64_t muldivrem_corr, uint64_t corr_validity, uint64_t to_tc, uint64_t is_input) {
   uint64_t mrvc;
 
   // always track constrained memory by using tc as most recent branch
-  store_symbolic_memory(pt, vaddr, lo[0], VALUE_T, lo, up, mints_num, step, ld_from, ld_from_num, hasmn, addsub_corr, muldivrem_corr, corr_validity, tc, to_tc);
+  store_symbolic_memory(pt, vaddr, lo[0], VALUE_T, lo, up, mints_num, step, ld_from, ld_from_num, hasmn, addsub_corr, muldivrem_corr, corr_validity, tc, to_tc, is_input);
 }
 
 void store_register_memory(uint64_t reg, uint64_t* value) {
   // always track register memory by using tc as most recent branch
-  store_symbolic_memory(pt, reg, value[0], 0, value, value, 1, 1, 0, 0, 0, 0, 0, 0, tc, 0);
+  store_symbolic_memory(pt, reg, value[0], 0, value, value, 1, 1, 0, 0, 0, 0, 0, 0, tc, 0, 0);
 }
 
 uint64_t reverse_division_up(uint64_t ups_mrvc, uint64_t up, uint64_t codiv) {
@@ -1350,10 +1470,10 @@ uint64_t reverse_division_up(uint64_t ups_mrvc, uint64_t up, uint64_t codiv) {
 // consider y = x op a;
 // mrvc is mrvc of x
 // lo_before_op is previouse lo of y
-void apply_correction(uint64_t* lo, uint64_t* up, uint32_t mints_num, bool hasmn, uint64_t addsub_corr, uint64_t muldivrem_corr, uint64_t corr_validity, uint64_t* lo_before_op, uint64_t* up_before_op, uint64_t step, uint64_t mrvc) {
+void apply_correction(uint64_t* lo, uint64_t* up, uint32_t mints_num, bool hasmn, uint64_t addsub_corr, uint64_t muldivrem_corr, uint64_t corr_validity, uint64_t* lo_before_op, uint64_t* up_before_op, uint64_t step, uint64_t mrvc, bool should_be_stored_or_not) {
   uint64_t lo_p[MAX_NUM_OF_INTERVALS];
   uint64_t up_p[MAX_NUM_OF_INTERVALS];
-  uint32_t  idxs[MAX_NUM_OF_INTERVALS];
+  uint32_t idxs[MAX_NUM_OF_INTERVALS];
   bool     is_lo_p_up_p_used = false;
 
   uint32_t j;
@@ -1481,7 +1601,19 @@ void apply_correction(uint64_t* lo, uint64_t* up, uint32_t mints_num, bool hasmn
   }
 
   //////////////////////////////////////////////////////////////////////////////
-  store_constrained_memory(vaddrs[mrvc], lo_prop, up_prop, mints_num, steps[mrvc], ld_froms[mrvc].vaddrs, ld_froms_idx[mrvc], hasmns[mrvc], addsub_corrs[mrvc], muldivrem_corrs[mrvc], corr_validitys[mrvc], mrvc);
+  if (should_be_stored_or_not == true) {
+    store_constrained_memory(vaddrs[mrvc], lo_prop, up_prop, mints_num, steps[mrvc], ld_froms[mrvc].vaddrs, ld_froms_idx[mrvc], hasmns[mrvc], addsub_corrs[mrvc], muldivrem_corrs[mrvc], corr_validitys[mrvc], mrvc, is_inputs[mrvc]);
+  } else {
+    // if memory addr is recently updated by a new variable, but we need to propagate constraints through its previouse value
+    // carefull about: x = input(); y = x; x = input(); if(y);
+    if (is_inputs[mrvc]) {
+      // at (tc + 1) with ealloc()
+      store_input_memory(pt, vaddrs[mrvc], lo_prop[0], VALUE_T, lo_prop, up_prop, mints_num, steps[mrvc], ld_froms[mrvc].vaddrs, ld_froms_idx[mrvc], hasmns[mrvc], addsub_corrs[mrvc], muldivrem_corrs[mrvc], corr_validitys[mrvc], tc, mrvc, is_inputs[mrvc]);
+    } else {
+      // at (tc + 1) but without ealloc()
+      store_tmp_constrained_memory(pt, vaddrs[mrvc], lo_prop[0], VALUE_T, lo_prop, up_prop, mints_num, steps[mrvc], ld_froms[mrvc].vaddrs, ld_froms_idx[mrvc], hasmns[mrvc], addsub_corrs[mrvc], muldivrem_corrs[mrvc], corr_validitys[mrvc], tc, mrvc);
+    }
+  }
 
   // assert: (ld_froms_idx[mrvc] > 1) never reach here
   if (ld_froms_idx[mrvc]) {
@@ -1490,7 +1622,12 @@ void apply_correction(uint64_t* lo, uint64_t* up, uint32_t mints_num, bool hasmn
       up_p[i] = up_prop[i];
     }
     is_lo_p_up_p_used = true;
-    propagate_backwards(vaddrs[mrvc], mints[mrvc].los, mints[mrvc].ups, mrvc);
+
+    if (should_be_stored_or_not == true)
+      propagate_backwards(load_symbolic_memory(pt, vaddrs[mrvc]), mints[mrvc].los, mints[mrvc].ups);
+    else
+      propagate_backwards(tc + 1, mints[mrvc].los, mints[mrvc].ups);
+
   }
 
   if (sd_to_idxs[mrvc]) {
@@ -1507,8 +1644,8 @@ void apply_correction(uint64_t* lo, uint64_t* up, uint32_t mints_num, bool hasmn
 }
 
 void propagate_backwards_rhs(uint64_t* lo, uint64_t* up, uint32_t mints_num, uint64_t mrvc) {
-  uint64_t to_tc;
-  uint64_t mr_to_tc;
+  uint64_t stored_to_tc;
+  uint64_t mr_stored_to_tc;
   uint64_t tmp;
   uint64_t lo_p[MAX_NUM_OF_INTERVALS];
   uint64_t up_p[MAX_NUM_OF_INTERVALS];
@@ -1520,47 +1657,55 @@ void propagate_backwards_rhs(uint64_t* lo, uint64_t* up, uint32_t mints_num, uin
 
   mints_num_prop = mints_num;
   for (int i = 0; i < sd_to_idxs[mrvc]; i++) {
-    to_tc = sd_tos[mrvc].tc[i];
-    mr_to_tc = load_symbolic_memory(pt, vaddrs[to_tc]);
-    mr_to_tc = mr_sds[mr_to_tc];
-    if (mr_to_tc > to_tc) {
-      continue;
-    }
+    stored_to_tc = sd_tos[mrvc].tc[i];
+    mr_stored_to_tc = load_symbolic_memory(pt, vaddrs[stored_to_tc]);
+    mr_stored_to_tc = mr_sds[mr_stored_to_tc];
+    // if (mr_stored_to_tc > stored_to_tc) {
+    //   continue;
+    // }
+
+    // carefull about: x = input(); y = x; z = y; y = input(); if(x);
 
     for (uint32_t j = 0; j < mints_num; j++) {
       lo_prop[j] = lo_p[j];
       up_prop[j] = up_p[j];
     }
-    step_prop = steps[to_tc];
-    if (corr_validitys[to_tc] == MUL_T && muldivrem_corrs[to_tc] != 0) {
+    step_prop = steps[stored_to_tc];
+    if (corr_validitys[stored_to_tc] == MUL_T && muldivrem_corrs[stored_to_tc] != 0) {
       // mul
-      propagate_mul(steps[mrvc], muldivrem_corrs[to_tc]);
-    } else if (corr_validitys[to_tc] == DIVU_T) {
+      propagate_mul(steps[mrvc], muldivrem_corrs[stored_to_tc]);
+    } else if (corr_validitys[stored_to_tc] == DIVU_T) {
       // divu
-      propagate_divu(steps[mrvc], muldivrem_corrs[to_tc], step_prop);
-    } else if (corr_validitys[to_tc] == REMU_T) {
+      propagate_divu(steps[mrvc], muldivrem_corrs[stored_to_tc], step_prop);
+    } else if (corr_validitys[stored_to_tc] == REMU_T) {
       // remu
-      propagate_remu(steps[mrvc], muldivrem_corrs[to_tc]);
+      propagate_remu(steps[mrvc], muldivrem_corrs[stored_to_tc]);
     }
 
-    if (hasmns[to_tc]) {
-      // addsub_corrs[to_tc] -
+    if (hasmns[stored_to_tc]) {
+      // addsub_corrs[stored_to_tc] -
       for (uint32_t j = 0; j < mints_num; j++) {
-        tmp        = addsub_corrs[to_tc] - up_prop[j];
-        up_prop[j] = addsub_corrs[to_tc] - lo_prop[j];
+        tmp        = addsub_corrs[stored_to_tc] - up_prop[j];
+        up_prop[j] = addsub_corrs[stored_to_tc] - lo_prop[j];
         lo_prop[j] = tmp;
       }
     } else {
-      // + addsub_corrs[to_tc]
+      // + addsub_corrs[stored_to_tc]
       for (uint32_t j = 0; j < mints_num; j++) {
-        lo_prop[j] = lo_prop[j] + addsub_corrs[to_tc];
-        up_prop[j] = up_prop[j] + addsub_corrs[to_tc];
+        lo_prop[j] = lo_prop[j] + addsub_corrs[stored_to_tc];
+        up_prop[j] = up_prop[j] + addsub_corrs[stored_to_tc];
       }
     }
 
-    store_constrained_memory(vaddrs[to_tc], lo_prop, up_prop, mints_num, step_prop, ld_froms[to_tc].vaddrs, ld_froms_idx[to_tc], hasmns[to_tc], addsub_corrs[to_tc], muldivrem_corrs[to_tc], corr_validitys[to_tc], to_tc);
-    if (sd_to_idxs[mr_to_tc]) {
-      propagate_backwards_rhs(lo_prop, up_prop, mints_num, mr_to_tc);
+    if (mr_stored_to_tc == stored_to_tc) {
+      store_constrained_memory(vaddrs[stored_to_tc], lo_prop, up_prop, mints_num, step_prop, ld_froms[stored_to_tc].vaddrs, ld_froms_idx[stored_to_tc], hasmns[stored_to_tc], addsub_corrs[stored_to_tc], muldivrem_corrs[stored_to_tc], corr_validitys[stored_to_tc], stored_to_tc, is_inputs[stored_to_tc]);
+    } else if (mr_stored_to_tc < stored_to_tc) {
+      printf("OUTPUT: mr_stored_to_tc < stored_to_tc at %x\n", pc - entry_point);
+      exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
+    }
+
+    if (sd_to_idxs[stored_to_tc]) {
+      propagate_backwards_rhs(lo_prop, up_prop, mints_num, stored_to_tc);
     }
   }
 }
@@ -1569,20 +1714,20 @@ void propagate_backwards_rhs(uint64_t* lo, uint64_t* up, uint32_t mints_num, uin
 // if (y)
 // vaddr of y -> new y
 // lo_before_op for y -> before new y
-void propagate_backwards(uint64_t vaddr, uint64_t* lo_before_op, uint64_t* up_before_op, uint64_t original_mrvc_y) {
-  uint64_t mrvc_y;
+void propagate_backwards(uint64_t mrvc_y, uint64_t* lo_before_op, uint64_t* up_before_op) {
+  // uint64_t mrvc_y;
   uint64_t mrvc_x;
 
-  mrvc_y = load_symbolic_memory(pt, vaddr);
+  // mrvc_y = load_symbolic_memory(pt, vaddr);
   mrvc_x = load_symbolic_memory(pt, ld_froms[mrvc_y].vaddrs[0]);
   if (mr_sds[mrvc_x] > ld_froms_tc[mrvc_y].vaddrs[0]) {
-    return;
+    // return;
+    mrvc_x = ld_froms_tc[mrvc_y].vaddrs[0];
+    apply_correction(mints[mrvc_y].los, mints[mrvc_y].ups, mints_idxs[mrvc_y], hasmns[mrvc_y], addsub_corrs[mrvc_y], muldivrem_corrs[mrvc_y], corr_validitys[mrvc_y], lo_before_op, up_before_op, steps[mrvc_y], mrvc_x, false);
+  } else {
+    mrvc_x = ld_froms_tc[mrvc_y].vaddrs[0];
+    apply_correction(mints[mrvc_y].los, mints[mrvc_y].ups, mints_idxs[mrvc_y], hasmns[mrvc_y], addsub_corrs[mrvc_y], muldivrem_corrs[mrvc_y], corr_validitys[mrvc_y], lo_before_op, up_before_op, steps[mrvc_y], mrvc_x, true);
   }
-  // because same notion as use for current_rs1_tc and current_rs2_tc
-  while (mrvc_x > original_mrvc_y) {
-    mrvc_x = tcs[mrvc_x];
-  }
-  apply_correction(mints[mrvc_y].los, mints[mrvc_y].ups, mints_idxs[mrvc_y], hasmns[mrvc_y], addsub_corrs[mrvc_y], muldivrem_corrs[mrvc_y], corr_validitys[mrvc_y], lo_before_op, up_before_op, steps[mrvc_y], mrvc_x);
 }
 
 void constrain_memory(uint64_t reg, uint64_t* lo, uint64_t* up, uint32_t mints_num, uint64_t trb, bool only_reachable_branch) {
@@ -1590,15 +1735,15 @@ void constrain_memory(uint64_t reg, uint64_t* lo, uint64_t* up, uint32_t mints_n
 
   if (reg_symb_typ[reg] == SYMBOLIC && assert_zone == false) {
     if (only_reachable_branch == true) {
-      for (uint32_t i = 0; i < reg_addrs_idx[reg]; i++) {
-        mrvc = load_symbolic_memory(pt, reg_addr[reg].vaddrs[i]);
-        lo = mints[mrvc].los;
-        up = mints[mrvc].ups;
-        store_constrained_memory(reg_addr[reg].vaddrs[i], lo, up, mints_idxs[mrvc], steps[mrvc], ld_froms[mrvc].vaddrs, ld_froms_idx[mrvc], hasmns[mrvc], addsub_corrs[mrvc], muldivrem_corrs[mrvc], corr_validitys[mrvc], mrvc);
-      }
+      // for (uint32_t i = 0; i < reg_addrs_idx[reg]; i++) {
+      //   mrvc = load_symbolic_memory(pt, reg_addr[reg].vaddrs[i]);
+      //   lo = mints[mrvc].los;
+      //   up = mints[mrvc].ups;
+      //   store_constrained_memory(reg_addr[reg].vaddrs[i], lo, up, mints_idxs[mrvc], steps[mrvc], ld_froms[mrvc].vaddrs, ld_froms_idx[mrvc], hasmns[mrvc], addsub_corrs[mrvc], muldivrem_corrs[mrvc], corr_validitys[mrvc], mrvc, is_inputs[mrvc]);
+      // }
     } else {
       mrvc = (reg == rs1) ? current_rs1_tc : current_rs2_tc;
-      apply_correction(lo, up, mints_num, reg_hasmn[reg], reg_addsub_corr[reg], reg_muldivrem_corr[reg], reg_corr_validity[reg], reg_mints[reg].los, reg_mints[reg].ups, reg_steps[reg], mrvc);
+      apply_correction(lo, up, mints_num, reg_hasmn[reg], reg_addsub_corr[reg], reg_muldivrem_corr[reg], reg_corr_validity[reg], reg_mints[reg].los, reg_mints[reg].ups, reg_steps[reg], mrvc, true);
     }
 
   }
@@ -2416,8 +2561,16 @@ void backtrack_sltu() {
           ic_sltu = ic_sltu + 1;
         }
     }
-  } else
+  } else {
+    if (is_inputs[tc] && data_types[tc] == 3) { // undo the input record on trace; there was no memory update
+      input_table.at(is_inputs[tc] - 1) = tcs[tc];
+      efree();
+      return;
+    } else if (is_inputs[tc])                   // undo x = input(); if(x);
+      input_table.at(is_inputs[tc] - 1) = tcs[tc];
+
     store_virtual_memory(pt, vaddr, *(tcs + tc));
+  }
 
   efree();
 }
@@ -2427,6 +2580,10 @@ void backtrack_sd() {
     printf("OUTPUT: backtracking sd ");
     print_symbolic_memory(tc);
   }
+
+  // if x = input(); pop the already inserted is_inputs[tc] on input table
+  if (is_inputs[tc])
+    input_table.pop_back();
 
   uint64_t idx;
   for (uint32_t i = 0; i < ld_froms_idx[tc]; i++) {

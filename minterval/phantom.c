@@ -524,7 +524,7 @@ uint64_t SYSCALL_ASSERT_ZONE_BGN = 44;
 uint64_t SYSCALL_ASSERT          = 45;
 uint64_t SYSCALL_ASSERT_ZONE_END = 46;
 
-uint64_t symbolic_input_cnt = 0;
+uint64_t symbolic_input_cnt = 1;
 bool     assert_zone = false;
 
 // *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~
@@ -2326,9 +2326,9 @@ void implement_read(uint64_t* context) {
               val_ptr_2[0] = up;
               if (mrcc == 0)
                 // no branching yet, we may overwrite symbolic memory
-                store_symbolic_memory(get_pt(context), vbuffer, value, 0, val_ptr_1, val_ptr_2, 1, 1, (uint64_t*) 0, 0, 0, 0, 0, 0, 0, 0);
+                store_symbolic_memory(get_pt(context), vbuffer, value, 0, val_ptr_1, val_ptr_2, 1, 1, (uint64_t*) 0, 0, 0, 0, 0, 0, 0, 0, 0);
               else
-                store_symbolic_memory(get_pt(context), vbuffer, value, 0, val_ptr_1, val_ptr_2, 1, 1, (uint64_t*) 0, 0, 0, 0, 0, 0, tc, 0);
+                store_symbolic_memory(get_pt(context), vbuffer, value, 0, val_ptr_1, val_ptr_2, 1, 1, (uint64_t*) 0, 0, 0, 0, 0, 0, tc, 0, 0);
             } else {
               actually_read = 0;
 
@@ -2473,6 +2473,13 @@ void implement_printsv(uint64_t* context) {
     for (uint32_t i = 0; i < reg_mints_idx[REG_A1]; i++) {
       printf("PRINTSV :=) id: %-3llu, mint: %-2u; vaddr: %-10llu => lo: %-5llu, up: %-5llu, step: %-5llu\n", id, i, addr, reg_mints[REG_A1].los[i], reg_mints[REG_A1].ups[i], reg_steps[REG_A1]);
     }
+
+    for (size_t j = 0; j < input_table.size(); j++) {
+      for (uint32_t i = 0; i < mints_idxs[input_table[j]]; i++) {
+        printf("-------- :=) id: %-3llu, mint: %-2u; => lo: %-5llu, up: %-5llu, step: %-5llu\n", j+1, i, mints[input_table[j]].los[i], mints[input_table[j]].ups[i], steps[input_table[j]]);
+      }
+    }
+
   }
 
   set_pc(context, get_pc(context) + INSTRUCTIONSIZE);
@@ -2848,7 +2855,7 @@ void implement_brk(uint64_t* context) {
             // since there has been branching record brk using vaddr == 0
             val_ptr_1[0] = previous_program_break;
             val_ptr_2[0] = size;
-            store_symbolic_memory(get_pt(context), 0, previous_program_break, 1, val_ptr_1, val_ptr_2, 1, 1, (uint64_t*) 0, 0, 0, 0, 0, 0, tc, 0);
+            store_symbolic_memory(get_pt(context), 0, previous_program_break, 1, val_ptr_1, val_ptr_2, 1, 1, (uint64_t*) 0, 0, 0, 0, 0, 0, tc, 0, 0);
           } else {
             throw_exception(EXCEPTION_MAXTRACE, 0);
 
@@ -4126,7 +4133,7 @@ void map_and_store(uint64_t* context, uint64_t vaddr, uint64_t data) {
       if (is_trace_space_available()) {
         // always track initialized memory by using tc as most recent branch
         val_ptr_1[0] = data;
-        store_symbolic_memory(get_pt(context), vaddr, data, 0, val_ptr_1, val_ptr_1, 1, 1, (uint64_t*) 0, 0, 0, 0, 0, 0, tc, 0);
+        store_symbolic_memory(get_pt(context), vaddr, data, 0, val_ptr_1, val_ptr_1, 1, 1, (uint64_t*) 0, 0, 0, 0, 0, 0, tc, 0, 0);
       } else {
         printf1((uint64_t*) "%s: ealloc out of memory\n", exe_name);
 
@@ -4347,7 +4354,7 @@ uint64_t handle_page_fault(uint64_t* context) {
 uint64_t handle_division_by_zero(uint64_t* context) {
   set_exception(context, EXCEPTION_NOEXCEPTION);
 
-  // printf1((uint64_t*) "%s: division by zero\n", exe_name);
+  printf1((uint64_t*) "%s: division by zero\n", exe_name);
 
   set_exit_code(context, EXITCODE_DIVISIONBYZERO);
 
@@ -4447,6 +4454,8 @@ uint64_t engine(uint64_t* to_context) {
           }
         }
       } else {
+        // printf("%\n backtracking %llu\n", b);
+
         backtrack_trace(current_context);
 
         // if (b == 0)
@@ -4571,7 +4580,9 @@ void set_argument(uint64_t* argv) {
 }
 
 void print_usage() {
-  printf("usage: executable -l binary -sase fuzz \n");
+  printf("usage: \n");
+  printf("intervals: executable -l binary -i fuzz \n");
+  printf("SMT:       executable -l binary -k fuzz \n");
 }
 
 int main(uint64_t argc, uint64_t* argv) {

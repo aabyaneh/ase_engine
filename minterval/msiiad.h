@@ -4,6 +4,7 @@
 #include <iostream>
 #include <fcntl.h>
 #include <unistd.h>
+#include <vector>
 
 #define MAX_SD_TO_NUM        100
 #define MAX_NUM_OF_INTERVALS 100
@@ -111,6 +112,7 @@ extern uint64_t* reg_corr_validity;
 
 extern uint64_t* values;
 extern uint64_t* data_types;
+extern uint64_t* steps;
 
 struct minterval {
   uint64_t los[MAX_NUM_OF_INTERVALS];
@@ -118,6 +120,7 @@ struct minterval {
 };
 extern struct minterval* reg_mints;
 extern struct minterval* mints;
+extern uint32_t* mints_idxs;
 extern uint32_t* reg_mints_idx;
 
 extern uint32_t* reg_addrs_idx;
@@ -130,6 +133,11 @@ extern struct addr* ld_froms;
 extern struct addr* ld_froms_tc;
 
 extern uint64_t mrcc;
+
+extern uint64_t symbolic_input_cnt;
+
+// extern std::unordered_map<uint64_t, uint64_t> input_table;
+extern std::vector<uint64_t> input_table;
 
 // -----------------------------------------------------------------
 // ----------------------- BUILTIN PROCEDURES ----------------------
@@ -171,12 +179,12 @@ uint64_t is_trace_space_available();
 void ealloc();
 void efree();
 
-void store_symbolic_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, uint32_t data_type, uint64_t* lo, uint64_t* up, uint32_t mints_num, uint64_t step, uint64_t* ld_from, uint32_t ld_from_num, bool hasmn, uint64_t addsub_corr, uint64_t muldivrem_corr, uint64_t corr_validity, uint64_t trb, uint64_t to_tc);
-void store_constrained_memory(uint64_t vaddr, uint64_t* lo, uint64_t* up, uint32_t mints_num, uint64_t step, uint64_t* ld_from, uint32_t ld_from_num, bool hasmn, uint64_t addsub_corr, uint64_t muldivrem_corr, uint64_t corr_validity, uint64_t to_tc);
+void store_symbolic_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, uint32_t data_type, uint64_t* lo, uint64_t* up, uint32_t mints_num, uint64_t step, uint64_t* ld_from, uint32_t ld_from_num, bool hasmn, uint64_t addsub_corr, uint64_t muldivrem_corr, uint64_t corr_validity, uint64_t trb, uint64_t to_tc, uint64_t is_input);
+void store_constrained_memory(uint64_t vaddr, uint64_t* lo, uint64_t* up, uint32_t mints_num, uint64_t step, uint64_t* ld_from, uint32_t ld_from_num, bool hasmn, uint64_t addsub_corr, uint64_t muldivrem_corr, uint64_t corr_validity, uint64_t to_tc, uint64_t is_input);
 void store_register_memory(uint64_t reg, uint64_t* value);
 
 void constrain_memory(uint64_t reg, uint64_t* lo, uint64_t* up, uint32_t mints_num, uint64_t trb, bool only_reachable_branch);
-void propagate_backwards(uint64_t vaddr, uint64_t* lo_before_op, uint64_t* up_before_op, uint64_t original_mrvc_y);
+void propagate_backwards(uint64_t vaddr, uint64_t* lo_before_op, uint64_t* up_before_op);
 void propagate_mul(uint64_t step, uint64_t k);
 void propagate_divu(uint64_t step, uint64_t k, uint64_t step_rd);
 void propagate_remu(uint64_t step, uint64_t divisor);
