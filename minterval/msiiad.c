@@ -26,7 +26,7 @@ bool*     hasmns          = (bool*) 0;
 // ---------- propagation
 uint64_t* mr_sds          = (uint64_t*) 0; // most recent sd to
 // propagation from left to right b = a + 1; (chain)
-// ld_froms and ld_froms_tc
+// ld_froms_tc
 // propagation from right to left b = a + 1;
 uint64_t* sd_to_idxs      = (uint64_t*) 0;
 struct sd_to_tc {
@@ -67,9 +67,8 @@ uint32_t* reg_addrs_idx = (uint32_t*) 0;
 uint32_t* ld_froms_idx  = (uint32_t*) 0;
 // struct addr {
 //   uint64_t vaddrs[MAX_NUM_OF_OP_VADDRS];
-// } *reg_addr, *ld_froms, *ld_froms_tc;
+// } *reg_addr, *ld_froms_tc;
 struct addr* reg_addr;
-struct addr* ld_froms;
 struct addr* ld_froms_tc;
 
 // ---------- multi intervals
@@ -131,7 +130,6 @@ void init_symbolic_engine() {
   corr_validitys     = (uint64_t*) malloc(MAX_TRACE_LENGTH  * SIZEOFUINT64);
   hasmns             = (bool*)     malloc(MAX_TRACE_LENGTH  * sizeof(bool));
 
-  ld_froms           = (struct addr*) malloc(MAX_TRACE_LENGTH  * sizeof(struct addr));
   ld_froms_tc        = (struct addr*) malloc(MAX_TRACE_LENGTH  * sizeof(struct addr));
   reg_addr           = (struct addr*) malloc(NUMBEROFREGISTERS * sizeof(struct addr));
   ld_froms_idx       = (uint32_t*)    malloc(MAX_TRACE_LENGTH  * sizeof(uint32_t));
@@ -344,7 +342,7 @@ void constrain_addi() {
       // rd inherits rs1 constraint
       set_correction(rd, reg_symb_typ[rs1], 0, reg_addsub_corr[rs1] + imm, reg_muldivrem_corr[rs1],
         (reg_corr_validity[rs1] == 0) ? MUL_T : reg_corr_validity[rs1]);
-      set_vaddrs(rd, reg_addr[rs1].vaddrs, 0, reg_addrs_idx[rs1]);
+      set_vaddrs(rd, reg_addr[rs1].addrs, 0, reg_addrs_idx[rs1]);
 
       reg_steps[rd] = reg_steps[rs1];
       for (uint32_t i = 0; i < reg_mints_idx[rs1]; i++) {
@@ -418,8 +416,8 @@ void constrain_add() {
         // need to warn about their earlier presence if used in comparisons
         set_correction(rd, SYMBOLIC, 0, 0, 0, 10);
         uint32_t rd_addr_idx = reg_addrs_idx[rs1] + reg_addrs_idx[rs2];
-        set_vaddrs(rd, reg_addr[rs1].vaddrs, 0, reg_addrs_idx[rs1]);
-        set_vaddrs(rd, reg_addr[rs2].vaddrs, reg_addrs_idx[rs1], rd_addr_idx);
+        set_vaddrs(rd, reg_addr[rs1].addrs, 0, reg_addrs_idx[rs1]);
+        set_vaddrs(rd, reg_addr[rs2].addrs, reg_addrs_idx[rs1], rd_addr_idx);
 
         if (reg_mints_idx[rs1] > 1 || reg_mints_idx[rs2] > 1) {
           printf("OUTPUT: unsupported minterval 1 %x \n", pc - entry_point);
@@ -462,7 +460,7 @@ void constrain_add() {
         // rd inherits rs1 constraint since rs2 has none
         set_correction(rd, reg_symb_typ[rs1], 0, reg_addsub_corr[rs1] + reg_mints[rs2].los[0], reg_muldivrem_corr[rs1],
           (reg_corr_validity[rs1] == 0) ? MUL_T : reg_corr_validity[rs1]);
-        set_vaddrs(rd, reg_addr[rs1].vaddrs, 0, reg_addrs_idx[rs1]);
+        set_vaddrs(rd, reg_addr[rs1].addrs, 0, reg_addrs_idx[rs1]);
 
         reg_steps[rd] = reg_steps[rs1];
         for (uint32_t i = 0; i < reg_mints_idx[rs1]; i++) {
@@ -475,7 +473,7 @@ void constrain_add() {
       // rd inherits rs2 constraint since rs1 has none
       set_correction(rd, reg_symb_typ[rs2], 0, reg_addsub_corr[rs2] + reg_mints[rs1].los[0], reg_muldivrem_corr[rs2],
         (reg_corr_validity[rs2] == 0) ? MUL_T : reg_corr_validity[rs2]);
-      set_vaddrs(rd, reg_addr[rs2].vaddrs, 0, reg_addrs_idx[rs2]);
+      set_vaddrs(rd, reg_addr[rs2].addrs, 0, reg_addrs_idx[rs2]);
 
       reg_steps[rd] = reg_steps[rs2];
       for (uint32_t i = 0; i < reg_mints_idx[rs2]; i++) {
@@ -566,8 +564,8 @@ void constrain_sub() {
         // need to warn about their earlier presence if used in comparisons
         set_correction(rd, SYMBOLIC, 0, 0, 0, 10);
         uint32_t rd_addr_idx = reg_addrs_idx[rs1] + reg_addrs_idx[rs2];
-        set_vaddrs(rd, reg_addr[rs1].vaddrs, 0, reg_addrs_idx[rs1]);
-        set_vaddrs(rd, reg_addr[rs2].vaddrs, reg_addrs_idx[rs1], rd_addr_idx);
+        set_vaddrs(rd, reg_addr[rs1].addrs, 0, reg_addrs_idx[rs1]);
+        set_vaddrs(rd, reg_addr[rs2].addrs, reg_addrs_idx[rs1], rd_addr_idx);
 
         if (reg_mints_idx[rs1] > 1 || reg_mints_idx[rs2] > 1) {
           printf("OUTPUT: unsupported minterval 2 %x \n", pc - entry_point);
@@ -597,7 +595,7 @@ void constrain_sub() {
         // rd inherits rs1 constraint since rs2 has none
         set_correction(rd, reg_symb_typ[rs1], 0, reg_addsub_corr[rs1] - reg_mints[rs2].los[0], reg_muldivrem_corr[rs1],
           (reg_corr_validity[rs1] == 0) ? MUL_T : reg_corr_validity[rs1]);
-        set_vaddrs(rd, reg_addr[rs1].vaddrs, 0, reg_addrs_idx[rs1]);
+        set_vaddrs(rd, reg_addr[rs1].addrs, 0, reg_addrs_idx[rs1]);
 
         reg_steps[rd] = reg_steps[rs1];
         sub_lo = reg_mints[rs2].los[0];
@@ -619,7 +617,7 @@ void constrain_sub() {
           (reg_corr_validity[rs2] == 0) ? MUL_T : reg_corr_validity[rs2]);
       }
 
-      set_vaddrs(rd, reg_addr[rs2].vaddrs, 0, reg_addrs_idx[rs2]);
+      set_vaddrs(rd, reg_addr[rs2].addrs, 0, reg_addrs_idx[rs2]);
 
       reg_steps[rd] = reg_steps[rs2];
       sub_lo = reg_mints[rs1].los[0];
@@ -667,7 +665,7 @@ void constrain_mul() {
         // rd inherits rs1 constraint since rs2 has none
         // assert: rs2 interval is singleton
         set_correction(rd, reg_symb_typ[rs1], 0, reg_addsub_corr[rs1], reg_mints[rs2].los[0], reg_corr_validity[rs1] + MUL_T);
-        set_vaddrs(rd, reg_addr[rs1].vaddrs, 0, reg_addrs_idx[rs1]);
+        set_vaddrs(rd, reg_addr[rs1].addrs, 0, reg_addrs_idx[rs1]);
 
         if (reg_mints_idx[rs1] == 1) {
           cnd = mul_condition(reg_mints[rs1].los[0], reg_mints[rs1].ups[0], reg_mints[rs2].los[0]);
@@ -720,7 +718,7 @@ void constrain_mul() {
         // rd inherits rs2 constraint since rs1 has none
         // assert: rs1 interval is singleton
         set_correction(rd, reg_symb_typ[rs2], 0, reg_addsub_corr[rs2], reg_mints[rs1].los[0], reg_corr_validity[rs2] + MUL_T);
-        set_vaddrs(rd, reg_addr[rs2].vaddrs, 0, reg_addrs_idx[rs2]);
+        set_vaddrs(rd, reg_addr[rs2].addrs, 0, reg_addrs_idx[rs2]);
 
         if (reg_mints_idx[rs2] == 1) {
           cnd = mul_condition(reg_mints[rs2].los[0], reg_mints[rs2].ups[0], reg_mints[rs1].los[0]);
@@ -812,7 +810,7 @@ void constrain_divu() {
             // rd inherits rs1 constraint since rs2 has none
             // assert: rs2 interval is singleton
             set_correction(rd, reg_symb_typ[rs1], 0, reg_addsub_corr[rs1], reg_mints[rs2].los[0], reg_corr_validity[rs1] + DIVU_T);
-            set_vaddrs(rd, reg_addr[rs1].vaddrs, 0, reg_addrs_idx[rs1]);
+            set_vaddrs(rd, reg_addr[rs1].addrs, 0, reg_addrs_idx[rs1]);
 
             // step computation
             if (reg_steps[rs1] < reg_mints[rs2].los[0]) {
@@ -923,7 +921,7 @@ void constrain_remu() {
       }
 
       set_correction(rd, reg_symb_typ[rs1], 0, reg_addsub_corr[rs1], reg_mints[rs2].los[0], reg_corr_validity[rs1] + REMU_T);
-      set_vaddrs(rd, reg_addr[rs1].vaddrs, 0, reg_addrs_idx[rs1]);
+      set_vaddrs(rd, reg_addr[rs1].addrs, 0, reg_addrs_idx[rs1]);
 
     } else if (is_power_of_two(divisor)) {
       // rs1 interval is wrapped
@@ -940,7 +938,7 @@ void constrain_remu() {
       reg_steps[rd] = gcd_step_k;
 
       set_correction(rd, reg_symb_typ[rs1], 0, reg_addsub_corr[rs1], reg_mints[rs2].los[0], reg_corr_validity[rs1] + REMU_T);
-      set_vaddrs(rd, reg_addr[rs1].vaddrs, 0, reg_addrs_idx[rs1]);
+      set_vaddrs(rd, reg_addr[rs1].addrs, 0, reg_addrs_idx[rs1]);
 
     } else {
       printf("OUTPUT: wrapped modulo results many intervals at %x\n", pc - entry_point);
@@ -994,10 +992,10 @@ void constrain_sltu() {
     is_only_one_branch_reachable = false;
 
     if (reg_symb_typ[rs1])
-      current_rs1_tc = load_symbolic_memory(pt, reg_addr[rs1].vaddrs[0]);
+      current_rs1_tc = load_symbolic_memory(pt, reg_addr[rs1].addrs[0]);
 
     if (reg_symb_typ[rs2])
-      current_rs2_tc = load_symbolic_memory(pt, reg_addr[rs2].vaddrs[0]);
+      current_rs2_tc = load_symbolic_memory(pt, reg_addr[rs2].addrs[0]);
 
     if (reg_data_typ[rs1] == POINTER_T) {
       if (reg_data_typ[rs2] != POINTER_T) {
@@ -1041,10 +1039,10 @@ void constrain_xor() {
   is_only_one_branch_reachable = false;
 
   if (reg_symb_typ[rs1])
-    current_rs1_tc = load_symbolic_memory(pt, reg_addr[rs1].vaddrs[0]);
+    current_rs1_tc = load_symbolic_memory(pt, reg_addr[rs1].addrs[0]);
 
   if (reg_symb_typ[rs2])
-    current_rs2_tc = load_symbolic_memory(pt, reg_addr[rs2].vaddrs[0]);
+    current_rs2_tc = load_symbolic_memory(pt, reg_addr[rs2].addrs[0]);
 
   if (reg_data_typ[rs1] == POINTER_T) {
     if (reg_data_typ[rs2] != POINTER_T) {
@@ -1103,7 +1101,7 @@ uint64_t constrain_ld() {
           // vaddr is constrained by rd if value interval is not singleton
           set_correction(rd, SYMBOLIC, 0, 0, 0, 0);
           reg_addrs_idx[rd]      = 1;
-          reg_addr[rd].vaddrs[0] = vaddr;
+          reg_addr[rd].addrs[0] = vaddr;
         } else {
           set_correction(rd, CONCRETE, 0, 0, 0, 0);
           reg_addrs_idx[rd]      = 0;
@@ -1129,6 +1127,12 @@ uint64_t constrain_ld() {
   return vaddr;
 }
 
+void retrieve_ld_from_tcs(uint64_t* vaddrs, uint32_t vaddrs_size) {
+  for (size_t i = 0; i < vaddrs_size; i++) {
+    vaddrs[i] = load_symbolic_memory(pt, vaddrs[i]);
+  }
+}
+
 uint64_t constrain_sd() {
   uint64_t vaddr;
   uint64_t a;
@@ -1140,10 +1144,12 @@ uint64_t constrain_sd() {
   if (is_safe_address(vaddr, rs1)) {
     if (is_virtual_address_mapped(pt, vaddr)) {
       // interval semantics of sd
+      retrieve_ld_from_tcs(reg_addr[rs2].addrs, reg_addrs_idx[rs2]);
+
       if (reg_symb_typ[rs2] == SYMBOLIC && reg_addrs_idx[rs2] == 0) // means it is an x = input();
-        store_symbolic_memory(pt, vaddr, registers[rs2], reg_data_typ[rs2], reg_mints[rs2].los, reg_mints[rs2].ups, reg_mints_idx[rs2], reg_steps[rs2], reg_addr[rs2].vaddrs, reg_addrs_idx[rs2], reg_hasmn[rs2], reg_addsub_corr[rs2], reg_muldivrem_corr[rs2], reg_corr_validity[rs2], mrcc, 0, symbolic_input_cnt - 1);
+        store_symbolic_memory(pt, vaddr, registers[rs2], reg_data_typ[rs2], reg_mints[rs2].los, reg_mints[rs2].ups, reg_mints_idx[rs2], reg_steps[rs2], reg_addr[rs2].addrs, reg_addrs_idx[rs2], reg_hasmn[rs2], reg_addsub_corr[rs2], reg_muldivrem_corr[rs2], reg_corr_validity[rs2], mrcc, 0, symbolic_input_cnt - 1);
       else
-        store_symbolic_memory(pt, vaddr, registers[rs2], reg_data_typ[rs2], reg_mints[rs2].los, reg_mints[rs2].ups, reg_mints_idx[rs2], reg_steps[rs2], reg_addr[rs2].vaddrs, reg_addrs_idx[rs2], reg_hasmn[rs2], reg_addsub_corr[rs2], reg_muldivrem_corr[rs2], reg_corr_validity[rs2], mrcc, 0, 0);
+        store_symbolic_memory(pt, vaddr, registers[rs2], reg_data_typ[rs2], reg_mints[rs2].los, reg_mints[rs2].ups, reg_mints_idx[rs2], reg_steps[rs2], reg_addr[rs2].addrs, reg_addrs_idx[rs2], reg_hasmn[rs2], reg_addsub_corr[rs2], reg_muldivrem_corr[rs2], reg_corr_validity[rs2], mrcc, 0, 0);
 
       // keep track of instruction address for profiling stores
       a = (pc - entry_point) / INSTRUCTIONSIZE;
@@ -1254,7 +1260,7 @@ bool is_pure_concrete_value(uint32_t data_type, uint32_t mints_num, uint64_t lo,
   return false;
 }
 
-void store_symbolic_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, uint32_t data_type, uint64_t* lo, uint64_t* up, uint32_t mints_num, uint64_t step, uint64_t* ld_from, uint32_t ld_from_num, bool hasmn, uint64_t addsub_corr, uint64_t muldivrem_corr, uint64_t corr_validity, uint64_t trb, uint64_t to_tc, uint64_t is_input) {
+void store_symbolic_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, uint32_t data_type, uint64_t* lo, uint64_t* up, uint32_t mints_num, uint64_t step, uint64_t* ld_from_tc, uint32_t ld_from_num, bool hasmn, uint64_t addsub_corr, uint64_t muldivrem_corr, uint64_t corr_validity, uint64_t trb, uint64_t to_tc, uint64_t is_input) {
   uint64_t mrvc;
   uint64_t idx;
 
@@ -1330,15 +1336,13 @@ void store_symbolic_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, uint32_
       printf("OUTPUT: maximum number of possible vaddrs is reached at %x\n", pc - entry_point);
       exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
     }
-    for (uint32_t i = 0; i < ld_from_num; i++) {
-      ld_froms[tc].vaddrs[i] = ld_from[i];
-    }
 
     if (to_tc == 0) { // means SD instrs
       if (ld_from_num != 0 && reg_symb_typ[rs2] == SYMBOLIC) {
         for (uint32_t i = 0; i < ld_from_num; i++) {
-          idx = load_symbolic_memory(pt, ld_from[i]);
-          ld_froms_tc[tc].vaddrs[i] = idx;
+          // idx = load_symbolic_memory(pt, ld_from[i]);
+          idx = ld_from_tc[i];
+          ld_froms_tc[tc].addrs[i] = idx;
           if (sd_to_idxs[idx] < MAX_SD_TO_NUM)
             sd_tos[idx].tc[sd_to_idxs[idx]++] = tc;
           else {
@@ -1356,7 +1360,7 @@ void store_symbolic_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, uint32_
       memcpy(sd_tos[tc].tc, sd_tos[to_tc].tc, sizeof(struct sd_to_tc));
       mr_sds[tc]     = mr_sds[mrvc];
       for (uint32_t i = 0; i < ld_from_num; i++) {
-        ld_froms_tc[tc].vaddrs[i] = ld_froms_tc[mrvc].vaddrs[i];
+        ld_froms_tc[tc].addrs[i] = ld_froms_tc[mrvc].addrs[i];
       }
     }
 
@@ -1377,7 +1381,7 @@ void store_symbolic_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, uint32_
 }
 
 // store temporarily an updated symbolic variable on trace without updating the memory and tc++; just for passing args
-void store_tmp_constrained_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, uint32_t data_type, uint64_t* lo, uint64_t* up, uint32_t mints_num, uint64_t step, uint64_t* ld_from, uint32_t ld_from_num, bool hasmn, uint64_t addsub_corr, uint64_t muldivrem_corr, uint64_t corr_validity, uint64_t trb, uint64_t to_tc) {
+void store_tmp_constrained_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, uint32_t data_type, uint64_t* lo, uint64_t* up, uint32_t mints_num, uint64_t step, uint64_t* ld_from_tc, uint32_t ld_from_num, bool hasmn, uint64_t addsub_corr, uint64_t muldivrem_corr, uint64_t corr_validity, uint64_t trb, uint64_t to_tc) {
   uint64_t mrvc;
   uint64_t idx;
 
@@ -1413,12 +1417,9 @@ void store_tmp_constrained_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, 
       printf("OUTPUT: maximum number of possible vaddrs is reached at %x\n", pc - entry_point);
       exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
     }
-    for (uint32_t i = 0; i < ld_from_num; i++) {
-      ld_froms[tc].vaddrs[i] = ld_from[i];
-    }
 
     for (uint32_t i = 0; i < ld_from_num; i++) {
-      ld_froms_tc[tc].vaddrs[i] = ld_froms_tc[to_tc].vaddrs[i];
+      ld_froms_tc[tc].addrs[i] = ld_froms_tc[to_tc].addrs[i];
     }
 
     efree();
@@ -1428,7 +1429,7 @@ void store_tmp_constrained_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, 
 }
 
 // store an updated symbolic input on trace without updating the memory; new data type of 3
-void store_input_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, uint32_t data_type, uint64_t* lo, uint64_t* up, uint32_t mints_num, uint64_t step, uint64_t* ld_from, uint32_t ld_from_num, bool hasmn, uint64_t addsub_corr, uint64_t muldivrem_corr, uint64_t corr_validity, uint64_t trb, uint64_t to_tc, uint64_t is_input) {
+void store_input_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, uint32_t data_type, uint64_t* lo, uint64_t* up, uint32_t mints_num, uint64_t step, uint64_t* ld_from_tc, uint32_t ld_from_num, bool hasmn, uint64_t addsub_corr, uint64_t muldivrem_corr, uint64_t corr_validity, uint64_t trb, uint64_t to_tc, uint64_t is_input) {
   uint64_t mrvc;
   uint64_t idx;
 
@@ -1465,23 +1466,20 @@ void store_input_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, uint32_t d
       printf("OUTPUT: maximum number of possible vaddrs is reached at %x\n", pc - entry_point);
       exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
     }
-    for (uint32_t i = 0; i < ld_from_num; i++) {
-      ld_froms[tc].vaddrs[i] = ld_from[i];
-    }
 
     for (uint32_t i = 0; i < ld_from_num; i++) {
-      ld_froms_tc[tc].vaddrs[i] = ld_froms_tc[to_tc].vaddrs[i];
+      ld_froms_tc[tc].addrs[i] = ld_froms_tc[to_tc].addrs[i];
     }
 
   } else
     throw_exception(EXCEPTION_MAXTRACE, 0);
 }
 
-void store_constrained_memory(uint64_t vaddr, uint64_t* lo, uint64_t* up, uint32_t mints_num, uint64_t step, uint64_t* ld_from, uint32_t ld_from_num, bool hasmn, uint64_t addsub_corr, uint64_t muldivrem_corr, uint64_t corr_validity, uint64_t to_tc, uint64_t is_input) {
+void store_constrained_memory(uint64_t vaddr, uint64_t* lo, uint64_t* up, uint32_t mints_num, uint64_t step, uint64_t* ld_from_tc, uint32_t ld_from_num, bool hasmn, uint64_t addsub_corr, uint64_t muldivrem_corr, uint64_t corr_validity, uint64_t to_tc, uint64_t is_input) {
   uint64_t mrvc;
 
   // always track constrained memory by using tc as most recent branch
-  store_symbolic_memory(pt, vaddr, lo[0], VALUE_T, lo, up, mints_num, step, ld_from, ld_from_num, hasmn, addsub_corr, muldivrem_corr, corr_validity, tc, to_tc, is_input);
+  store_symbolic_memory(pt, vaddr, lo[0], VALUE_T, lo, up, mints_num, step, ld_from_tc, ld_from_num, hasmn, addsub_corr, muldivrem_corr, corr_validity, tc, to_tc, is_input);
 }
 
 void store_register_memory(uint64_t reg, uint64_t* value) {
@@ -1631,16 +1629,16 @@ void apply_correction(uint64_t* lo, uint64_t* up, uint32_t mints_num, bool hasmn
 
   //////////////////////////////////////////////////////////////////////////////
   if (should_be_stored_or_not == true) {
-    store_constrained_memory(vaddrs[mrvc], lo_prop, up_prop, mints_num, steps[mrvc], ld_froms[mrvc].vaddrs, ld_froms_idx[mrvc], hasmns[mrvc], addsub_corrs[mrvc], muldivrem_corrs[mrvc], corr_validitys[mrvc], mrvc, is_inputs[mrvc]);
+    store_constrained_memory(vaddrs[mrvc], lo_prop, up_prop, mints_num, steps[mrvc], ld_froms_tc[mrvc].addrs, ld_froms_idx[mrvc], hasmns[mrvc], addsub_corrs[mrvc], muldivrem_corrs[mrvc], corr_validitys[mrvc], mrvc, is_inputs[mrvc]);
   } else {
     // if memory addr is recently updated by a new variable, but we need to propagate constraints through its previouse value
     // carefull about: x = input(); y = x; x = input(); if(y);
     if (is_inputs[mrvc]) {
       // at (tc + 1) with ealloc()
-      store_input_memory(pt, vaddrs[mrvc], lo_prop[0], VALUE_T, lo_prop, up_prop, mints_num, steps[mrvc], ld_froms[mrvc].vaddrs, ld_froms_idx[mrvc], hasmns[mrvc], addsub_corrs[mrvc], muldivrem_corrs[mrvc], corr_validitys[mrvc], tc, mrvc, is_inputs[mrvc]);
+      store_input_memory(pt, vaddrs[mrvc], lo_prop[0], VALUE_T, lo_prop, up_prop, mints_num, steps[mrvc], ld_froms_tc[mrvc].addrs, ld_froms_idx[mrvc], hasmns[mrvc], addsub_corrs[mrvc], muldivrem_corrs[mrvc], corr_validitys[mrvc], tc, mrvc, is_inputs[mrvc]);
     } else {
       // at (tc + 1) but without ealloc()
-      store_tmp_constrained_memory(pt, vaddrs[mrvc], lo_prop[0], VALUE_T, lo_prop, up_prop, mints_num, steps[mrvc], ld_froms[mrvc].vaddrs, ld_froms_idx[mrvc], hasmns[mrvc], addsub_corrs[mrvc], muldivrem_corrs[mrvc], corr_validitys[mrvc], tc, mrvc);
+      store_tmp_constrained_memory(pt, vaddrs[mrvc], lo_prop[0], VALUE_T, lo_prop, up_prop, mints_num, steps[mrvc], ld_froms_tc[mrvc].addrs, ld_froms_idx[mrvc], hasmns[mrvc], addsub_corrs[mrvc], muldivrem_corrs[mrvc], corr_validitys[mrvc], tc, mrvc);
     }
   }
 
@@ -1727,7 +1725,7 @@ void propagate_backwards_rhs(uint64_t* lo, uint64_t* up, uint32_t mints_num, uin
     }
 
     if (mr_stored_to_tc == stored_to_tc) {
-      store_constrained_memory(vaddrs[stored_to_tc], lo_prop, up_prop, mints_num, step_prop, ld_froms[stored_to_tc].vaddrs, ld_froms_idx[stored_to_tc], hasmns[stored_to_tc], addsub_corrs[stored_to_tc], muldivrem_corrs[stored_to_tc], corr_validitys[stored_to_tc], stored_to_tc, is_inputs[stored_to_tc]);
+      store_constrained_memory(vaddrs[stored_to_tc], lo_prop, up_prop, mints_num, step_prop, ld_froms_tc[stored_to_tc].addrs, ld_froms_idx[stored_to_tc], hasmns[stored_to_tc], addsub_corrs[stored_to_tc], muldivrem_corrs[stored_to_tc], corr_validitys[stored_to_tc], stored_to_tc, is_inputs[stored_to_tc]);
     } else if (mr_stored_to_tc < stored_to_tc) {
       printf("OUTPUT: mr_stored_to_tc < stored_to_tc at %x\n", pc - entry_point);
       exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
@@ -1748,13 +1746,13 @@ void propagate_backwards(uint64_t mrvc_y, uint64_t* lo_before_op, uint64_t* up_b
   uint64_t mrvc_x;
 
   // mrvc_y = load_symbolic_memory(pt, vaddr);
-  mrvc_x = load_symbolic_memory(pt, ld_froms[mrvc_y].vaddrs[0]);
-  if (mr_sds[mrvc_x] > ld_froms_tc[mrvc_y].vaddrs[0]) {
+  mrvc_x = load_symbolic_memory(pt, vaddrs[ld_froms_tc[mrvc_y].addrs[0]]);
+  if (mr_sds[mrvc_x] > ld_froms_tc[mrvc_y].addrs[0]) {
     // return;
-    mrvc_x = ld_froms_tc[mrvc_y].vaddrs[0];
+    mrvc_x = ld_froms_tc[mrvc_y].addrs[0];
     apply_correction(mints[mrvc_y].los, mints[mrvc_y].ups, mints_idxs[mrvc_y], hasmns[mrvc_y], addsub_corrs[mrvc_y], muldivrem_corrs[mrvc_y], corr_validitys[mrvc_y], lo_before_op, up_before_op, steps[mrvc_y], mrvc_x, false);
   } else {
-    mrvc_x = ld_froms_tc[mrvc_y].vaddrs[0];
+    mrvc_x = ld_froms_tc[mrvc_y].addrs[0];
     apply_correction(mints[mrvc_y].los, mints[mrvc_y].ups, mints_idxs[mrvc_y], hasmns[mrvc_y], addsub_corrs[mrvc_y], muldivrem_corrs[mrvc_y], corr_validitys[mrvc_y], lo_before_op, up_before_op, steps[mrvc_y], mrvc_x, true);
   }
 }
@@ -1765,10 +1763,10 @@ void constrain_memory(uint64_t reg, uint64_t* lo, uint64_t* up, uint32_t mints_n
   if (reg_symb_typ[reg] == SYMBOLIC && assert_zone == false) {
     if (only_reachable_branch == true) {
       // for (uint32_t i = 0; i < reg_addrs_idx[reg]; i++) {
-      //   mrvc = load_symbolic_memory(pt, reg_addr[reg].vaddrs[i]);
+      //   mrvc = load_symbolic_memory(pt, reg_addr[reg].addrs[i]);
       //   lo = mints[mrvc].los;
       //   up = mints[mrvc].ups;
-      //   store_constrained_memory(reg_addr[reg].vaddrs[i], lo, up, mints_idxs[mrvc], steps[mrvc], ld_froms[mrvc].vaddrs, ld_froms_idx[mrvc], hasmns[mrvc], addsub_corrs[mrvc], muldivrem_corrs[mrvc], corr_validitys[mrvc], mrvc, is_inputs[mrvc]);
+      //   store_constrained_memory(reg_addr[reg].addrs[i], lo, up, mints_idxs[mrvc], steps[mrvc], ld_froms_tc[mrvc].addrs, ld_froms_idx[mrvc], hasmns[mrvc], addsub_corrs[mrvc], muldivrem_corrs[mrvc], corr_validitys[mrvc], mrvc, is_inputs[mrvc]);
       // }
     } else {
       mrvc = (reg == rs1) ? current_rs1_tc : current_rs2_tc;
@@ -1781,7 +1779,7 @@ void constrain_memory(uint64_t reg, uint64_t* lo, uint64_t* up, uint32_t mints_n
 void set_vaddrs(uint64_t reg, uint64_t* vaddrs, uint32_t start_idx, uint32_t vaddr_num) {
   reg_addrs_idx[reg] = vaddr_num;
   for (uint32_t i = 0; i < vaddr_num; i++) {
-    reg_addr[reg].vaddrs[start_idx++] = vaddrs[i];
+    reg_addr[reg].addrs[start_idx++] = vaddrs[i];
   }
 }
 
@@ -2616,7 +2614,7 @@ void backtrack_sd() {
 
   uint64_t idx;
   for (uint32_t i = 0; i < ld_froms_idx[tc]; i++) {
-    idx = load_symbolic_memory(pt, ld_froms[tc].vaddrs[i]);
+    idx = ld_froms_tc[tc].addrs[i];
     sd_to_idxs[idx]--;
   }
 

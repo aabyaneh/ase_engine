@@ -2468,7 +2468,7 @@ void implement_printsv(uint64_t* context) {
 
   if (symbolic && sase_symbolic == 0) {
     id   = *(get_regs(context) + REG_A0);
-    addr = (reg_addrs_idx[REG_A1] > 0) ? ld_froms[load_symbolic_memory(get_pt(context), reg_addr[REG_A1].vaddrs[0])].vaddrs[0] : 0;
+    addr = (reg_addrs_idx[REG_A1] > 0) ? vaddrs[ld_froms_tc[load_symbolic_memory(get_pt(context), reg_addr[REG_A1].addrs[0])].addrs[0]] : 0;
 
     for (uint32_t i = 0; i < reg_mints_idx[REG_A1]; i++) {
       printf("PRINTSV :=) id: %-3llu, mint: %-2u; vaddr: %-10llu => lo: %-5llu, up: %-5llu, step: %-5llu\n", id, i, addr, reg_mints[REG_A1].los[i], reg_mints[REG_A1].ups[i], reg_steps[REG_A1]);
@@ -4454,7 +4454,7 @@ uint64_t engine(uint64_t* to_context) {
           }
         }
       } else {
-        // printf("%\n backtracking %llu\n", b);
+        printf("%\n backtracking %llu\n", b);
 
         backtrack_trace(current_context);
 

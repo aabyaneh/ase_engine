@@ -126,10 +126,9 @@ extern uint32_t* reg_mints_idx;
 extern uint32_t* reg_addrs_idx;
 extern uint32_t* ld_froms_idx;
 struct addr {
-  uint64_t vaddrs[MAX_NUM_OF_OP_VADDRS];
+  uint64_t addrs[MAX_NUM_OF_OP_VADDRS];
 };
 extern struct addr* reg_addr;
-extern struct addr* ld_froms;
 extern struct addr* ld_froms_tc;
 
 extern uint64_t mrcc;
