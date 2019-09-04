@@ -121,13 +121,12 @@ extern std::vector<std::vector<uint64_t> > reg_mintervals_ups;
 extern uint32_t* mints_idxs;
 extern uint32_t* reg_mints_idx;
 
+extern std::vector<uint64_t>  zero_v;
+
 extern uint32_t* reg_addrs_idx;
 extern uint32_t* ld_froms_idx;
-struct addr {
-  uint64_t addrs[MAX_NUM_OF_OP_VADDRS];
-};
-extern struct addr* reg_addr;
-extern struct addr* ld_froms_tc;
+extern std::vector<std::vector<uint64_t> > ld_from_tcs;
+extern std::vector<std::vector<uint64_t> > reg_vaddrs;
 
 extern uint64_t mrcc;
 
@@ -176,8 +175,8 @@ uint64_t is_trace_space_available();
 void ealloc();
 void efree();
 
-void store_symbolic_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, uint32_t data_type, std::vector<uint64_t>& lo, std::vector<uint64_t>& up, uint32_t mints_num, uint64_t step, uint64_t* ld_from, uint32_t ld_from_num, bool hasmn, uint64_t addsub_corr, uint64_t muldivrem_corr, uint64_t corr_validity, uint64_t trb, uint64_t to_tc, uint64_t is_input);
-void store_constrained_memory(uint64_t vaddr, std::vector<uint64_t>& lo, std::vector<uint64_t>& up, uint32_t mints_num, uint64_t step, uint64_t* ld_from, uint32_t ld_from_num, bool hasmn, uint64_t addsub_corr, uint64_t muldivrem_corr, uint64_t corr_validity, uint64_t to_tc, uint64_t is_input);
+void store_symbolic_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, uint32_t data_type, std::vector<uint64_t>& lo, std::vector<uint64_t>& up, uint32_t mints_num, uint64_t step, std::vector<uint64_t>& ld_from, uint32_t ld_from_num, bool hasmn, uint64_t addsub_corr, uint64_t muldivrem_corr, uint64_t corr_validity, uint64_t trb, uint64_t to_tc, uint64_t is_input);
+void store_constrained_memory(uint64_t vaddr, std::vector<uint64_t>& lo, std::vector<uint64_t>& up, uint32_t mints_num, uint64_t step, std::vector<uint64_t>& ld_from, uint32_t ld_from_num, bool hasmn, uint64_t addsub_corr, uint64_t muldivrem_corr, uint64_t corr_validity, uint64_t to_tc, uint64_t is_input);
 void store_register_memory(uint64_t reg, uint64_t* value);
 
 void constrain_memory(uint64_t reg, std::vector<uint64_t>& lo, std::vector<uint64_t>& up, uint32_t mints_num, uint64_t trb, bool only_reachable_branch);
@@ -187,7 +186,7 @@ void propagate_divu(uint64_t step, uint64_t k, uint64_t step_rd);
 void propagate_remu(uint64_t step, uint64_t divisor);
 void propagate_backwards_rhs(std::vector<uint64_t>& lo, std::vector<uint64_t>& up, uint32_t mints_num, uint64_t mrvc);
 
-void set_vaddrs(uint64_t reg, uint64_t* vaddrs, uint32_t start_idx, uint32_t vaddr_num);
+void set_vaddrs(uint64_t reg, std::vector<uint64_t>& vaddrs, uint32_t start_idx, uint32_t vaddr_num);
 void set_correction(uint64_t reg, uint32_t hasco, uint32_t hasmn, uint64_t addsub_corr, uint64_t muldivrem_corr, uint64_t corr_validity);
 
 void take_branch(uint64_t b, uint64_t how_many_more);

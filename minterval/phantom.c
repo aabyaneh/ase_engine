@@ -2326,9 +2326,9 @@ void implement_read(uint64_t* context) {
               val_ptr_2[0] = up;
               if (mrcc == 0)
                 // no branching yet, we may overwrite symbolic memory
-                store_symbolic_memory(get_pt(context), vbuffer, value, 0, val_ptr_1, val_ptr_2, 1, 1, (uint64_t*) 0, 0, 0, 0, 0, 0, 0, 0, 0);
+                store_symbolic_memory(get_pt(context), vbuffer, value, 0, val_ptr_1, val_ptr_2, 1, 1, zero_v, 0, 0, 0, 0, 0, 0, 0, 0);
               else
-                store_symbolic_memory(get_pt(context), vbuffer, value, 0, val_ptr_1, val_ptr_2, 1, 1, (uint64_t*) 0, 0, 0, 0, 0, 0, tc, 0, 0);
+                store_symbolic_memory(get_pt(context), vbuffer, value, 0, val_ptr_1, val_ptr_2, 1, 1, zero_v, 0, 0, 0, 0, 0, tc, 0, 0);
             } else {
               actually_read = 0;
 
@@ -2468,7 +2468,7 @@ void implement_printsv(uint64_t* context) {
 
   if (symbolic && sase_symbolic == 0) {
     id   = *(get_regs(context) + REG_A0);
-    addr = (reg_addrs_idx[REG_A1] > 0) ? vaddrs[ld_froms_tc[load_symbolic_memory(get_pt(context), reg_addr[REG_A1].addrs[0])].addrs[0]] : 0;
+    addr = (reg_addrs_idx[REG_A1] > 0) ? vaddrs[ld_from_tcs[load_symbolic_memory(get_pt(context), reg_vaddrs[REG_A1][0])][0]] : 0;
 
     for (uint32_t i = 0; i < reg_mints_idx[REG_A1]; i++) {
       printf("PRINTSV :=) id: %-3llu, mint: %-2u; vaddr: %-10llu => lo: %-5llu, up: %-5llu, step: %-5llu\n", id, i, addr, reg_mintervals_los[REG_A1][i], reg_mintervals_ups[REG_A1][i], reg_steps[REG_A1]);
@@ -2855,7 +2855,7 @@ void implement_brk(uint64_t* context) {
             // since there has been branching record brk using vaddr == 0
             val_ptr_1[0] = previous_program_break;
             val_ptr_2[0] = size;
-            store_symbolic_memory(get_pt(context), 0, previous_program_break, 1, val_ptr_1, val_ptr_2, 1, 1, (uint64_t*) 0, 0, 0, 0, 0, 0, tc, 0, 0);
+            store_symbolic_memory(get_pt(context), 0, previous_program_break, 1, val_ptr_1, val_ptr_2, 1, 1, zero_v, 0, 0, 0, 0, 0, tc, 0, 0);
           } else {
             throw_exception(EXCEPTION_MAXTRACE, 0);
 
@@ -4133,7 +4133,7 @@ void map_and_store(uint64_t* context, uint64_t vaddr, uint64_t data) {
       if (is_trace_space_available()) {
         // always track initialized memory by using tc as most recent branch
         val_ptr_1[0] = data;
-        store_symbolic_memory(get_pt(context), vaddr, data, 0, val_ptr_1, val_ptr_1, 1, 1, (uint64_t*) 0, 0, 0, 0, 0, 0, tc, 0, 0);
+        store_symbolic_memory(get_pt(context), vaddr, data, 0, val_ptr_1, val_ptr_1, 1, 1, zero_v, 0, 0, 0, 0, 0, tc, 0, 0);
       } else {
         printf1((uint64_t*) "%s: ealloc out of memory\n", exe_name);
 
@@ -4454,7 +4454,7 @@ uint64_t engine(uint64_t* to_context) {
           }
         }
       } else {
-        printf("%\n backtracking %llu\n", b);
+        // printf("%\n backtracking %llu\n", b);
 
         backtrack_trace(current_context);
 
