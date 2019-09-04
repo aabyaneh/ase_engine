@@ -1,14 +1,8 @@
-#include "stdint.h"
-// #include "stdbool.h"
-
+#include <stdint.h>
 #include <iostream>
 #include <fcntl.h>
 #include <unistd.h>
 #include <vector>
-
-#define MAX_SD_TO_NUM        100
-#define MAX_NUM_OF_INTERVALS 2001
-#define MAX_NUM_OF_OP_VADDRS 100
 
 // ------ shared variables and procedures between source files -----
 
@@ -85,65 +79,49 @@ void     set_pc(uint64_t* context, uint64_t pc);
 
 extern uint64_t MSIIAD;
 extern uint64_t MAX_TRACE_LENGTH;
-extern bool     is_only_one_branch_reachable;
-extern bool     assert_zone;
-
 extern uint64_t debug_symbolic;
 extern uint64_t symbolic;
 extern uint64_t backtrack;
+extern bool     is_only_one_branch_reachable;
+extern bool     assert_zone;
 
-extern uint64_t rc;
+extern uint64_t  rc;
 extern uint64_t* read_values;
 extern uint64_t* read_los;
 extern uint64_t* read_ups;
 
 extern uint64_t* reg_steps;
-extern uint32_t* reg_data_typ;
+extern uint32_t* reg_data_type;
 extern uint32_t  VALUE_T;
 extern uint32_t  POINTER_T;
-extern uint32_t* reg_symb_typ;
+extern uint32_t* reg_symb_type;
 extern uint32_t  CONCRETE;
-extern uint32_t  SYMBOLIC_CONCRETE;
 extern uint32_t  SYMBOLIC;
 extern bool*     reg_hasmn;
 extern uint64_t* reg_addsub_corr;
 extern uint64_t* reg_muldivrem_corr;
 extern uint64_t* reg_corr_validity;
+extern uint32_t* reg_mintervals_cnts;
+extern uint32_t* reg_vaddrs_cnts;
+extern std::vector<std::vector<uint64_t> > reg_vaddrs;
 
 extern uint64_t* values;
 extern uint64_t* data_types;
 extern uint64_t* steps;
-
+extern uint32_t* mintervals_cnts;
 extern std::vector<std::vector<uint64_t> > mintervals_los;
 extern std::vector<std::vector<uint64_t> > mintervals_ups;
 extern std::vector<std::vector<uint64_t> > reg_mintervals_los;
 extern std::vector<std::vector<uint64_t> > reg_mintervals_ups;
-extern uint32_t* mints_idxs;
-extern uint32_t* reg_mints_idx;
+extern std::vector<std::vector<uint64_t> > ld_from_tcs;
 
 extern std::vector<uint64_t>  zero_v;
-
-extern uint32_t* reg_addrs_idx;
-extern uint32_t* ld_froms_idx;
-extern std::vector<std::vector<uint64_t> > ld_from_tcs;
-extern std::vector<std::vector<uint64_t> > reg_vaddrs;
 
 extern uint64_t mrcc;
 
 extern uint64_t symbolic_input_cnt;
 
-// extern std::unordered_map<uint64_t, uint64_t> input_table;
 extern std::vector<uint64_t> input_table;
-
-// -----------------------------------------------------------------
-// ----------------------- BUILTIN PROCEDURES ----------------------
-// -----------------------------------------------------------------
-
-// void      exit(uint64_t code);
-// uint64_t  read(uint64_t fd, uint64_t* buffer, uint64_t bytes_to_read);
-// uint64_t  write(uint64_t fd, uint64_t* buffer, uint64_t bytes_to_write);
-// uint64_t  open(uint64_t* filename, uint64_t flags, uint64_t mode);
-// void*     malloc(uint64_t size);
 
 // ------------------------ INSTRUCTIONS -----------------------
 

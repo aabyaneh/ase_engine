@@ -1,108 +1,124 @@
 #include "msiiad.h"
 
+typedef unsigned __int128 uint128_t;
+
 // ------------------------ GLOBAL VARIABLES -----------------------
 
-uint64_t MSIIAD = 9;
-uint64_t MAX_TRACE_LENGTH = 1000000;
+uint64_t MSIIAD               = 9;
+uint64_t MAX_TRACE_LENGTH     = 1000000;
+uint64_t MAX_SD_TO_NUM        = 100;
+uint64_t MAX_NUM_OF_INTERVALS = 2001;
+uint64_t MAX_NUM_OF_OP_VADDRS = 100;
 uint64_t TWO_TO_THE_POWER_OF_32;
 
-typedef unsigned __int128 uint128_t;
-uint128_t UINT64_MAX_VALUE = 18446744073709551615U;
+uint128_t UINT64_MAX_VALUE    = 18446744073709551615U;
 uint128_t TWO_TO_THE_POWER_OF_64;
 
-// ---------- trace
-uint64_t  tc         = 0;             // trace counter
-uint64_t* pcs        = (uint64_t*) 0; // trace of program counter values
-uint64_t* tcs        = (uint64_t*) 0; // trace of trace counters to previous values
-uint64_t* values     = (uint64_t*) 0; // trace of values
-uint64_t* data_types = (uint64_t*) 0; // memory range or integer interval
-uint64_t* steps      = (uint64_t*) 0;
-uint64_t* vaddrs     = (uint64_t*) 0; // trace of virtual addresses
-uint64_t* addsub_corrs    = (uint64_t*) 0;
-uint64_t* muldivrem_corrs = (uint64_t*) 0;
-uint64_t* corr_validitys  = (uint64_t*) 0;
-bool*     hasmns          = (bool*) 0;
+// ---------------------------------------------
+// --------------- the trace
+// ---------------------------------------------
 
-// ---------- propagation
-uint64_t* mr_sds          = (uint64_t*) 0; // most recent sd to
-// propagation from left to right b = a + 1; (chain)
-// ld_froms_tc
-// propagation from right to left b = a + 1;
-uint64_t* sd_to_idxs      = (uint64_t*) 0;
+uint64_t  tc              = 0;             // trace counter
+uint64_t* pcs             = (uint64_t*) 0; // trace of program counter values
+uint64_t* tcs             = (uint64_t*) 0; // trace of trace counters to previous values
+uint64_t* vaddrs          = (uint64_t*) 0; // trace of virtual addresses
+
+// ---------------------------------------------
+// --------------- propagation trace
+// ---------------------------------------------
+
+uint64_t* mr_sds          = (uint64_t*) 0; // the tc of most recent store to a memory address
+
+// propagation from right to left
 std::vector<std::vector<uint64_t> > forward_propagated_to_tcs(MAX_TRACE_LENGTH);
+uint64_t* forward_propagated_to_tcs_cnts = (uint64_t*) 0;
 
-std::vector<uint64_t> lo_prop(MAX_NUM_OF_INTERVALS);
-std::vector<uint64_t> up_prop(MAX_NUM_OF_INTERVALS);
-uint32_t mints_num_prop = 0;
-uint64_t step_prop;
+// propagation from left to right (chain)
+std::vector<std::vector<uint64_t> > ld_from_tcs(MAX_TRACE_LENGTH);
+uint32_t* ld_from_tcs_cnts = (uint32_t*) 0;
 
-// ---------- read history
-uint64_t  rc = 0; // read counter
+// temporary data-structure to pass values targeting propagations
+std::vector<uint64_t> propagated_minterval_lo(MAX_NUM_OF_INTERVALS);
+std::vector<uint64_t> propagated_minterval_up(MAX_NUM_OF_INTERVALS);
+uint32_t propagated_minterval_cnt = 0;
+uint64_t propagated_minterval_step;
+
+// ---------------------------------------------
+// --------------- read trace
+// ---------------------------------------------
+
+uint64_t  rc          = 0;              // read counter
 uint64_t* read_values = (uint64_t*) 0;
 uint64_t* read_los    = (uint64_t*) 0;
 uint64_t* read_ups    = (uint64_t*) 0;
 
-// ---------- registers
-uint64_t* reg_steps    = (uint64_t*) 0; // step on register value
-uint32_t* reg_data_typ = (uint32_t*) 0; // memory range or integer interval
-uint32_t  VALUE_T      = 0;
-uint32_t  POINTER_T    = 1;
-// register constraints on memory
-uint32_t* reg_symb_typ = (uint32_t*) 0; // register has constraint
-uint32_t  CONCRETE   = 0;
-uint32_t  SYMBOLIC_CONCRETE = 1;
-uint32_t  SYMBOLIC   = 2;
-bool*     reg_hasmn = (bool*) 0; // constraint has minuend
-// corrections
-uint64_t* reg_addsub_corr    = (uint64_t*) 0;
-uint64_t* reg_muldivrem_corr = (uint64_t*) 0;
-uint64_t* reg_corr_validity  = (uint64_t*) 0;
-uint64_t  MUL_T  = 3;
-uint64_t  DIVU_T = 4;
-uint64_t  REMU_T = 5;
+// ---------------------------------------------
+// --------------- memory trace
+// ---------------------------------------------
 
-// ---------- operand's addresses
-uint32_t* reg_addrs_idx = (uint32_t*) 0;
-uint32_t* ld_froms_idx  = (uint32_t*) 0;
+uint32_t  VALUE_T         = 0;
+uint32_t  POINTER_T       = 1;
+uint32_t  INPUT_T         = 2;
 
-std::vector<std::vector<uint64_t> > ld_from_tcs(MAX_TRACE_LENGTH);
-std::vector<std::vector<uint64_t> > reg_vaddrs(NUMBEROFREGISTERS);
-
-// ---------- multi intervals
-uint32_t* reg_mints_idx = (uint32_t*) 0;
-uint32_t* mints_idxs    = (uint32_t*) 0;
+uint64_t* values          = (uint64_t*) 0; // trace of values
+uint64_t* data_types      = (uint64_t*) 0; // memory range (or) value integer interval
+uint64_t* steps           = (uint64_t*) 0; // incrementing step of the value intervals
+uint64_t* addsub_corrs    = (uint64_t*) 0; // corrections
+uint64_t* muldivrem_corrs = (uint64_t*) 0; // corrections
+uint64_t* corr_validitys  = (uint64_t*) 0; // corrections
+bool*     hasmns          = (bool*) 0;     // corrections
 
 std::vector<std::vector<uint64_t> > mintervals_los(MAX_TRACE_LENGTH);
 std::vector<std::vector<uint64_t> > mintervals_ups(MAX_TRACE_LENGTH);
+uint32_t* mintervals_cnts = (uint32_t*) 0;
+
+// ---------------------------------------------
+// --------------- registers
+// ---------------------------------------------
+
 std::vector<std::vector<uint64_t> > reg_mintervals_los(NUMBEROFREGISTERS);
 std::vector<std::vector<uint64_t> > reg_mintervals_ups(NUMBEROFREGISTERS);
+uint32_t* reg_mintervals_cnts = (uint32_t*) 0;
+uint64_t* reg_steps           = (uint64_t*) 0; // incrementing step of the register's value interval
+uint32_t* reg_data_type       = (uint32_t*) 0; // memory range or value integer interval
+uint32_t* reg_symb_type       = (uint32_t*) 0; // CONCRETE (or) SYMBOLIC
+uint32_t  CONCRETE            = 0;
+uint32_t  SYMBOLIC            = 2;
+bool*     reg_hasmn           = (bool*) 0;     // has minuend?
+uint64_t* reg_addsub_corr     = (uint64_t*) 0; // correction
+uint64_t* reg_muldivrem_corr  = (uint64_t*) 0; // correction
+uint64_t* reg_corr_validity   = (uint64_t*) 0; // correction
+uint64_t  MUL_T               = 3;             // correction
+uint64_t  DIVU_T              = 4;             // correction
+uint64_t  REMU_T              = 5;             // correction
 
-std::vector<uint64_t>  zero_v(1, 0);
-std::vector<uint64_t>  val_ptr(1);
-// for minterval managment in eq/diseq
-std::vector<uint64_t> true_branch_rs1_minterval_los(MAX_NUM_OF_INTERVALS);
-std::vector<uint64_t> true_branch_rs1_minterval_ups(MAX_NUM_OF_INTERVALS);
+std::vector<std::vector<uint64_t> > reg_vaddrs(NUMBEROFREGISTERS); // virtual addresses of expression operands
+uint32_t* reg_vaddrs_cnts     = (uint32_t*) 0;
+
+// ---------------------------------------------
+// --------------- branch evaluation
+// ---------------------------------------------
+
+std::vector<uint64_t>  zero_v (1, 0);
+std::vector<uint64_t>  value_v(1);
+
+std::vector<uint64_t> true_branch_rs1_minterval_los (MAX_NUM_OF_INTERVALS);
+std::vector<uint64_t> true_branch_rs1_minterval_ups (MAX_NUM_OF_INTERVALS);
 std::vector<uint64_t> false_branch_rs1_minterval_los(MAX_NUM_OF_INTERVALS);
 std::vector<uint64_t> false_branch_rs1_minterval_ups(MAX_NUM_OF_INTERVALS);
-std::vector<uint64_t> true_branch_rs2_minterval_los(MAX_NUM_OF_INTERVALS);
-std::vector<uint64_t> true_branch_rs2_minterval_ups(MAX_NUM_OF_INTERVALS);
+std::vector<uint64_t> true_branch_rs2_minterval_los (MAX_NUM_OF_INTERVALS);
+std::vector<uint64_t> true_branch_rs2_minterval_ups (MAX_NUM_OF_INTERVALS);
 std::vector<uint64_t> false_branch_rs2_minterval_los(MAX_NUM_OF_INTERVALS);
 std::vector<uint64_t> false_branch_rs2_minterval_ups(MAX_NUM_OF_INTERVALS);
-uint32_t mint_num_true_rs1;
-uint32_t mint_num_true_rs2;
-uint32_t mint_num_false_rs1;
-uint32_t mint_num_false_rs2;
-// for propagation defined above
-// uint64_t lo_prop[MAX_NUM_OF_INTERVALS];
-// uint64_t up_prop[MAX_NUM_OF_INTERVALS];
-// uint32_t  mints_num_prop = 0;
+uint32_t true_branch_rs1_minterval_cnt   = 0;
+uint32_t true_branch_rs2_minterval_cnt   = 0;
+uint32_t false_branch_rs1_minterval_cnt  = 0;
+uint32_t false_branch_rs2_minterval_cnt  = 0;
 
-// ---------- other globals
-uint64_t current_rs1_tc = 0;
-uint64_t current_rs2_tc = 0;
+uint64_t tc_before_branch_evaluation_rs1 = 0;
+uint64_t tc_before_branch_evaluation_rs2 = 0;
 
-// trace counter of most recent constraint
-uint64_t mrcc = 0;
+uint64_t mrcc = 0;  // trace counter of most recent constraint
 
 // ==, !=, <, <=, >= detection
 uint32_t  detected_conditional = 0;
@@ -114,54 +130,51 @@ uint32_t  DEQ  = 5;
 // assertion
 bool is_only_one_branch_reachable = false;
 
-// managing symbolic inputs
-uint64_t* is_inputs;
+// ---------------------------------------------
+// --------------- symbolic inputs management
+// ---------------------------------------------
+
+uint64_t* is_inputs              = (uint64_t*) 0;
 std::vector<uint64_t> input_table;
 
 // ------------------------- INITIALIZATION ------------------------
 
 void init_symbolic_engine() {
-  pcs                = (uint64_t*) malloc(MAX_TRACE_LENGTH  * SIZEOFUINT64);
-  tcs                = (uint64_t*) malloc(MAX_TRACE_LENGTH  * SIZEOFUINT64);
-  values             = (uint64_t*) malloc(MAX_TRACE_LENGTH  * SIZEOFUINT64);
-  data_types         = (uint64_t*) malloc(MAX_TRACE_LENGTH  * SIZEOFUINT64);
-  steps              = (uint64_t*) malloc(MAX_TRACE_LENGTH  * SIZEOFUINT64);
-  vaddrs             = (uint64_t*) malloc(MAX_TRACE_LENGTH  * SIZEOFUINT64);
-  addsub_corrs       = (uint64_t*) malloc(MAX_TRACE_LENGTH  * SIZEOFUINT64);
-  muldivrem_corrs    = (uint64_t*) malloc(MAX_TRACE_LENGTH  * SIZEOFUINT64);
-  corr_validitys     = (uint64_t*) malloc(MAX_TRACE_LENGTH  * SIZEOFUINT64);
-  hasmns             = (bool*)     malloc(MAX_TRACE_LENGTH  * sizeof(bool));
+  forward_propagated_to_tcs_cnts = (uint64_t*) malloc(MAX_TRACE_LENGTH  * sizeof(uint64_t));
+  ld_from_tcs_cnts               = (uint32_t*) malloc(MAX_TRACE_LENGTH  * sizeof(uint32_t));
+  mintervals_cnts                = (uint32_t*) malloc(MAX_TRACE_LENGTH  * sizeof(uint32_t));
 
-  ld_froms_idx       = (uint32_t*)    malloc(MAX_TRACE_LENGTH  * sizeof(uint32_t));
-  reg_addrs_idx      = (uint32_t*)    zalloc(NUMBEROFREGISTERS * sizeof(uint32_t));
+  pcs                  = (uint64_t*) malloc(MAX_TRACE_LENGTH  * sizeof(uint64_t));
+  tcs                  = (uint64_t*) malloc(MAX_TRACE_LENGTH  * sizeof(uint64_t));
+  values               = (uint64_t*) malloc(MAX_TRACE_LENGTH  * sizeof(uint64_t));
+  data_types           = (uint64_t*) malloc(MAX_TRACE_LENGTH  * sizeof(uint64_t));
+  steps                = (uint64_t*) malloc(MAX_TRACE_LENGTH  * sizeof(uint64_t));
+  vaddrs               = (uint64_t*) malloc(MAX_TRACE_LENGTH  * sizeof(uint64_t));
+  addsub_corrs         = (uint64_t*) malloc(MAX_TRACE_LENGTH  * sizeof(uint64_t));
+  muldivrem_corrs      = (uint64_t*) malloc(MAX_TRACE_LENGTH  * sizeof(uint64_t));
+  corr_validitys       = (uint64_t*) malloc(MAX_TRACE_LENGTH  * sizeof(uint64_t));
+  hasmns               = (bool*)     malloc(MAX_TRACE_LENGTH  * sizeof(bool));
+  mr_sds               = (uint64_t*) malloc(MAX_TRACE_LENGTH  * sizeof(uint64_t));
 
-  mr_sds             = (uint64_t*) malloc(MAX_TRACE_LENGTH  * SIZEOFUINT64);
+  read_values          = (uint64_t*) malloc(MAX_TRACE_LENGTH  * sizeof(uint64_t));
+  read_los             = (uint64_t*) malloc(MAX_TRACE_LENGTH  * sizeof(uint64_t));
+  read_ups             = (uint64_t*) malloc(MAX_TRACE_LENGTH  * sizeof(uint64_t));
 
-  sd_to_idxs         = (uint64_t*)        malloc(MAX_TRACE_LENGTH  * SIZEOFUINT64);
+  is_inputs            = (uint64_t*) malloc(MAX_TRACE_LENGTH  * sizeof(uint64_t));
 
-  // mints              = (struct minterval*) malloc(MAX_TRACE_LENGTH  * sizeof(struct minterval));
-  // reg_mints          = (struct minterval*) malloc(NUMBEROFREGISTERS * sizeof(struct minterval));
-  mints_idxs         = (uint32_t*) malloc(MAX_TRACE_LENGTH  * sizeof(uint32_t));
-  reg_mints_idx      = (uint32_t*) malloc(NUMBEROFREGISTERS * sizeof(uint32_t));
+  reg_data_type        = (uint32_t*) zalloc(NUMBEROFREGISTERS * sizeof(uint32_t));
+  reg_steps            = (uint64_t*) malloc(NUMBEROFREGISTERS * sizeof(uint64_t));
+  reg_symb_type        = (uint32_t*) zalloc(NUMBEROFREGISTERS * sizeof(uint64_t));
+  reg_hasmn            = (bool*)     zalloc(NUMBEROFREGISTERS * sizeof(bool));
+  reg_addsub_corr      = (uint64_t*) zalloc(NUMBEROFREGISTERS * sizeof(uint64_t));
+  reg_muldivrem_corr   = (uint64_t*) zalloc(NUMBEROFREGISTERS * sizeof(uint64_t));
+  reg_corr_validity    = (uint64_t*) zalloc(NUMBEROFREGISTERS * sizeof(uint64_t));
+  reg_vaddrs_cnts      = (uint32_t*) zalloc(NUMBEROFREGISTERS * sizeof(uint32_t));
+  reg_mintervals_cnts  = (uint32_t*) malloc(NUMBEROFREGISTERS * sizeof(uint32_t));
 
-  read_values        = (uint64_t*) malloc(MAX_TRACE_LENGTH  * SIZEOFUINT64);
-  read_los           = (uint64_t*) malloc(MAX_TRACE_LENGTH  * SIZEOFUINT64);
-  read_ups           = (uint64_t*) malloc(MAX_TRACE_LENGTH  * SIZEOFUINT64);
-
-  reg_data_typ       = (uint32_t*) zalloc(NUMBEROFREGISTERS * sizeof(uint32_t));
-  reg_steps          = (uint64_t*) malloc(NUMBEROFREGISTERS * REGISTERSIZE);
-  reg_symb_typ       = (uint32_t*) zalloc(NUMBEROFREGISTERS * REGISTERSIZE);
-  reg_hasmn          = (bool*)     zalloc(NUMBEROFREGISTERS * sizeof(bool));
-  reg_addsub_corr    = (uint64_t*) zalloc(NUMBEROFREGISTERS * REGISTERSIZE);
-  reg_muldivrem_corr = (uint64_t*) zalloc(NUMBEROFREGISTERS * REGISTERSIZE);
-  reg_corr_validity  = (uint64_t*) zalloc(NUMBEROFREGISTERS * REGISTERSIZE);
-
-  is_inputs          = (uint64_t*) malloc(MAX_TRACE_LENGTH  * SIZEOFUINT64);
-  is_inputs[0]       = 0;
-
-  for (uint32_t i = 0; i < NUMBEROFREGISTERS; i++) {
-    reg_steps[i]     = 1;
-    reg_mints_idx[i] = 1;
+  for (size_t i = 0; i < NUMBEROFREGISTERS; i++) {
+    reg_steps[i]           = 1;
+    reg_mintervals_cnts[i] = 1;
 
     reg_mintervals_los[i].resize(MAX_NUM_OF_INTERVALS);
     reg_mintervals_ups[i].resize(MAX_NUM_OF_INTERVALS);
@@ -173,9 +186,6 @@ void init_symbolic_engine() {
   tcs[0]             = 0;
   values[0]          = 0;
   data_types[0]      = 0;
-  mintervals_los[0].push_back(0);
-  mintervals_ups[0].push_back(0);
-  mints_idxs[0]      = 0;
   steps[0]           = 0;
   vaddrs[0]          = 0;
   addsub_corrs[0]    = 0;
@@ -183,11 +193,16 @@ void init_symbolic_engine() {
   corr_validitys[0]  = 0;
   hasmns[0]          = 0;
   mr_sds[0]          = 0;
-  sd_to_idxs[0]      = 0;
-  ld_froms_idx[0]    = 0;
+  is_inputs[0]       = 0;
+
+  mintervals_cnts[0]                = 0;
+  forward_propagated_to_tcs_cnts[0] = 0;
+  ld_from_tcs_cnts[0]               = 0;
+
+  mintervals_los[0].push_back(0);
+  mintervals_ups[0].push_back(0);
 
   TWO_TO_THE_POWER_OF_32 = two_to_the_power_of(32);
-
   TWO_TO_THE_POWER_OF_64 = UINT64_MAX_VALUE + 1U;
 }
 
@@ -228,17 +243,17 @@ bool is_power_of_two(uint64_t v) {
 bool check_incompleteness(uint64_t gcd_steps) {
   uint64_t i_max;
 
-  if (*(reg_steps + rs1) < *(reg_steps + rs2)) {
-    if (*(reg_steps + rs1) == gcd_steps) {
-      i_max = (reg_mintervals_ups[rs1][0] - reg_mintervals_los[rs1][0]) / *(reg_steps + rs1);
-      if (i_max < *(reg_steps + rs2)/gcd_steps - 1)
+  if (reg_steps[rs1] < reg_steps[rs2]) {
+    if (reg_steps[rs1] == gcd_steps) {
+      i_max = (reg_mintervals_ups[rs1][0] - reg_mintervals_los[rs1][0]) / reg_steps[rs1];
+      if (i_max < reg_steps[rs2]/gcd_steps - 1)
         return 1;
     } else
       return 1;
-  } else if (*(reg_steps + rs1) > *(reg_steps + rs2)) {
-    if (*(reg_steps + rs2) == gcd_steps) {
-      i_max = (reg_mintervals_ups[rs2][0] - reg_mintervals_los[rs2][0]) / *(reg_steps + rs2);
-      if (i_max < *(reg_steps + rs1)/gcd_steps - 1)
+  } else if (reg_steps[rs1] > reg_steps[rs2]) {
+    if (reg_steps[rs2] == gcd_steps) {
+      i_max = (reg_mintervals_ups[rs2][0] - reg_mintervals_los[rs2][0]) / reg_steps[rs2];
+      if (i_max < reg_steps[rs1]/gcd_steps - 1)
         return 1;
     } else
       return 1;
@@ -307,14 +322,14 @@ uint64_t compute_lower_bound(uint64_t lo, uint64_t step, uint64_t value) {
 
 void constrain_lui() {
   if (rd != REG_ZR) {
-    reg_data_typ[rd] = VALUE_T;
+    reg_data_type[rd] = VALUE_T;
 
     // interval semantics of lui
     reg_mintervals_los[rd][0] = imm << 12;
     reg_mintervals_ups[rd][0] = imm << 12;
-    reg_mints_idx[rd]    = 1;
-    reg_steps[rd]        = 1;
-    reg_addrs_idx[rd]    = 0;
+    reg_mintervals_cnts[rd]   = 1;
+    reg_steps[rd]             = 1;
+    reg_vaddrs_cnts[rd]       = 0;
 
     // rd has no constraint
     set_correction(rd, 0, 0, 0, 0, 0);
@@ -325,13 +340,13 @@ void constrain_addi() {
   if (rd == REG_ZR)
     return;
 
-  if (reg_data_typ[rs1] == POINTER_T) {
-    reg_data_typ[rd]     = reg_data_typ[rs1];
+  if (reg_data_type[rs1] == POINTER_T) {
+    reg_data_type[rd]         = reg_data_type[rs1];
     reg_mintervals_los[rd][0] = reg_mintervals_los[rs1][0];
     reg_mintervals_ups[rd][0] = reg_mintervals_ups[rs1][0];
-    reg_mints_idx[rd]    = 1;
-    reg_steps[rd]        = 1;
-    reg_addrs_idx[rd]    = 0;
+    reg_mintervals_cnts[rd]   = 1;
+    reg_steps[rd]             = 1;
+    reg_vaddrs_cnts[rd]       = 0;
 
     // rd has no constraint if rs1 is memory range
     set_correction(rd, 0, 0, 0, 0, 0);
@@ -339,21 +354,21 @@ void constrain_addi() {
     return;
   }
 
-  reg_data_typ[rd] = VALUE_T;
+  reg_data_type[rd] = VALUE_T;
 
   // interval semantics of addi
-  if (reg_symb_typ[rs1] == SYMBOLIC) {
+  if (reg_symb_type[rs1] == SYMBOLIC) {
       // rd inherits rs1 constraint
-      set_correction(rd, reg_symb_typ[rs1], 0, reg_addsub_corr[rs1] + imm, reg_muldivrem_corr[rs1],
+      set_correction(rd, reg_symb_type[rs1], 0, reg_addsub_corr[rs1] + imm, reg_muldivrem_corr[rs1],
         (reg_corr_validity[rs1] == 0) ? MUL_T : reg_corr_validity[rs1]);
-      set_vaddrs(rd, reg_vaddrs[rs1], 0, reg_addrs_idx[rs1]);
+      set_vaddrs(rd, reg_vaddrs[rs1], 0, reg_vaddrs_cnts[rs1]);
 
       reg_steps[rd] = reg_steps[rs1];
-      for (uint32_t i = 0; i < reg_mints_idx[rs1]; i++) {
+      for (uint32_t i = 0; i < reg_mintervals_cnts[rs1]; i++) {
         reg_mintervals_los[rd][i] = reg_mintervals_los[rs1][i] + imm;
         reg_mintervals_ups[rd][i] = reg_mintervals_ups[rs1][i] + imm;
       }
-      reg_mints_idx[rd] = reg_mints_idx[rs1];
+      reg_mintervals_cnts[rd] = reg_mintervals_cnts[rs1];
 
   } else {
     // rd has no constraint if rs1 has none
@@ -361,38 +376,38 @@ void constrain_addi() {
 
     reg_mintervals_los[rd][0] = reg_mintervals_los[rs1][0] + imm;
     reg_mintervals_ups[rd][0] = reg_mintervals_los[rd][0];
-    reg_mints_idx[rd]    = 1;
-    reg_steps[rd]        = 1;
-    reg_addrs_idx[rd]    = 0;
+    reg_mintervals_cnts[rd]   = 1;
+    reg_steps[rd]             = 1;
+    reg_vaddrs_cnts[rd]       = 0;
   }
 }
 
 bool constrain_add_pointer() {
-  if (reg_data_typ[rs1] == POINTER_T) {
-    if (reg_data_typ[rs2] == POINTER_T) {
+  if (reg_data_type[rs1] == POINTER_T) {
+    if (reg_data_type[rs2] == POINTER_T) {
       // adding two pointers is undefined
       printf("OUTPUT: undefined addition of two pointers at %x\n", pc - entry_point);
       exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
     }
 
-    reg_data_typ[rd]     = reg_data_typ[rs1];
+    reg_data_type[rd]         = reg_data_type[rs1];
     reg_mintervals_los[rd][0] = reg_mintervals_los[rs1][0];
     reg_mintervals_ups[rd][0] = reg_mintervals_ups[rs1][0];
-    reg_mints_idx[rd]    = 1;
-    reg_steps[rd]        = 1;
-    reg_addrs_idx[rd]    = 0;
+    reg_mintervals_cnts[rd]   = 1;
+    reg_steps[rd]             = 1;
+    reg_vaddrs_cnts[rd]       = 0;
 
     // rd has no constraint if rs1 is memory range
     set_correction(rd, 0, 0, 0, 0, 0);
 
     return 1;
-  } else if (reg_data_typ[rs2] == POINTER_T) {
-    reg_data_typ[rd]     = reg_data_typ[rs2];
+  } else if (reg_data_type[rs2] == POINTER_T) {
+    reg_data_type[rd]         = reg_data_type[rs2];
     reg_mintervals_los[rd][0] = reg_mintervals_los[rs2][0];
     reg_mintervals_ups[rd][0] = reg_mintervals_ups[rs2][0];
-    reg_mints_idx[rd]    = 1;
-    reg_steps[rd]        = 1;
-    reg_addrs_idx[rd]    = 0;
+    reg_mintervals_cnts[rd]   = 1;
+    reg_steps[rd]             = 1;
+    reg_vaddrs_cnts[rd]       = 0;
 
     // rd has no constraint if rs2 is memory range
     set_correction(rd, 0, 0, 0, 0, 0);
@@ -411,19 +426,19 @@ void constrain_add() {
     if (constrain_add_pointer())
       return;
 
-    reg_data_typ[rd] = VALUE_T;
+    reg_data_type[rd] = VALUE_T;
 
     // interval semantics of add
-    if (reg_symb_typ[rs1] == SYMBOLIC) {
-      if (reg_symb_typ[rs2] == SYMBOLIC) {
+    if (reg_symb_type[rs1] == SYMBOLIC) {
+      if (reg_symb_type[rs2] == SYMBOLIC) {
         // we cannot keep track of more than one constraint for add but
         // need to warn about their earlier presence if used in comparisons
         set_correction(rd, SYMBOLIC, 0, 0, 0, 10);
-        uint32_t rd_addr_idx = reg_addrs_idx[rs1] + reg_addrs_idx[rs2];
-        set_vaddrs(rd, reg_vaddrs[rs1], 0, reg_addrs_idx[rs1]);
-        set_vaddrs(rd, reg_vaddrs[rs2], reg_addrs_idx[rs1], rd_addr_idx);
+        uint32_t rd_addr_idx = reg_vaddrs_cnts[rs1] + reg_vaddrs_cnts[rs2];
+        set_vaddrs(rd, reg_vaddrs[rs1], 0, reg_vaddrs_cnts[rs1]);
+        set_vaddrs(rd, reg_vaddrs[rs2], reg_vaddrs_cnts[rs1], rd_addr_idx);
 
-        if (reg_mints_idx[rs1] > 1 || reg_mints_idx[rs2] > 1) {
+        if (reg_mintervals_cnts[rs1] > 1 || reg_mintervals_cnts[rs2] > 1) {
           printf("OUTPUT: unsupported minterval 1 %x \n", pc - entry_point);
           exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
         }
@@ -457,58 +472,58 @@ void constrain_add() {
 
         reg_mintervals_los[rd][0] = add_lo;
         reg_mintervals_ups[rd][0] = add_up;
-        reg_mints_idx[rd]    = 1;
-        reg_steps[rd]        = gcd_steps;
+        reg_mintervals_cnts[rd]   = 1;
+        reg_steps[rd]             = gcd_steps;
 
       } else {
         // rd inherits rs1 constraint since rs2 has none
-        set_correction(rd, reg_symb_typ[rs1], 0, reg_addsub_corr[rs1] + reg_mintervals_los[rs2][0], reg_muldivrem_corr[rs1],
+        set_correction(rd, reg_symb_type[rs1], 0, reg_addsub_corr[rs1] + reg_mintervals_los[rs2][0], reg_muldivrem_corr[rs1],
           (reg_corr_validity[rs1] == 0) ? MUL_T : reg_corr_validity[rs1]);
-        set_vaddrs(rd, reg_vaddrs[rs1], 0, reg_addrs_idx[rs1]);
+        set_vaddrs(rd, reg_vaddrs[rs1], 0, reg_vaddrs_cnts[rs1]);
 
         reg_steps[rd] = reg_steps[rs1];
-        for (uint32_t i = 0; i < reg_mints_idx[rs1]; i++) {
+        for (uint32_t i = 0; i < reg_mintervals_cnts[rs1]; i++) {
           reg_mintervals_los[rd][i] = reg_mintervals_los[rs1][i] + reg_mintervals_los[rs2][0];
           reg_mintervals_ups[rd][i] = reg_mintervals_ups[rs1][i] + reg_mintervals_ups[rs2][0];
         }
-        reg_mints_idx[rd] = reg_mints_idx[rs1];
+        reg_mintervals_cnts[rd] = reg_mintervals_cnts[rs1];
       }
-    } else if (reg_symb_typ[rs2] == SYMBOLIC) {
+    } else if (reg_symb_type[rs2] == SYMBOLIC) {
       // rd inherits rs2 constraint since rs1 has none
-      set_correction(rd, reg_symb_typ[rs2], 0, reg_addsub_corr[rs2] + reg_mintervals_los[rs1][0], reg_muldivrem_corr[rs2],
+      set_correction(rd, reg_symb_type[rs2], 0, reg_addsub_corr[rs2] + reg_mintervals_los[rs1][0], reg_muldivrem_corr[rs2],
         (reg_corr_validity[rs2] == 0) ? MUL_T : reg_corr_validity[rs2]);
-      set_vaddrs(rd, reg_vaddrs[rs2], 0, reg_addrs_idx[rs2]);
+      set_vaddrs(rd, reg_vaddrs[rs2], 0, reg_vaddrs_cnts[rs2]);
 
       reg_steps[rd] = reg_steps[rs2];
-      for (uint32_t i = 0; i < reg_mints_idx[rs2]; i++) {
+      for (uint32_t i = 0; i < reg_mintervals_cnts[rs2]; i++) {
         reg_mintervals_los[rd][i] = reg_mintervals_los[rs1][0] + reg_mintervals_los[rs2][i];
         reg_mintervals_ups[rd][i] = reg_mintervals_ups[rs1][0] + reg_mintervals_ups[rs2][i];
       }
-      reg_mints_idx[rd] = reg_mints_idx[rs2];
+      reg_mintervals_cnts[rd] = reg_mintervals_cnts[rs2];
     } else {
       // rd has no constraint if both rs1 and rs2 have no constraints
       set_correction(rd, 0, 0, 0, 0, 0);
 
       reg_mintervals_los[rd][0] = reg_mintervals_los[rs1][0] + reg_mintervals_los[rs2][0];
       reg_mintervals_ups[rd][0] = reg_mintervals_los[rd][0];
-      reg_mints_idx[rd]    = 1;
-      reg_steps[rd]        = 1;
-      reg_addrs_idx[rd]    = 0;
+      reg_mintervals_cnts[rd]   = 1;
+      reg_steps[rd]             = 1;
+      reg_vaddrs_cnts[rd]       = 0;
     }
   }
 }
 
 bool constrain_sub_pointer() {
-  if (reg_data_typ[rs1] == POINTER_T) {
-    if (reg_data_typ[rs2] == POINTER_T) {
+  if (reg_data_type[rs1] == POINTER_T) {
+    if (reg_data_type[rs2] == POINTER_T) {
       if (reg_mintervals_los[rs1][0] == reg_mintervals_los[rs2][0])
         if (reg_mintervals_ups[rs1][0] == reg_mintervals_ups[rs2][0]) {
-          reg_data_typ[rd] = POINTER_T;
+          reg_data_type[rd] = POINTER_T;
           reg_mintervals_los[rd][0] = registers[rd];
           reg_mintervals_ups[rd][0] = registers[rd];
-          reg_mints_idx[rd]    = 1;
-          reg_steps[rd]        = 1;
-          reg_addrs_idx[rd]    = 0;
+          reg_mintervals_cnts[rd]   = 1;
+          reg_steps[rd]             = 1;
+          reg_vaddrs_cnts[rd]       = 0;
 
           // rd has no constraint if rs1 and rs2 are memory range
           set_correction(rd, 0, 0, 0, 0, 0);
@@ -521,25 +536,25 @@ bool constrain_sub_pointer() {
 
       return 1;
     } else {
-      reg_data_typ[rd] = reg_data_typ[rs1];
+      reg_data_type[rd] = reg_data_type[rs1];
       reg_mintervals_los[rd][0] = reg_mintervals_los[rs1][0];
       reg_mintervals_ups[rd][0] = reg_mintervals_ups[rs1][0];
-      reg_mints_idx[rd]    = 1;
-      reg_steps[rd]        = 1;
-      reg_addrs_idx[rd]    = 0;
+      reg_mintervals_cnts[rd]   = 1;
+      reg_steps[rd]             = 1;
+      reg_vaddrs_cnts[rd]       = 0;
 
       // rd has no constraint if rs1 is memory range
       set_correction(rd, 0, 0, 0, 0, 0);
 
       return 1;
     }
-  } else if (reg_data_typ[rs2] == POINTER_T) {
-    reg_data_typ[rd] = reg_data_typ[rs2];
+  } else if (reg_data_type[rs2] == POINTER_T) {
+    reg_data_type[rd] = reg_data_type[rs2];
     reg_mintervals_los[rd][0] = reg_mintervals_los[rs2][0];
     reg_mintervals_ups[rd][0] = reg_mintervals_ups[rs2][0];
-    reg_mints_idx[rd]    = 1;
-    reg_steps[rd]        = 1;
-    reg_addrs_idx[rd]    = 0;
+    reg_mintervals_cnts[rd]   = 1;
+    reg_steps[rd]             = 1;
+    reg_vaddrs_cnts[rd]       = 0;
 
     // rd has no constraint if rs2 is memory range
     set_correction(rd, 0, 0, 0, 0, 0);
@@ -559,19 +574,19 @@ void constrain_sub() {
     if (constrain_sub_pointer())
       return;
 
-    reg_data_typ[rd] = VALUE_T;
+    reg_data_type[rd] = VALUE_T;
 
     // interval semantics of sub
-    if (reg_symb_typ[rs1] == SYMBOLIC) {
-      if (reg_symb_typ[rs2] == SYMBOLIC) {
+    if (reg_symb_type[rs1] == SYMBOLIC) {
+      if (reg_symb_type[rs2] == SYMBOLIC) {
         // we cannot keep track of more than one constraint for sub but
         // need to warn about their earlier presence if used in comparisons
         set_correction(rd, SYMBOLIC, 0, 0, 0, 10);
-        uint32_t rd_addr_idx = reg_addrs_idx[rs1] + reg_addrs_idx[rs2];
-        set_vaddrs(rd, reg_vaddrs[rs1], 0, reg_addrs_idx[rs1]);
-        set_vaddrs(rd, reg_vaddrs[rs2], reg_addrs_idx[rs1], rd_addr_idx);
+        uint32_t rd_addr_idx = reg_vaddrs_cnts[rs1] + reg_vaddrs_cnts[rs2];
+        set_vaddrs(rd, reg_vaddrs[rs1], 0, reg_vaddrs_cnts[rs1]);
+        set_vaddrs(rd, reg_vaddrs[rs2], reg_vaddrs_cnts[rs1], rd_addr_idx);
 
-        if (reg_mints_idx[rs1] > 1 || reg_mints_idx[rs2] > 1) {
+        if (reg_mintervals_cnts[rs1] > 1 || reg_mintervals_cnts[rs2] > 1) {
           printf("OUTPUT: unsupported minterval 2 %x \n", pc - entry_point);
           exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
         }
@@ -592,55 +607,55 @@ void constrain_sub() {
         sub_up = reg_mintervals_ups[rs2][0];
         reg_mintervals_los[rd][0] = reg_mintervals_los[rs1][0] - sub_up;
         reg_mintervals_ups[rd][0] = reg_mintervals_ups[rs1][0] - sub_lo;
-        reg_mints_idx[rd]    = 1;
-        reg_steps[rd]        = gcd_steps;
+        reg_mintervals_cnts[rd]   = 1;
+        reg_steps[rd]             = gcd_steps;
 
       } else {
         // rd inherits rs1 constraint since rs2 has none
-        set_correction(rd, reg_symb_typ[rs1], 0, reg_addsub_corr[rs1] - reg_mintervals_los[rs2][0], reg_muldivrem_corr[rs1],
+        set_correction(rd, reg_symb_type[rs1], 0, reg_addsub_corr[rs1] - reg_mintervals_los[rs2][0], reg_muldivrem_corr[rs1],
           (reg_corr_validity[rs1] == 0) ? MUL_T : reg_corr_validity[rs1]);
-        set_vaddrs(rd, reg_vaddrs[rs1], 0, reg_addrs_idx[rs1]);
+        set_vaddrs(rd, reg_vaddrs[rs1], 0, reg_vaddrs_cnts[rs1]);
 
         reg_steps[rd] = reg_steps[rs1];
         sub_lo = reg_mintervals_los[rs2][0];
         sub_up = reg_mintervals_ups[rs2][0];
-        for (uint32_t i = 0; i < reg_mints_idx[rs1]; i++) {
+        for (uint32_t i = 0; i < reg_mintervals_cnts[rs1]; i++) {
           reg_mintervals_los[rd][i] = reg_mintervals_los[rs1][i] - sub_up;
           reg_mintervals_ups[rd][i] = reg_mintervals_ups[rs1][i] - sub_lo;
         }
-        reg_mints_idx[rd] = reg_mints_idx[rs1];
+        reg_mintervals_cnts[rd] = reg_mintervals_cnts[rs1];
       }
-    } else if (reg_symb_typ[rs2] == SYMBOLIC) {
-      if (*(reg_hasmn + rs2)) {
+    } else if (reg_symb_type[rs2] == SYMBOLIC) {
+      if (reg_hasmn[rs2]) {
         // rs2 constraint has already minuend and can have another minuend
-        set_correction(rd, reg_symb_typ[rs2], 0, reg_mintervals_los[rs1][0] - reg_addsub_corr[rs2], reg_muldivrem_corr[rs2],
+        set_correction(rd, reg_symb_type[rs2], 0, reg_mintervals_los[rs1][0] - reg_addsub_corr[rs2], reg_muldivrem_corr[rs2],
           (reg_corr_validity[rs2] == 0) ? MUL_T : reg_corr_validity[rs2]);
       } else {
         // rd inherits rs2 constraint since rs1 has none
-        set_correction(rd, reg_symb_typ[rs2], 1, reg_mintervals_los[rs1][0] - reg_addsub_corr[rs2], reg_muldivrem_corr[rs2],
+        set_correction(rd, reg_symb_type[rs2], 1, reg_mintervals_los[rs1][0] - reg_addsub_corr[rs2], reg_muldivrem_corr[rs2],
           (reg_corr_validity[rs2] == 0) ? MUL_T : reg_corr_validity[rs2]);
       }
 
-      set_vaddrs(rd, reg_vaddrs[rs2], 0, reg_addrs_idx[rs2]);
+      set_vaddrs(rd, reg_vaddrs[rs2], 0, reg_vaddrs_cnts[rs2]);
 
       reg_steps[rd] = reg_steps[rs2];
       sub_lo = reg_mintervals_los[rs1][0];
       sub_up = reg_mintervals_ups[rs1][0];
-      for (uint32_t i = 0; i < reg_mints_idx[rs2]; i++) {
-        sub_tmp              = sub_lo - reg_mintervals_ups[rs2][i];
+      for (uint32_t i = 0; i < reg_mintervals_cnts[rs2]; i++) {
+        sub_tmp                   = sub_lo - reg_mintervals_ups[rs2][i];
         reg_mintervals_ups[rd][i] = sub_up - reg_mintervals_los[rs2][i];
         reg_mintervals_los[rd][i] = sub_tmp;
       }
-      reg_mints_idx[rd] = reg_mints_idx[rs2];
+      reg_mintervals_cnts[rd] = reg_mintervals_cnts[rs2];
     } else {
       // rd has no constraint if both rs1 and rs2 have no constraints
       set_correction(rd, 0, 0, 0, 0, 0);
 
       reg_mintervals_los[rd][0] = reg_mintervals_los[rs1][0] - reg_mintervals_ups[rs2][0];
       reg_mintervals_ups[rd][0] = reg_mintervals_los[rd][0];
-      reg_mints_idx[rd]    = 1;
-      reg_steps[rd]        = 1;
-      reg_addrs_idx[rd]    = 0;
+      reg_mintervals_cnts[rd]   = 1;
+      reg_steps[rd]             = 1;
+      reg_vaddrs_cnts[rd]       = 0;
     }
   }
 }
@@ -651,11 +666,11 @@ void constrain_mul() {
   bool     cnd;
 
   if (rd != REG_ZR) {
-    reg_data_typ[rd] = VALUE_T;
+    reg_data_type[rd] = VALUE_T;
 
     // interval semantics of mul
-    if (reg_symb_typ[rs1] == SYMBOLIC) {
-      if (reg_symb_typ[rs2] == SYMBOLIC) {
+    if (reg_symb_type[rs1] == SYMBOLIC) {
+      if (reg_symb_type[rs2] == SYMBOLIC) {
         // non-linear expressions are not supported
         printf("OUTPUT: detected non-linear expression in mul at %x\n", pc - entry_point);
         exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
@@ -668,16 +683,16 @@ void constrain_mul() {
       } else {
         // rd inherits rs1 constraint since rs2 has none
         // assert: rs2 interval is singleton
-        set_correction(rd, reg_symb_typ[rs1], 0, reg_addsub_corr[rs1], reg_mintervals_los[rs2][0], reg_corr_validity[rs1] + MUL_T);
-        set_vaddrs(rd, reg_vaddrs[rs1], 0, reg_addrs_idx[rs1]);
+        set_correction(rd, reg_symb_type[rs1], 0, reg_addsub_corr[rs1], reg_mintervals_los[rs2][0], reg_corr_validity[rs1] + MUL_T);
+        set_vaddrs(rd, reg_vaddrs[rs1], 0, reg_vaddrs_cnts[rs1]);
 
-        if (reg_mints_idx[rs1] == 1) {
+        if (reg_mintervals_cnts[rs1] == 1) {
           cnd = mul_condition(reg_mintervals_los[rs1][0], reg_mintervals_ups[rs1][0], reg_mintervals_los[rs2][0]);
           if (cnd == true) {
-            reg_steps[rd]             = reg_steps[rs1]       * reg_mintervals_los[rs2][0];
+            reg_steps[rd]             = reg_steps[rs1]             * reg_mintervals_los[rs2][0];
             reg_mintervals_los[rd][0] = reg_mintervals_los[rs1][0] * reg_mintervals_los[rs2][0];
             reg_mintervals_ups[rd][0] = reg_mintervals_ups[rs1][0] * reg_mintervals_ups[rs2][0];
-            reg_mints_idx[rd]    = 1;
+            reg_mintervals_cnts[rd]   = 1;
           } else {
             // potential of overflow
             // assert: reg_mintervals_los[rs2][0] * reg_steps[rs1] <= UINT64_MAX_T
@@ -689,7 +704,7 @@ void constrain_mul() {
               uint64_t lo          = (reg_mintervals_los[rs1][0] * reg_mintervals_los[rs2][0]);
               reg_mintervals_los[rd][0] = lo - (lo / gcd_step_k) * gcd_step_k;
               reg_mintervals_ups[rd][0] = compute_upper_bound(reg_mintervals_los[rd][0], gcd_step_k, UINT64_MAX_T);
-              reg_mints_idx[rd]    = 1;
+              reg_mintervals_cnts[rd]    = 1;
               reg_steps[rd] = gcd_step_k;
               reg_corr_validity[rs1] += REMU_T;
             } else {
@@ -699,12 +714,12 @@ void constrain_mul() {
           }
         } else {
           reg_steps[rd] = reg_steps[rs1] * reg_mintervals_los[rs2][0]; // correct when on (cnd == false) we do exit
-          for (uint32_t i = 0; i < reg_mints_idx[rs1]; i++) {
+          for (uint32_t i = 0; i < reg_mintervals_cnts[rs1]; i++) {
             cnd = mul_condition(reg_mintervals_los[rs1][i], reg_mintervals_ups[rs1][i], reg_mintervals_los[rs2][0]);
             if (cnd == true) {
               reg_mintervals_los[rd][i] = reg_mintervals_los[rs1][i] * reg_mintervals_los[rs2][0];
               reg_mintervals_ups[rd][i] = reg_mintervals_ups[rs1][i] * reg_mintervals_ups[rs2][0];
-              reg_mints_idx[rd]    = reg_mints_idx[rs1];
+              reg_mintervals_cnts[rd]   = reg_mintervals_cnts[rs1];
             } else {
               printf("OUTPUT: cannot reason about overflowed mul at %x\n", pc - entry_point);
               exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
@@ -712,7 +727,7 @@ void constrain_mul() {
           }
         }
       }
-    } else if (reg_symb_typ[rs2] == SYMBOLIC) {
+    } else if (reg_symb_type[rs2] == SYMBOLIC) {
       if (reg_hasmn[rs2]) {
         // correction does not work anymore
         printf("OUTPUT: correction does not work anymore e.g. 10 * (1 - [.]) at %x\n", pc - entry_point);
@@ -721,16 +736,16 @@ void constrain_mul() {
       } else {
         // rd inherits rs2 constraint since rs1 has none
         // assert: rs1 interval is singleton
-        set_correction(rd, reg_symb_typ[rs2], 0, reg_addsub_corr[rs2], reg_mintervals_los[rs1][0], reg_corr_validity[rs2] + MUL_T);
-        set_vaddrs(rd, reg_vaddrs[rs2], 0, reg_addrs_idx[rs2]);
+        set_correction(rd, reg_symb_type[rs2], 0, reg_addsub_corr[rs2], reg_mintervals_los[rs1][0], reg_corr_validity[rs2] + MUL_T);
+        set_vaddrs(rd, reg_vaddrs[rs2], 0, reg_vaddrs_cnts[rs2]);
 
-        if (reg_mints_idx[rs2] == 1) {
+        if (reg_mintervals_cnts[rs2] == 1) {
           cnd = mul_condition(reg_mintervals_los[rs2][0], reg_mintervals_ups[rs2][0], reg_mintervals_los[rs1][0]);
           if (cnd == true) {
-            reg_steps[rd]        = reg_steps[rs2] * reg_mintervals_los[rs1][0];
+            reg_steps[rd]             = reg_steps[rs2]             * reg_mintervals_los[rs1][0];
             reg_mintervals_los[rd][0] = reg_mintervals_los[rs1][0] * reg_mintervals_los[rs2][0];
             reg_mintervals_ups[rd][0] = reg_mintervals_ups[rs1][0] * reg_mintervals_ups[rs2][0];
-            reg_mints_idx[rd]    = 1;
+            reg_mintervals_cnts[rd]   = 1;
           } else {
             // potential of overflow
             // assert: reg_mintervals_los[rs2][0] * reg_steps[rs1] <= UINT64_MAX_T
@@ -739,12 +754,12 @@ void constrain_mul() {
             uint128_t lhs = (reg_mintervals_ups[rs2][0] - reg_mintervals_los[rs2][0]);
             if (lhs >= rhs) {
               uint64_t gcd_step_k = gcd_128( (uint128_t) reg_mintervals_los[rs1][0] * reg_steps[rs2], TWO_TO_THE_POWER_OF_64);
-              uint64_t lo          = (reg_mintervals_los[rs1][0] * reg_mintervals_los[rs2][0]);
+              uint64_t lo         = (reg_mintervals_los[rs1][0] * reg_mintervals_los[rs2][0]);
               reg_mintervals_los[rd][0] = lo - (lo / gcd_step_k) * gcd_step_k;
               reg_mintervals_ups[rd][0] = compute_upper_bound(reg_mintervals_los[rd][0], gcd_step_k, UINT64_MAX_T);
-              reg_mints_idx[rd]    = 1;
-              reg_steps[rd] = gcd_step_k;
-              reg_corr_validity[rs2] += REMU_T;
+              reg_mintervals_cnts[rd]   = 1;
+              reg_steps[rd]             = gcd_step_k;
+              reg_corr_validity[rs2]   += REMU_T;
             } else {
               printf("OUTPUT: cannot reason about overflowed mul at %x\n", pc - entry_point);
               exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
@@ -752,12 +767,12 @@ void constrain_mul() {
           }
         } else {
           reg_steps[rd] = reg_steps[rs2] * reg_mintervals_los[rs1][0]; // correct when on (cnd == false) we do exit
-          for (uint32_t i = 0; i < reg_mints_idx[rs2]; i++) {
+          for (uint32_t i = 0; i < reg_mintervals_cnts[rs2]; i++) {
             cnd = mul_condition(reg_mintervals_los[rs2][i], reg_mintervals_ups[rs2][i], reg_mintervals_los[rs1][0]);
             if (cnd == true) {
               reg_mintervals_los[rd][i] = reg_mintervals_los[rs2][i] * reg_mintervals_los[rs1][0];
               reg_mintervals_ups[rd][i] = reg_mintervals_ups[rs2][i] * reg_mintervals_ups[rs1][0];
-              reg_mints_idx[rd]    = reg_mints_idx[rs2];
+              reg_mintervals_cnts[rd]   = reg_mintervals_cnts[rs2];
             } else {
               printf("OUTPUT: cannot reason about overflowed mul at %x\n", pc - entry_point);
               exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
@@ -769,11 +784,11 @@ void constrain_mul() {
       // rd has no constraint if both rs1 and rs2 have no constraints
       set_correction(rd, 0, 0, 0, 0, 0);
 
-      reg_steps[rd]        = 1;
+      reg_steps[rd]             = 1;
       reg_mintervals_los[rd][0] = reg_mintervals_los[rs1][0] * reg_mintervals_los[rs2][0];
       reg_mintervals_ups[rd][0] = reg_mintervals_ups[rs1][0] * reg_mintervals_ups[rs2][0];
-      reg_mints_idx[rd]    = 1;
-      reg_addrs_idx[rd]    = 0;
+      reg_mintervals_cnts[rd]   = 1;
+      reg_vaddrs_cnts[rd]       = 0;
     }
   }
 }
@@ -787,9 +802,9 @@ void constrain_divu() {
     if (reg_mintervals_ups[rs2][0] >= reg_mintervals_los[rs2][0]) {
       // 0 is not in interval
       if (rd != REG_ZR) {
-        reg_data_typ[rd] = VALUE_T;
+        reg_data_type[rd] = VALUE_T;
 
-        if (reg_mints_idx[rs1] > 1 || reg_mints_idx[rs2] > 1) {
+        if (reg_mintervals_cnts[rs1] > 1 || reg_mintervals_cnts[rs2] > 1) {
           printf("OUTPUT: unsupported minterval 4 %x \n", pc - entry_point);
           exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
         }
@@ -799,8 +814,8 @@ void constrain_divu() {
         div_up = reg_mintervals_ups[rs1][0] / reg_mintervals_los[rs2][0];
         step   = reg_steps[rs1];
 
-        if (reg_symb_typ[rs1] == SYMBOLIC) {
-          if (reg_symb_typ[rs2] == SYMBOLIC) {
+        if (reg_symb_type[rs1] == SYMBOLIC) {
+          if (reg_symb_type[rs2] == SYMBOLIC) {
             // non-linear expressions are not supported
             printf("OUTPUT: detected non-linear expression in divu at %x\n", pc - entry_point);
             exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
@@ -813,8 +828,8 @@ void constrain_divu() {
           } else {
             // rd inherits rs1 constraint since rs2 has none
             // assert: rs2 interval is singleton
-            set_correction(rd, reg_symb_typ[rs1], 0, reg_addsub_corr[rs1], reg_mintervals_los[rs2][0], reg_corr_validity[rs1] + DIVU_T);
-            set_vaddrs(rd, reg_vaddrs[rs1], 0, reg_addrs_idx[rs1]);
+            set_correction(rd, reg_symb_type[rs1], 0, reg_addsub_corr[rs1], reg_mintervals_los[rs2][0], reg_corr_validity[rs1] + DIVU_T);
+            set_vaddrs(rd, reg_vaddrs[rs1], 0, reg_vaddrs_cnts[rs1]);
 
             // step computation
             if (reg_steps[rs1] < reg_mintervals_los[rs2][0]) {
@@ -850,10 +865,10 @@ void constrain_divu() {
               reg_mintervals_ups[rd][0] = div_up;
             }
 
-            reg_mints_idx[rd] = 1;
+            reg_mintervals_cnts[rd] = 1;
 
           }
-        } else if (reg_symb_typ[rs2] == SYMBOLIC) {
+        } else if (reg_symb_type[rs2] == SYMBOLIC) {
           printf("OUTPUT: detected division of constant by interval at %x\n", pc - entry_point);
           exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
 
@@ -863,9 +878,9 @@ void constrain_divu() {
 
           reg_mintervals_los[rd][0] = div_lo;
           reg_mintervals_ups[rd][0] = div_up;
-          reg_mints_idx[rd]    = 1;
-          reg_steps[rd]        = 1;
-          reg_addrs_idx[rd]    = 0;
+          reg_mintervals_cnts[rd]   = 1;
+          reg_steps[rd]             = 1;
+          reg_vaddrs_cnts[rd]       = 0;
         }
       }
     } else
@@ -883,7 +898,7 @@ void constrain_remu() {
   if (reg_mintervals_los[rs2][0] == 0)
     throw_exception(EXCEPTION_DIVISIONBYZERO, 0);
 
-  if (reg_symb_typ[rs2] == SYMBOLIC) {
+  if (reg_symb_type[rs2] == SYMBOLIC) {
     // rs2 has constraint
     printf("OUTPUT: constrained memory location in right operand of remu at %x\n", pc - entry_point);
     exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
@@ -892,14 +907,14 @@ void constrain_remu() {
   if (rd == REG_ZR)
     return;
 
-  if (reg_mints_idx[rs1] > 1 || reg_mints_idx[rs2] > 1) {
+  if (reg_mintervals_cnts[rs1] > 1 || reg_mintervals_cnts[rs2] > 1) {
     printf("OUTPUT: unsupported minterval 5 %x\n", pc - entry_point);
     exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
   }
 
-  reg_data_typ[rd] = VALUE_T;
+  reg_data_type[rd] = VALUE_T;
 
-  if (reg_symb_typ[rs1] == SYMBOLIC) {
+  if (reg_symb_type[rs1] == SYMBOLIC) {
     // interval semantics of remu
     divisor = reg_mintervals_los[rs2][0];
     step    = reg_steps[rs1];
@@ -924,8 +939,8 @@ void constrain_remu() {
         exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
       }
 
-      set_correction(rd, reg_symb_typ[rs1], 0, reg_addsub_corr[rs1], reg_mintervals_los[rs2][0], reg_corr_validity[rs1] + REMU_T);
-      set_vaddrs(rd, reg_vaddrs[rs1], 0, reg_addrs_idx[rs1]);
+      set_correction(rd, reg_symb_type[rs1], 0, reg_addsub_corr[rs1], reg_mintervals_los[rs2][0], reg_corr_validity[rs1] + REMU_T);
+      set_vaddrs(rd, reg_vaddrs[rs1], 0, reg_vaddrs_cnts[rs1]);
 
     } else if (is_power_of_two(divisor)) {
       // rs1 interval is wrapped
@@ -941,8 +956,8 @@ void constrain_remu() {
       rem_up        = compute_upper_bound(rem_lo, gcd_step_k, divisor - 1);
       reg_steps[rd] = gcd_step_k;
 
-      set_correction(rd, reg_symb_typ[rs1], 0, reg_addsub_corr[rs1], reg_mintervals_los[rs2][0], reg_corr_validity[rs1] + REMU_T);
-      set_vaddrs(rd, reg_vaddrs[rs1], 0, reg_addrs_idx[rs1]);
+      set_correction(rd, reg_symb_type[rs1], 0, reg_addsub_corr[rs1], reg_mintervals_los[rs2][0], reg_corr_validity[rs1] + REMU_T);
+      set_vaddrs(rd, reg_vaddrs[rs1], 0, reg_vaddrs_cnts[rs1]);
 
     } else {
       printf("OUTPUT: wrapped modulo results many intervals at %x\n", pc - entry_point);
@@ -957,33 +972,33 @@ void constrain_remu() {
 
     reg_mintervals_los[rd][0] = rem_lo;
     reg_mintervals_ups[rd][0] = rem_up;
-    reg_mints_idx[rd]    = 1;
+    reg_mintervals_cnts[rd]   = 1;
   } else {
     // rd has no constraint if both rs1 and rs2 have no constraints
     set_correction(rd, 0, 0, 0, 0, 0);
 
     reg_mintervals_los[rd][0] = reg_mintervals_los[rs1][0] % reg_mintervals_los[rs2][0];
     reg_mintervals_ups[rd][0] = reg_mintervals_ups[rs1][0] % reg_mintervals_ups[rs2][0];
-    reg_mints_idx[rd]    = 1;
-    reg_steps[rd]        = 1;
-    reg_addrs_idx[rd]    = 0;
+    reg_mintervals_cnts[rd]   = 1;
+    reg_steps[rd]             = 1;
+    reg_vaddrs_cnts[rd]       = 0;
   }
 }
 
 void constrain_sltu() {
   if (rd != REG_ZR) {
-    if (reg_symb_typ[rs1] != SYMBOLIC && reg_symb_typ[rs2] != SYMBOLIC) {
+    if (reg_symb_type[rs1] != SYMBOLIC && reg_symb_type[rs2] != SYMBOLIC) {
       // concrete semantics of sltu
       registers[rd] = (registers[rs1] < registers[rs2]) ? 1 : 0;
 
       is_only_one_branch_reachable = true;
 
-      reg_data_typ[rd]     = VALUE_T;
+      reg_data_type[rd]     = VALUE_T;
       reg_mintervals_los[rd][0] = registers[rd];
       reg_mintervals_ups[rd][0] = registers[rd];
-      reg_mints_idx[rd]    = 1;
-      reg_steps[rd]        = 1;
-      reg_addrs_idx[rd]    = 0;
+      reg_mintervals_cnts[rd]   = 1;
+      reg_steps[rd]             = 1;
+      reg_vaddrs_cnts[rd]       = 0;
 
       set_correction(rd, 0, 0, 0, 0, 0);
 
@@ -995,17 +1010,17 @@ void constrain_sltu() {
 
     is_only_one_branch_reachable = false;
 
-    if (reg_symb_typ[rs1])
-      current_rs1_tc = load_symbolic_memory(pt, reg_vaddrs[rs1][0]);
+    if (reg_symb_type[rs1])
+      tc_before_branch_evaluation_rs1 = load_symbolic_memory(pt, reg_vaddrs[rs1][0]);
 
-    if (reg_symb_typ[rs2])
-      current_rs2_tc = load_symbolic_memory(pt, reg_vaddrs[rs2][0]);
+    if (reg_symb_type[rs2])
+      tc_before_branch_evaluation_rs2 = load_symbolic_memory(pt, reg_vaddrs[rs2][0]);
 
-    if (reg_data_typ[rs1] == POINTER_T) {
-      if (reg_data_typ[rs2] != POINTER_T) {
+    if (reg_data_type[rs1] == POINTER_T) {
+      if (reg_data_type[rs2] != POINTER_T) {
         create_mconstraints_lptr(registers[rs1], registers[rs1], reg_mintervals_los[rs2], reg_mintervals_ups[rs2], mrcc);
       }
-    } else if (reg_data_typ[rs2] == POINTER_T) {
+    } else if (reg_data_type[rs2] == POINTER_T) {
       create_mconstraints_rptr(reg_mintervals_los[rs1], reg_mintervals_ups[rs1], registers[rs2], registers[rs2], mrcc);
     } else {
       create_mconstraints(reg_mintervals_los[rs1], reg_mintervals_ups[rs1], reg_mintervals_los[rs2], reg_mintervals_ups[rs2], mrcc);
@@ -1021,15 +1036,15 @@ void constrain_xor() {
   if (rd == REG_ZR)
     return;
 
-  if (reg_symb_typ[rs1] != SYMBOLIC && reg_symb_typ[rs2] != SYMBOLIC) {
+  if (reg_symb_type[rs1] != SYMBOLIC && reg_symb_type[rs2] != SYMBOLIC) {
     // concrete semantics of xor
     registers[rd] = registers[rs1] ^ registers[rs2];
 
     reg_mintervals_los[rd][0] = registers[rd];
     reg_mintervals_ups[rd][0] = registers[rd];
-    reg_mints_idx[rd]    = 1;
-    reg_steps[rd]        = 1;
-    reg_addrs_idx[rd]    = 0;
+    reg_mintervals_cnts[rd]   = 1;
+    reg_steps[rd]             = 1;
+    reg_vaddrs_cnts[rd]       = 0;
 
     is_only_one_branch_reachable = true;
     set_correction(rd, 0, 0, 0, 0, 0);
@@ -1042,17 +1057,17 @@ void constrain_xor() {
 
   is_only_one_branch_reachable = false;
 
-  if (reg_symb_typ[rs1])
-    current_rs1_tc = load_symbolic_memory(pt, reg_vaddrs[rs1][0]);
+  if (reg_symb_type[rs1])
+    tc_before_branch_evaluation_rs1 = load_symbolic_memory(pt, reg_vaddrs[rs1][0]);
 
-  if (reg_symb_typ[rs2])
-    current_rs2_tc = load_symbolic_memory(pt, reg_vaddrs[rs2][0]);
+  if (reg_symb_type[rs2])
+    tc_before_branch_evaluation_rs2 = load_symbolic_memory(pt, reg_vaddrs[rs2][0]);
 
-  if (reg_data_typ[rs1] == POINTER_T) {
-    if (reg_data_typ[rs2] != POINTER_T) {
+  if (reg_data_type[rs1] == POINTER_T) {
+    if (reg_data_type[rs2] != POINTER_T) {
       create_xor_mconstraints_lptr(registers[rs1], registers[rs1], reg_mintervals_los[rs2], reg_mintervals_ups[rs2], mrcc);
     }
-  } else if (reg_data_typ[rs2] == POINTER_T)
+  } else if (reg_data_type[rs2] == POINTER_T)
     create_xor_mconstraints_rptr(reg_mintervals_los[rs1], reg_mintervals_ups[rs1], registers[rs2], registers[rs2], mrcc);
   else
     create_xor_mconstraints(reg_mintervals_los[rs1], reg_mintervals_ups[rs1], reg_mintervals_los[rs2], reg_mintervals_ups[rs2], mrcc);
@@ -1079,36 +1094,36 @@ uint64_t constrain_ld() {
 
         // it is important because we have prevousely freed stack addresses on the trace
         if (vaddr >= get_program_break(current_context))
-          if (vaddr < *(registers + REG_SP)) {
+          if (vaddr < registers[REG_SP]) {
             // free memory
             printf("OUTPUT: loading an uninitialized memory %x\n", pc - entry_point);
             exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
           }
 
         // interval semantics of ld
-        *(reg_data_typ + rd) = *(data_types + mrvc);
+        reg_data_type[rd] = data_types[mrvc];
 
-        *(registers + rd) = *(values + mrvc);
-        *(reg_steps + rd) = *(steps  + mrvc);
-        reg_mints_idx[rd] = mints_idxs[mrvc];
-        if (reg_mints_idx[rd] == 0) {
-          printf("OUTPUT: reg_mints_idx is zero\n");
+        registers[rd]     = values[mrvc];
+        reg_steps[rd]     = steps[mrvc];
+        reg_mintervals_cnts[rd] = mintervals_cnts[mrvc];
+        if (reg_mintervals_cnts[rd] == 0) {
+          printf("OUTPUT: reg_mintervals_cnts is zero\n");
         }
-        for (uint32_t i = 0; i < reg_mints_idx[rd]; i++) {
+        for (uint32_t i = 0; i < reg_mintervals_cnts[rd]; i++) {
           reg_mintervals_los[rd][i] = mintervals_los[mrvc][i];
           reg_mintervals_ups[rd][i] = mintervals_ups[mrvc][i];
         }
 
         // assert: vaddr == *(vaddrs + mrvc)
 
-        if (is_symbolic_value(reg_data_typ[rd], mints_idxs[mrvc], reg_mintervals_los[rd][0], reg_mintervals_ups[rd][0])) {
+        if (is_symbolic_value(reg_data_type[rd], mintervals_cnts[mrvc], reg_mintervals_los[rd][0], reg_mintervals_ups[rd][0])) {
           // vaddr is constrained by rd if value interval is not singleton
           set_correction(rd, SYMBOLIC, 0, 0, 0, 0);
-          reg_addrs_idx[rd]      = 1;
-          reg_vaddrs[rd][0] = vaddr;
+          reg_vaddrs_cnts[rd] = 1;
+          reg_vaddrs[rd][0]   = vaddr;
         } else {
           set_correction(rd, CONCRETE, 0, 0, 0, 0);
-          reg_addrs_idx[rd]      = 0;
+          reg_vaddrs_cnts[rd] = 0;
         }
       }
 
@@ -1121,7 +1136,7 @@ uint64_t constrain_ld() {
       ic_ld = ic_ld + 1;
 
       // and individually
-      *(loads_per_instruction + a) = *(loads_per_instruction + a) + 1;
+      loads_per_instruction[a] = loads_per_instruction[a] + 1;
     } else
       throw_exception(EXCEPTION_PAGEFAULT, get_page_of_virtual_address(vaddr));
   } else {
@@ -1143,17 +1158,17 @@ uint64_t constrain_sd() {
 
   // store double word
 
-  vaddr = *(registers + rs1) + imm;
+  vaddr = registers[rs1] + imm;
 
   if (is_safe_address(vaddr, rs1)) {
     if (is_virtual_address_mapped(pt, vaddr)) {
       // interval semantics of sd
-      retrieve_ld_from_tcs(reg_vaddrs[rs2], reg_addrs_idx[rs2]);
+      retrieve_ld_from_tcs(reg_vaddrs[rs2], reg_vaddrs_cnts[rs2]);
 
-      if (reg_symb_typ[rs2] == SYMBOLIC && reg_addrs_idx[rs2] == 0) // means it is an x = input();
-        store_symbolic_memory(pt, vaddr, registers[rs2], reg_data_typ[rs2], reg_mintervals_los[rs2], reg_mintervals_ups[rs2], reg_mints_idx[rs2], reg_steps[rs2], reg_vaddrs[rs2], reg_addrs_idx[rs2], reg_hasmn[rs2], reg_addsub_corr[rs2], reg_muldivrem_corr[rs2], reg_corr_validity[rs2], mrcc, 0, symbolic_input_cnt - 1);
+      if (reg_symb_type[rs2] == SYMBOLIC && reg_vaddrs_cnts[rs2] == 0) // means it is an x = input();
+        store_symbolic_memory(pt, vaddr, registers[rs2], reg_data_type[rs2], reg_mintervals_los[rs2], reg_mintervals_ups[rs2], reg_mintervals_cnts[rs2], reg_steps[rs2], reg_vaddrs[rs2], reg_vaddrs_cnts[rs2], reg_hasmn[rs2], reg_addsub_corr[rs2], reg_muldivrem_corr[rs2], reg_corr_validity[rs2], mrcc, 0, symbolic_input_cnt - 1);
       else
-        store_symbolic_memory(pt, vaddr, registers[rs2], reg_data_typ[rs2], reg_mintervals_los[rs2], reg_mintervals_ups[rs2], reg_mints_idx[rs2], reg_steps[rs2], reg_vaddrs[rs2], reg_addrs_idx[rs2], reg_hasmn[rs2], reg_addsub_corr[rs2], reg_muldivrem_corr[rs2], reg_corr_validity[rs2], mrcc, 0, 0);
+        store_symbolic_memory(pt, vaddr, registers[rs2], reg_data_type[rs2], reg_mintervals_los[rs2], reg_mintervals_ups[rs2], reg_mintervals_cnts[rs2], reg_steps[rs2], reg_vaddrs[rs2], reg_vaddrs_cnts[rs2], reg_hasmn[rs2], reg_addsub_corr[rs2], reg_muldivrem_corr[rs2], reg_corr_validity[rs2], mrcc, 0, 0);
 
       // keep track of instruction address for profiling stores
       a = (pc - entry_point) / INSTRUCTIONSIZE;
@@ -1164,7 +1179,7 @@ uint64_t constrain_sd() {
       ic_sd = ic_sd + 1;
 
       // and individually
-      *(stores_per_instruction + a) = *(stores_per_instruction + a) + 1;
+      stores_per_instruction[a] = stores_per_instruction[a] + 1;
     } else
       throw_exception(EXCEPTION_PAGEFAULT, get_page_of_virtual_address(vaddr));
   } else {
@@ -1178,9 +1193,9 @@ void constrain_jal_jalr() {
   if (rd != REG_ZR) {
     reg_mintervals_los[rd][0] = registers[rd];
     reg_mintervals_ups[rd][0] = registers[rd];
-    reg_mints_idx[rd]    = 1;
-    reg_steps[rd]        = 1;
-    reg_addrs_idx[rd]    = 0;
+    reg_mintervals_cnts[rd]   = 1;
+    reg_steps[rd]             = 1;
+    reg_vaddrs_cnts[rd]       = 0;
 
     set_correction(rd, 0, 0, 0, 0, 0);
   }
@@ -1209,7 +1224,7 @@ bool is_symbolic_value(uint64_t type, uint32_t mints_num, uint64_t lo, uint64_t 
 }
 
 uint64_t is_safe_address(uint64_t vaddr, uint64_t reg) {
-  if (*(reg_data_typ + reg) == POINTER_T) {
+  if (reg_data_type[reg] == POINTER_T) {
     if (vaddr < reg_mintervals_los[reg][0])
       // memory access below start address of mallocated block
       return 0;
@@ -1236,7 +1251,6 @@ uint64_t load_symbolic_memory(uint64_t* pt, uint64_t vaddr) {
     return mrvc;
   else {
     printf("OUTPUT: detected most recent value counter %llu at vaddr %llx greater than current trace counter %llu\n", mrvc, vaddr, tc);
-    // printf4((uint64_t*) "%s: detected most recent value counter %d at vaddr %x greater than current trace counter %d\n", exe_name, (uint64_t*) mrvc, (uint64_t*) vaddr, (uint64_t*) tc);
     exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
   }
 }
@@ -1279,18 +1293,19 @@ void store_symbolic_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, uint32_
     mrvc = load_symbolic_memory(pt, vaddr);
 
     bool is_this_value_symbolic = is_pure_concrete_value(data_type, mints_num, lo[0], up[0], ld_from_num, is_input);
-    bool is_prev_value_symbolic = is_pure_concrete_value(data_types[mrvc], mints_idxs[mrvc], mintervals_los[mrvc][0], mintervals_ups[mrvc][0], ld_froms_idx[mrvc], is_inputs[mrvc]);
+    bool is_prev_value_symbolic = is_pure_concrete_value(data_types[mrvc], mintervals_cnts[mrvc], mintervals_los[mrvc][0], mintervals_ups[mrvc][0], ld_from_tcs_cnts[mrvc], is_inputs[mrvc]);
 
     if (is_this_value_symbolic && is_prev_value_symbolic && trb < mrvc) {
+      // overwrite
       if (mints_num > MAX_NUM_OF_INTERVALS) {
         printf("OUTPUT: maximum number of possible intervals is reached at %x\n", pc - entry_point);
         exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
       }
 
-      *(data_types   + mrvc) = data_type;
-      *(values       + mrvc) = value;
-      *(steps        + mrvc) = step;
-      *(mints_idxs   + mrvc) = mints_num;
+      data_types[mrvc]      = data_type;
+      values[mrvc]          = value;
+      steps[mrvc]           = step;
+      mintervals_cnts[mrvc] = mints_num;
 
       mintervals_los[mrvc].clear();
       mintervals_ups[mrvc].clear();
@@ -1301,34 +1316,40 @@ void store_symbolic_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, uint32_
 
       return;
     }
-
   }
 
   if (is_trace_space_available()) {
-    // current value at vaddr is from before most recent branch,
-    // track that value by creating a new trace event
-    ealloc();
-
-    *(pcs        + tc) = pc;
-    *(tcs        + tc) = mrvc;
-    *(data_types + tc) = data_type;
-    *(values     + tc) = value;
-    *(steps      + tc) = step;
-    *(vaddrs     + tc) = vaddr;
-
-    // keep track of symbolic inputs
-    is_inputs[tc]      = is_input;
-    if (is_input && to_tc == 0) // when sd
-      input_table.push_back(tc);
-    else if (is_input)          // when sltu
-      input_table.at(is_input - 1) = tc;
-
-    *(mints_idxs   + tc) = mints_num;
     if (mints_num > MAX_NUM_OF_INTERVALS) {
       printf("OUTPUT: maximum number of possible intervals is reached at %x\n", pc - entry_point);
       exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
     }
 
+    if (ld_from_num > MAX_NUM_OF_OP_VADDRS) {
+      printf("OUTPUT: maximum number of possible vaddrs is reached at %x\n", pc - entry_point);
+      exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
+    }
+
+    ealloc();
+
+    pcs[tc]             = pc;
+    tcs[tc]             = mrvc;
+    data_types[tc]      = data_type;
+    values[tc]          = value;
+    steps[tc]           = step;
+    vaddrs[tc]          = vaddr;
+    hasmns[tc]          = hasmn;
+    addsub_corrs[tc]    = addsub_corr;
+    muldivrem_corrs[tc] = muldivrem_corr;
+    corr_validitys[tc]  = corr_validity;
+
+    // keep track of symbolic inputs
+    is_inputs[tc]       = is_input;
+    if (is_input && to_tc == 0) // when sd
+      input_table.push_back(tc);
+    else if (is_input)          // when sltu
+      input_table.at(is_input - 1) = tc;
+
+    mintervals_cnts[tc] = mints_num;
     mintervals_los[tc].clear();
     mintervals_ups[tc].clear();
     for (uint32_t i = 0; i < mints_num; i++) {
@@ -1336,42 +1357,33 @@ void store_symbolic_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, uint32_
       mintervals_ups[tc].push_back(up[i]);
     }
 
-    *(hasmns          + tc) = hasmn;
-    *(addsub_corrs    + tc) = addsub_corr;
-    *(muldivrem_corrs + tc) = muldivrem_corr;
-    *(corr_validitys  + tc) = corr_validity;
-
-    *(ld_froms_idx    + tc) = ld_from_num;
-    if (ld_from_num > MAX_NUM_OF_OP_VADDRS) {
-      printf("OUTPUT: maximum number of possible vaddrs is reached at %x\n", pc - entry_point);
-      exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
-    }
-
-    if (to_tc == 0) { // means SD instrs
-      if (ld_from_num != 0 && reg_symb_typ[rs2] == SYMBOLIC) {
-        ld_from_tcs[tc].clear(); // this place is correct when we have ld_froms_idx[tc] = 0; in else
+    ld_from_tcs_cnts[tc] = ld_from_num;
+    if (to_tc == 0) { // means SD instruction
+      if (ld_from_num != 0 && reg_symb_type[rs2] == SYMBOLIC) {
+        // updating relations between memory locations, both ways
+        ld_from_tcs[tc].clear(); // this place is correct when we have ld_from_tcs_cnts[tc] = 0; in else
         for (uint32_t i = 0; i < ld_from_num; i++) {
           idx = ld_from_tc[i];
           ld_from_tcs[tc].push_back(idx);
-          if (sd_to_idxs[idx] < MAX_SD_TO_NUM) {
+          if (forward_propagated_to_tcs_cnts[idx] < MAX_SD_TO_NUM) {
             forward_propagated_to_tcs[idx].push_back(tc);
-            sd_to_idxs[idx]++;
+            forward_propagated_to_tcs_cnts[idx]++;
           } else {
             printf("OUTPUT: maximum number of possible sd_to is reached at %x\n", pc - entry_point);
             exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
           }
         }
       } else {
-        ld_froms_idx[tc] = 0;
+        ld_from_tcs_cnts[tc] = 0;
       }
-      sd_to_idxs[tc]  = 0;
-      mr_sds[tc]      = tc;
+      forward_propagated_to_tcs_cnts[tc] = 0;
+      mr_sds[tc] = tc;
     } else {
-      sd_to_idxs[tc] = sd_to_idxs[to_tc];
-      // memcpy(sd_tos[tc].tc, sd_tos[to_tc].tc, sizeof(struct sd_to_tc));
-      forward_propagated_to_tcs[tc] = forward_propagated_to_tcs[to_tc];
-      mr_sds[tc]     = mr_sds[mrvc];
+      forward_propagated_to_tcs_cnts[tc] = forward_propagated_to_tcs_cnts[to_tc];
+      forward_propagated_to_tcs[tc]      = forward_propagated_to_tcs[to_tc];
+      mr_sds[tc]                         = mr_sds[mrvc];
 
+      // copying relations with other memory locations
       ld_from_tcs[tc].clear();
       for (uint32_t i = 0; i < ld_from_num; i++) {
         ld_from_tcs[tc].push_back(ld_from_tcs[mrvc][i]);
@@ -1395,28 +1407,37 @@ void store_symbolic_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, uint32_
 }
 
 // store temporarily an updated symbolic variable on trace without updating the memory and tc++; just for passing args
-void store_tmp_constrained_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, uint32_t data_type, std::vector<uint64_t>& lo, std::vector<uint64_t>& up, uint32_t mints_num, uint64_t step, std::vector<uint64_t>& ld_from_tc, uint32_t ld_from_num, bool hasmn, uint64_t addsub_corr, uint64_t muldivrem_corr, uint64_t corr_validity, uint64_t trb, uint64_t to_tc) {
+void store_temp_constrained_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, uint32_t data_type, std::vector<uint64_t>& lo, std::vector<uint64_t>& up, uint32_t mints_num, uint64_t step, std::vector<uint64_t>& ld_from_tc, uint32_t ld_from_num, bool hasmn, uint64_t addsub_corr, uint64_t muldivrem_corr, uint64_t corr_validity, uint64_t trb, uint64_t to_tc) {
   uint64_t mrvc;
   uint64_t idx;
 
   if (is_trace_space_available()) {
-    ealloc();
-
-    *(pcs        + tc) = pc;
-    *(tcs        + tc) = to_tc;
-    *(data_types + tc) = data_type;
-    *(values     + tc) = value;
-    *(steps      + tc) = step;
-    *(vaddrs     + tc) = vaddr;
-
-    is_inputs[tc]      = 0;
-
-    *(mints_idxs   + tc) = mints_num;
     if (mints_num > MAX_NUM_OF_INTERVALS) {
       printf("OUTPUT: maximum number of possible intervals is reached at %x\n", pc - entry_point);
       exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
     }
 
+    if (ld_from_num > MAX_NUM_OF_OP_VADDRS) {
+      printf("OUTPUT: maximum number of possible vaddrs is reached at %x\n", pc - entry_point);
+      exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
+    }
+
+    ealloc();
+
+    pcs[tc]             = pc;
+    tcs[tc]             = to_tc;
+    data_types[tc]      = data_type;
+    values[tc]          = value;
+    steps[tc]           = step;
+    vaddrs[tc]          = vaddr;
+    hasmns[tc]          = hasmn;
+    addsub_corrs[tc]    = addsub_corr;
+    muldivrem_corrs[tc] = muldivrem_corr;
+    corr_validitys[tc]  = corr_validity;
+
+    is_inputs[tc]       = 0;
+
+    mintervals_cnts[tc] = mints_num;
     mintervals_los[tc].clear();
     mintervals_ups[tc].clear();
     for (uint32_t i = 0; i < mints_num; i++) {
@@ -1424,23 +1445,16 @@ void store_tmp_constrained_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, 
       mintervals_ups[tc].push_back(up[i]);
     }
 
-    *(hasmns          + tc) = hasmn;
-    *(addsub_corrs    + tc) = addsub_corr;
-    *(muldivrem_corrs + tc) = muldivrem_corr;
-    *(corr_validitys  + tc) = corr_validity;
-
-    *(ld_froms_idx    + tc) = ld_from_num;
-    if (ld_from_num > MAX_NUM_OF_OP_VADDRS) {
-      printf("OUTPUT: maximum number of possible vaddrs is reached at %x\n", pc - entry_point);
-      exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
-    }
-
+    ld_from_tcs_cnts[tc] = ld_from_num;
     ld_from_tcs[tc].clear();
     for (uint32_t i = 0; i < ld_from_num; i++) {
       ld_from_tcs[tc].push_back(ld_from_tcs[to_tc][i]);
     }
 
+    // no trace update
     efree();
+
+    // no memory update
 
   } else
     throw_exception(EXCEPTION_MAXTRACE, 0);
@@ -1452,24 +1466,33 @@ void store_input_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, uint32_t d
   uint64_t idx;
 
   if (is_trace_space_available()) {
-    ealloc();
-
-    *(pcs        + tc) = pc;
-    *(tcs        + tc) = input_table.at(is_input - 1);
-    *(data_types + tc) = 3;
-    *(values     + tc) = value;
-    *(steps      + tc) = step;
-    *(vaddrs     + tc) = vaddr;
-
-    input_table.at(is_input - 1) = tc;
-    is_inputs[tc]      = is_input;
-
-    *(mints_idxs   + tc) = mints_num;
     if (mints_num > MAX_NUM_OF_INTERVALS) {
       printf("OUTPUT: maximum number of possible intervals is reached at %x\n", pc - entry_point);
       exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
     }
 
+    if (ld_from_num > MAX_NUM_OF_OP_VADDRS) {
+      printf("OUTPUT: maximum number of possible vaddrs is reached at %x\n", pc - entry_point);
+      exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
+    }
+
+    ealloc();
+
+    pcs[tc]             = pc;
+    tcs[tc]             = input_table.at(is_input - 1);
+    data_types[tc]      = INPUT_T;
+    values[tc]          = value;
+    steps[tc]           = step;
+    vaddrs[tc]          = vaddr;
+    hasmns[tc]          = hasmn;
+    addsub_corrs[tc]    = addsub_corr;
+    muldivrem_corrs[tc] = muldivrem_corr;
+    corr_validitys[tc]  = corr_validity;
+
+    is_inputs[tc]       = is_input;
+    input_table.at(is_input - 1) = tc;
+
+    mintervals_cnts[tc] = mints_num;
     mintervals_los[tc].clear();
     mintervals_ups[tc].clear();
     for (uint32_t i = 0; i < mints_num; i++) {
@@ -1477,21 +1500,13 @@ void store_input_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, uint32_t d
       mintervals_ups[tc].push_back(up[i]);
     }
 
-    *(hasmns          + tc) = hasmn;
-    *(addsub_corrs    + tc) = addsub_corr;
-    *(muldivrem_corrs + tc) = muldivrem_corr;
-    *(corr_validitys  + tc) = corr_validity;
-
-    *(ld_froms_idx    + tc) = ld_from_num;
-    if (ld_from_num > MAX_NUM_OF_OP_VADDRS) {
-      printf("OUTPUT: maximum number of possible vaddrs is reached at %x\n", pc - entry_point);
-      exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
-    }
-
+    ld_from_tcs_cnts[tc] = ld_from_num;
     ld_from_tcs[tc].clear();
     for (uint32_t i = 0; i < ld_from_num; i++) {
       ld_from_tcs[tc].push_back(ld_from_tcs[to_tc][i]);
     }
+
+    // no memory update
 
   } else
     throw_exception(EXCEPTION_MAXTRACE, 0);
@@ -1529,7 +1544,7 @@ void apply_correction(std::vector<uint64_t>& lo, std::vector<uint64_t>& up, uint
   // bool is_found;
   for (uint32_t i = 0; i < mints_num; i++) {
     // is_found = false;
-    for (j = 0; j < mints_idxs[mrvc]; j++) {
+    for (j = 0; j < mintervals_cnts[mrvc]; j++) {
       if (up_before_op[j] - lo_before_op[j] >= lo[i] - lo_before_op[j]) {
         // is_found = true;
         break;
@@ -1543,22 +1558,22 @@ void apply_correction(std::vector<uint64_t>& lo, std::vector<uint64_t>& up, uint
     // }
 
     idxs[i] = j;
-    lo_prop[i] = compute_lower_bound(lo_before_op[j], step, lo[i]);
-    up_prop[i] = compute_upper_bound(lo_before_op[j], step, up[i]);
+    propagated_minterval_lo[i] = compute_lower_bound(lo_before_op[j], step, lo[i]);
+    propagated_minterval_up[i] = compute_upper_bound(lo_before_op[j], step, up[i]);
   }
 
   // add, sub
   if (hasmn) {
     uint64_t tmp;
     for (uint32_t i = 0; i < mints_num; i++) {
-      tmp        = addsub_corr - up_prop[i];
-      up_prop[i] = addsub_corr - lo_prop[i];
-      lo_prop[i] = tmp;
+      tmp        = addsub_corr - propagated_minterval_up[i];
+      propagated_minterval_up[i] = addsub_corr - propagated_minterval_lo[i];
+      propagated_minterval_lo[i] = tmp;
     }
   } else {
     for (uint32_t i = 0; i < mints_num; i++) {
-      lo_prop[i] = lo_prop[i] - addsub_corr;
-      up_prop[i] = up_prop[i] - addsub_corr;
+      propagated_minterval_lo[i] = propagated_minterval_lo[i] - addsub_corr;
+      propagated_minterval_up[i] = propagated_minterval_up[i] - addsub_corr;
     }
   }
 
@@ -1567,8 +1582,8 @@ void apply_correction(std::vector<uint64_t>& lo, std::vector<uint64_t>& up, uint
     // <9223372036854775808, 2^64 - 1, 1> * 2 = <0, 2^64 - 2, 2>
     // <9223372036854775809, 15372286728091293014, 1> * 3 = <9223372036854775811, 9223372036854775810, 3>
     for (uint32_t i = 0; i < mints_num; i++) {
-      lo_prop[i] = mintervals_los[mrvc][idxs[i]] + (lo_prop[i] - lo_before_op[idxs[i]]) / muldivrem_corr; // lo_op_before_cmp
-      up_prop[i] = mintervals_los[mrvc][idxs[i]] + (up_prop[i] - lo_before_op[idxs[i]]) / muldivrem_corr; // lo_op_before_cmp
+      propagated_minterval_lo[i] = mintervals_los[mrvc][idxs[i]] + (propagated_minterval_lo[i] - lo_before_op[idxs[i]]) / muldivrem_corr; // lo_op_before_cmp
+      propagated_minterval_up[i] = mintervals_los[mrvc][idxs[i]] + (propagated_minterval_up[i] - lo_before_op[idxs[i]]) / muldivrem_corr; // lo_op_before_cmp
     }
 
   } else if (corr_validity == DIVU_T) {
@@ -1581,12 +1596,12 @@ void apply_correction(std::vector<uint64_t>& lo, std::vector<uint64_t>& up, uint
 
     if (mintervals_los[mrvc][0] <= mintervals_ups[mrvc][0]) {
       // non-wrapped
-      if (lo_prop[0] * divisor > mintervals_los[mrvc][0])
-        lo_prop[0] = compute_lower_bound(mintervals_los[mrvc][0], steps[mrvc], lo_prop[0] * divisor);
+      if (propagated_minterval_lo[0] * divisor > mintervals_los[mrvc][0])
+        propagated_minterval_lo[0] = compute_lower_bound(mintervals_los[mrvc][0], steps[mrvc], propagated_minterval_lo[0] * divisor);
       else
-        lo_prop[0] = mintervals_los[mrvc][0];
+        propagated_minterval_lo[0] = mintervals_los[mrvc][0];
 
-      up_prop[0] = compute_upper_bound(mintervals_los[mrvc][0], steps[mrvc], up_prop[0] * divisor + reverse_division_up(mintervals_ups[mrvc][0], up_prop[0], divisor));
+      propagated_minterval_up[0] = compute_upper_bound(mintervals_los[mrvc][0], steps[mrvc], propagated_minterval_up[0] * divisor + reverse_division_up(mintervals_ups[mrvc][0], propagated_minterval_up[0], divisor));
     } else {
       // wrapped
       uint64_t lo_1;
@@ -1597,43 +1612,43 @@ void apply_correction(std::vector<uint64_t>& lo, std::vector<uint64_t>& up, uint
       uint64_t min = (max + steps[mrvc]);
       uint32_t  which_is_empty;
 
-      if (lo_prop[0] * divisor > min)
-        lo_prop[0] = compute_lower_bound(mintervals_los[mrvc][0], steps[mrvc], lo_prop[0] * divisor);
+      if (propagated_minterval_lo[0] * divisor > min)
+        propagated_minterval_lo[0] = compute_lower_bound(mintervals_los[mrvc][0], steps[mrvc], propagated_minterval_lo[0] * divisor);
       else
-        lo_prop[0] = min;
+        propagated_minterval_lo[0] = min;
 
-      up_prop[0] = compute_upper_bound(mintervals_los[mrvc][0], steps[mrvc], up_prop[0] * divisor + reverse_division_up(max, up_prop[0], divisor));
+      propagated_minterval_up[0] = compute_upper_bound(mintervals_los[mrvc][0], steps[mrvc], propagated_minterval_up[0] * divisor + reverse_division_up(max, propagated_minterval_up[0], divisor));
 
-      // intersection of [lo_prop, up_prop] with original interval
+      // intersection of [propagated_minterval_lo, propagated_minterval_up] with original interval
       which_is_empty = 0;
-      if (lo_prop[0] <= mintervals_ups[mrvc][0]) {
-        lo_1 = lo_prop[0];
-        up_1 = (up_prop[0] < mintervals_ups[mrvc][0]) ? up_prop[0] : mintervals_ups[mrvc][0];
+      if (propagated_minterval_lo[0] <= mintervals_ups[mrvc][0]) {
+        lo_1 = propagated_minterval_lo[0];
+        up_1 = (propagated_minterval_up[0] < mintervals_ups[mrvc][0]) ? propagated_minterval_up[0] : mintervals_ups[mrvc][0];
       } else {
         which_is_empty = 1;
       }
 
-      if (up_prop[0] >= mintervals_los[mrvc][0]) {
-        lo_2 = (lo_prop[0] > mintervals_los[mrvc][0]) ? lo_prop[0] : mintervals_los[mrvc][0];
-        up_2 = up_prop[0];
+      if (propagated_minterval_up[0] >= mintervals_los[mrvc][0]) {
+        lo_2 = (propagated_minterval_lo[0] > mintervals_los[mrvc][0]) ? propagated_minterval_lo[0] : mintervals_los[mrvc][0];
+        up_2 = propagated_minterval_up[0];
       } else {
         which_is_empty = (which_is_empty == 1) ? 4 : 2;
       }
 
       if (which_is_empty == 0) {
         if (up_1 + steps[mrvc] >= lo_2) {
-          lo_prop[0] = lo_1;
-          up_prop[0] = up_2;
+          propagated_minterval_lo[0] = lo_1;
+          propagated_minterval_up[0] = up_2;
         } else {
           printf("OUTPUT: reverse of division results two intervals at %x\n", pc - entry_point);
           exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
         }
       } else if (which_is_empty == 1) {
-        lo_prop[0] = lo_2;
-        up_prop[0] = up_2;
+        propagated_minterval_lo[0] = lo_2;
+        propagated_minterval_up[0] = up_2;
       } else if (which_is_empty == 2) {
-        lo_prop[0] = lo_1;
-        up_prop[0] = up_1;
+        propagated_minterval_lo[0] = lo_1;
+        propagated_minterval_up[0] = up_1;
       } else if (which_is_empty == 4) {
         printf("OUTPUT: reverse of division results empty intervals at %x\n", pc - entry_point);
         exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
@@ -1651,42 +1666,42 @@ void apply_correction(std::vector<uint64_t>& lo, std::vector<uint64_t>& up, uint
 
   //////////////////////////////////////////////////////////////////////////////
   if (should_be_stored_or_not == true) {
-    store_constrained_memory(vaddrs[mrvc], lo_prop, up_prop, mints_num, steps[mrvc], ld_from_tcs[mrvc], ld_froms_idx[mrvc], hasmns[mrvc], addsub_corrs[mrvc], muldivrem_corrs[mrvc], corr_validitys[mrvc], mrvc, is_inputs[mrvc]);
+    store_constrained_memory(vaddrs[mrvc], propagated_minterval_lo, propagated_minterval_up, mints_num, steps[mrvc], ld_from_tcs[mrvc], ld_from_tcs_cnts[mrvc], hasmns[mrvc], addsub_corrs[mrvc], muldivrem_corrs[mrvc], corr_validitys[mrvc], mrvc, is_inputs[mrvc]);
   } else {
     // if memory addr is recently updated by a new variable, but we need to propagate constraints through its previouse value
     // carefull about: x = input(); y = x; x = input(); if(y);
     if (is_inputs[mrvc]) {
       // at (tc + 1) with ealloc()
-      store_input_memory(pt, vaddrs[mrvc], lo_prop[0], VALUE_T, lo_prop, up_prop, mints_num, steps[mrvc], ld_from_tcs[mrvc], ld_froms_idx[mrvc], hasmns[mrvc], addsub_corrs[mrvc], muldivrem_corrs[mrvc], corr_validitys[mrvc], tc, mrvc, is_inputs[mrvc]);
+      store_input_memory(pt, vaddrs[mrvc], propagated_minterval_lo[0], VALUE_T, propagated_minterval_lo, propagated_minterval_up, mints_num, steps[mrvc], ld_from_tcs[mrvc], ld_from_tcs_cnts[mrvc], hasmns[mrvc], addsub_corrs[mrvc], muldivrem_corrs[mrvc], corr_validitys[mrvc], tc, mrvc, is_inputs[mrvc]);
     } else {
       // at (tc + 1) but without ealloc()
-      store_tmp_constrained_memory(pt, vaddrs[mrvc], lo_prop[0], VALUE_T, lo_prop, up_prop, mints_num, steps[mrvc], ld_from_tcs[mrvc], ld_froms_idx[mrvc], hasmns[mrvc], addsub_corrs[mrvc], muldivrem_corrs[mrvc], corr_validitys[mrvc], tc, mrvc);
+      store_temp_constrained_memory(pt, vaddrs[mrvc], propagated_minterval_lo[0], VALUE_T, propagated_minterval_lo, propagated_minterval_up, mints_num, steps[mrvc], ld_from_tcs[mrvc], ld_from_tcs_cnts[mrvc], hasmns[mrvc], addsub_corrs[mrvc], muldivrem_corrs[mrvc], corr_validitys[mrvc], tc, mrvc);
     }
   }
 
-  // assert: (ld_froms_idx[mrvc] > 1) never reach here
-  if (ld_froms_idx[mrvc]) {
+  // assert: (ld_from_tcs_cnts[mrvc] > 1) never reach here
+  if (ld_from_tcs_cnts[mrvc]) {
     for (uint32_t i = 0; i < mints_num; i++) {
-      lo_p[i] = lo_prop[i];
-      up_p[i] = up_prop[i];
+      lo_p[i] = propagated_minterval_lo[i];
+      up_p[i] = propagated_minterval_up[i];
     }
     is_lo_p_up_p_used = true;
 
     if (should_be_stored_or_not == true)
       propagate_backwards(load_symbolic_memory(pt, vaddrs[mrvc]), mintervals_los[mrvc], mintervals_ups[mrvc]);
     else
-      propagate_backwards(tc + 1, mintervals_los[mrvc], mintervals_ups[mrvc]);
+      propagate_backwards(tc + 1, mintervals_los[mrvc], mintervals_ups[mrvc]); // see above
 
   }
 
-  if (sd_to_idxs[mrvc]) {
+  if (forward_propagated_to_tcs_cnts[mrvc]) {
     if (is_lo_p_up_p_used) {
       for (uint32_t i = 0; i < mints_num; i++) {
-        lo_prop[i] = lo_p[i];
-        up_prop[i] = up_p[i];
+        propagated_minterval_lo[i] = lo_p[i];
+        propagated_minterval_up[i] = up_p[i];
       }
     }
-    propagate_backwards_rhs(lo_prop, up_prop, mints_num, mrvc);
+    propagate_backwards_rhs(propagated_minterval_lo, propagated_minterval_up, mints_num, mrvc);
   }
   //////////////////////////////////////////////////////////////////////////////
 
@@ -1704,29 +1719,25 @@ void propagate_backwards_rhs(std::vector<uint64_t>& lo, std::vector<uint64_t>& u
     up_p[j] = up[j];
   }
 
-  mints_num_prop = mints_num;
-  for (int i = 0; i < sd_to_idxs[mrvc]; i++) {
-    // stored_to_tc = sd_tos[mrvc].tc[i];
+  propagated_minterval_cnt = mints_num;
+  for (int i = 0; i < forward_propagated_to_tcs_cnts[mrvc]; i++) {
     stored_to_tc = forward_propagated_to_tcs[mrvc].at(i);
     mr_stored_to_tc = load_symbolic_memory(pt, vaddrs[stored_to_tc]);
     mr_stored_to_tc = mr_sds[mr_stored_to_tc];
-    // if (mr_stored_to_tc > stored_to_tc) {
-    //   continue;
-    // }
 
     // carefull about: x = input(); y = x; z = y; y = input(); if(x);
 
     for (uint32_t j = 0; j < mints_num; j++) {
-      lo_prop[j] = lo_p[j];
-      up_prop[j] = up_p[j];
+      propagated_minterval_lo[j] = lo_p[j];
+      propagated_minterval_up[j] = up_p[j];
     }
-    step_prop = steps[stored_to_tc];
+    propagated_minterval_step = steps[stored_to_tc];
     if (corr_validitys[stored_to_tc] == MUL_T && muldivrem_corrs[stored_to_tc] != 0) {
       // mul
       propagate_mul(steps[mrvc], muldivrem_corrs[stored_to_tc]);
     } else if (corr_validitys[stored_to_tc] == DIVU_T) {
       // divu
-      propagate_divu(steps[mrvc], muldivrem_corrs[stored_to_tc], step_prop);
+      propagate_divu(steps[mrvc], muldivrem_corrs[stored_to_tc], propagated_minterval_step);
     } else if (corr_validitys[stored_to_tc] == REMU_T) {
       // remu
       propagate_remu(steps[mrvc], muldivrem_corrs[stored_to_tc]);
@@ -1735,27 +1746,28 @@ void propagate_backwards_rhs(std::vector<uint64_t>& lo, std::vector<uint64_t>& u
     if (hasmns[stored_to_tc]) {
       // addsub_corrs[stored_to_tc] -
       for (uint32_t j = 0; j < mints_num; j++) {
-        tmp        = addsub_corrs[stored_to_tc] - up_prop[j];
-        up_prop[j] = addsub_corrs[stored_to_tc] - lo_prop[j];
-        lo_prop[j] = tmp;
+        tmp        = addsub_corrs[stored_to_tc] - propagated_minterval_up[j];
+        propagated_minterval_up[j] = addsub_corrs[stored_to_tc] - propagated_minterval_lo[j];
+        propagated_minterval_lo[j] = tmp;
       }
     } else {
       // + addsub_corrs[stored_to_tc]
       for (uint32_t j = 0; j < mints_num; j++) {
-        lo_prop[j] = lo_prop[j] + addsub_corrs[stored_to_tc];
-        up_prop[j] = up_prop[j] + addsub_corrs[stored_to_tc];
+        propagated_minterval_lo[j] = propagated_minterval_lo[j] + addsub_corrs[stored_to_tc];
+        propagated_minterval_up[j] = propagated_minterval_up[j] + addsub_corrs[stored_to_tc];
       }
     }
 
     if (mr_stored_to_tc == stored_to_tc) {
-      store_constrained_memory(vaddrs[stored_to_tc], lo_prop, up_prop, mints_num, step_prop, ld_from_tcs[stored_to_tc], ld_froms_idx[stored_to_tc], hasmns[stored_to_tc], addsub_corrs[stored_to_tc], muldivrem_corrs[stored_to_tc], corr_validitys[stored_to_tc], stored_to_tc, is_inputs[stored_to_tc]);
+      store_constrained_memory(vaddrs[stored_to_tc], propagated_minterval_lo, propagated_minterval_up, mints_num, propagated_minterval_step, ld_from_tcs[stored_to_tc], ld_from_tcs_cnts[stored_to_tc], hasmns[stored_to_tc], addsub_corrs[stored_to_tc], muldivrem_corrs[stored_to_tc], corr_validitys[stored_to_tc], stored_to_tc, is_inputs[stored_to_tc]);
     } else if (mr_stored_to_tc < stored_to_tc) {
       printf("OUTPUT: mr_stored_to_tc < stored_to_tc at %x\n", pc - entry_point);
       exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
     }
+    // else if mr_stored_to_tc > stored_to_tc => means it is overwritten
 
-    if (sd_to_idxs[stored_to_tc]) {
-      propagate_backwards_rhs(lo_prop, up_prop, mints_num, stored_to_tc);
+    if (forward_propagated_to_tcs_cnts[stored_to_tc]) {
+      propagate_backwards_rhs(propagated_minterval_lo, propagated_minterval_up, mints_num, stored_to_tc);
     }
   }
 }
@@ -1765,34 +1777,32 @@ void propagate_backwards_rhs(std::vector<uint64_t>& lo, std::vector<uint64_t>& u
 // vaddr of y -> new y
 // lo_before_op for y -> before new y
 void propagate_backwards(uint64_t mrvc_y, std::vector<uint64_t>& lo_before_op, std::vector<uint64_t>& up_before_op) {
-  // uint64_t mrvc_y;
   uint64_t mrvc_x;
 
-  // mrvc_y = load_symbolic_memory(pt, vaddr);
   mrvc_x = load_symbolic_memory(pt, vaddrs[ld_from_tcs[mrvc_y][0]]);
   if (mr_sds[mrvc_x] > ld_from_tcs[mrvc_y][0]) {
-    // return;
+    // means x is overwritten
     mrvc_x = ld_from_tcs[mrvc_y][0];
-    apply_correction(mintervals_los[mrvc_y], mintervals_ups[mrvc_y], mints_idxs[mrvc_y], hasmns[mrvc_y], addsub_corrs[mrvc_y], muldivrem_corrs[mrvc_y], corr_validitys[mrvc_y], lo_before_op, up_before_op, steps[mrvc_y], mrvc_x, false);
+    apply_correction(mintervals_los[mrvc_y], mintervals_ups[mrvc_y], mintervals_cnts[mrvc_y], hasmns[mrvc_y], addsub_corrs[mrvc_y], muldivrem_corrs[mrvc_y], corr_validitys[mrvc_y], lo_before_op, up_before_op, steps[mrvc_y], mrvc_x, false);
   } else {
     mrvc_x = ld_from_tcs[mrvc_y][0];
-    apply_correction(mintervals_los[mrvc_y], mintervals_ups[mrvc_y], mints_idxs[mrvc_y], hasmns[mrvc_y], addsub_corrs[mrvc_y], muldivrem_corrs[mrvc_y], corr_validitys[mrvc_y], lo_before_op, up_before_op, steps[mrvc_y], mrvc_x, true);
+    apply_correction(mintervals_los[mrvc_y], mintervals_ups[mrvc_y], mintervals_cnts[mrvc_y], hasmns[mrvc_y], addsub_corrs[mrvc_y], muldivrem_corrs[mrvc_y], corr_validitys[mrvc_y], lo_before_op, up_before_op, steps[mrvc_y], mrvc_x, true);
   }
 }
 
 void constrain_memory(uint64_t reg, std::vector<uint64_t>& lo, std::vector<uint64_t>& up, uint32_t mints_num, uint64_t trb, bool only_reachable_branch) {
   uint64_t mrvc;
 
-  if (reg_symb_typ[reg] == SYMBOLIC && assert_zone == false) {
+  if (reg_symb_type[reg] == SYMBOLIC && assert_zone == false) {
     if (only_reachable_branch == true) {
-      // for (uint32_t i = 0; i < reg_addrs_idx[reg]; i++) {
+      // for (uint32_t i = 0; i < reg_vaddrs_cnts[reg]; i++) {
       //   mrvc = load_symbolic_memory(pt, reg_vaddrs[reg][i]);
       //   lo = mintervals_los[mrvc];
       //   up = mintervals_ups[mrvc];
-      //   store_constrained_memory(reg_vaddrs[reg][i], lo, up, mints_idxs[mrvc], steps[mrvc], ld_from_tcs[mrvc], ld_froms_idx[mrvc], hasmns[mrvc], addsub_corrs[mrvc], muldivrem_corrs[mrvc], corr_validitys[mrvc], mrvc, is_inputs[mrvc]);
+      //   store_constrained_memory(reg_vaddrs[reg][i], lo, up, mintervals_cnts[mrvc], steps[mrvc], ld_from_tcs[mrvc], ld_from_tcs_cnts[mrvc], hasmns[mrvc], addsub_corrs[mrvc], muldivrem_corrs[mrvc], corr_validitys[mrvc], mrvc, is_inputs[mrvc]);
       // }
     } else {
-      mrvc = (reg == rs1) ? current_rs1_tc : current_rs2_tc;
+      mrvc = (reg == rs1) ? tc_before_branch_evaluation_rs1 : tc_before_branch_evaluation_rs2;
       apply_correction(lo, up, mints_num, reg_hasmn[reg], reg_addsub_corr[reg], reg_muldivrem_corr[reg], reg_corr_validity[reg], reg_mintervals_los[reg], reg_mintervals_ups[reg], reg_steps[reg], mrvc, true);
     }
 
@@ -1800,14 +1810,14 @@ void constrain_memory(uint64_t reg, std::vector<uint64_t>& lo, std::vector<uint6
 }
 
 void set_vaddrs(uint64_t reg, std::vector<uint64_t>& vaddrs, uint32_t start_idx, uint32_t vaddr_num) {
-  reg_addrs_idx[reg] = vaddr_num;
+  reg_vaddrs_cnts[reg] = vaddr_num;
   for (uint32_t i = 0; i < vaddr_num; i++) {
     reg_vaddrs[reg][start_idx++] = vaddrs[i];
   }
 }
 
 void set_correction(uint64_t reg, uint32_t hasco, uint32_t hasmn, uint64_t addsub_corr, uint64_t muldivrem_corr, uint64_t corr_validity) {
-  reg_symb_typ[reg]       = hasco;
+  reg_symb_type[reg]      = hasco;
   reg_hasmn[reg]          = hasmn;
   reg_addsub_corr[reg]    = addsub_corr;
   reg_muldivrem_corr[reg] = muldivrem_corr;
@@ -1817,22 +1827,22 @@ void set_correction(uint64_t reg, uint32_t hasco, uint32_t hasmn, uint64_t addsu
 void take_branch(uint64_t b, uint64_t how_many_more) {
   if (how_many_more > 0 && assert_zone == false) {
     // record that we need to set rd to true
-    val_ptr[0] = b;
-    store_register_memory(rd, val_ptr);
+    value_v[0] = b;
+    store_register_memory(rd, value_v);
 
     // record frame and stack pointer
-    val_ptr[0] = *(registers + REG_FP);
-    store_register_memory(REG_FP, val_ptr);
-    val_ptr[0] = *(registers + REG_SP);
-    store_register_memory(REG_SP, val_ptr);
+    value_v[0] = registers[REG_FP];
+    store_register_memory(REG_FP, value_v);
+    value_v[0] = registers[REG_SP];
+    store_register_memory(REG_SP, value_v);
   } else {
-    *(reg_data_typ + rd) = VALUE_T;
-    *(registers + rd) = b;
-    *(reg_steps + rd) = 1;
+    reg_data_type[rd] = VALUE_T;
+    registers[rd]     = b;
+    reg_steps[rd]     = 1;
     reg_mintervals_los[rd][0] = b;
     reg_mintervals_ups[rd][0] = b;
-    reg_mints_idx[rd]    = 1;
-    reg_addrs_idx[rd]    = 0;
+    reg_mintervals_cnts[rd]   = 1;
+    reg_vaddrs_cnts[rd]       = 0;
 
     set_correction(rd, 0, 0, 0, 0, 0);
   }
@@ -1845,46 +1855,46 @@ void create_true_false_constraints(uint64_t lo1, uint64_t up1, uint64_t lo2, uin
       // both rs1 and rs2 intervals are not wrapped around
       if (up1 < lo2) {
         // rs1 interval is strictly less than rs2 interval
-        true_branch_rs1_minterval_los[mint_num_true_rs1]   = lo1;
-        true_branch_rs1_minterval_ups[mint_num_true_rs1++] = up1;
-        true_branch_rs2_minterval_los[mint_num_true_rs2]   = lo2;
-        true_branch_rs2_minterval_ups[mint_num_true_rs2++] = up2;
+        true_branch_rs1_minterval_los[true_branch_rs1_minterval_cnt]   = lo1;
+        true_branch_rs1_minterval_ups[true_branch_rs1_minterval_cnt++] = up1;
+        true_branch_rs2_minterval_los[true_branch_rs2_minterval_cnt]   = lo2;
+        true_branch_rs2_minterval_ups[true_branch_rs2_minterval_cnt++] = up2;
 
       } else if (up2 <= lo1) {
         // rs2 interval is less than or equal to rs1 interval
-        false_branch_rs1_minterval_los[mint_num_false_rs1]   = lo1;
-        false_branch_rs1_minterval_ups[mint_num_false_rs1++] = up1;
-        false_branch_rs2_minterval_los[mint_num_false_rs2]   = lo2;
-        false_branch_rs2_minterval_ups[mint_num_false_rs2++] = up2;
+        false_branch_rs1_minterval_los[false_branch_rs1_minterval_cnt]   = lo1;
+        false_branch_rs1_minterval_ups[false_branch_rs1_minterval_cnt++] = up1;
+        false_branch_rs2_minterval_los[false_branch_rs2_minterval_cnt]   = lo2;
+        false_branch_rs2_minterval_ups[false_branch_rs2_minterval_cnt++] = up2;
 
       } else if (lo2 == up2) {
         // rs2 interval is a singleton
         // a case where lo1 = up1 shouldn't be reach here
         // false case
-        false_branch_rs1_minterval_los[mint_num_false_rs1]   = lo2;
-        false_branch_rs1_minterval_ups[mint_num_false_rs1++] = up1;
-        false_branch_rs2_minterval_los[mint_num_false_rs2]   = lo2;
-        false_branch_rs2_minterval_ups[mint_num_false_rs2++] = up2;
+        false_branch_rs1_minterval_los[false_branch_rs1_minterval_cnt]   = lo2;
+        false_branch_rs1_minterval_ups[false_branch_rs1_minterval_cnt++] = up1;
+        false_branch_rs2_minterval_los[false_branch_rs2_minterval_cnt]   = lo2;
+        false_branch_rs2_minterval_ups[false_branch_rs2_minterval_cnt++] = up2;
 
         // true case
-        true_branch_rs1_minterval_los[mint_num_true_rs1]   = lo1;
-        true_branch_rs1_minterval_ups[mint_num_true_rs1++] = lo2 - 1;
-        true_branch_rs2_minterval_los[mint_num_true_rs2]   = lo2;
-        true_branch_rs2_minterval_ups[mint_num_true_rs2++] = up2;
+        true_branch_rs1_minterval_los[true_branch_rs1_minterval_cnt]   = lo1;
+        true_branch_rs1_minterval_ups[true_branch_rs1_minterval_cnt++] = lo2 - 1;
+        true_branch_rs2_minterval_los[true_branch_rs2_minterval_cnt]   = lo2;
+        true_branch_rs2_minterval_ups[true_branch_rs2_minterval_cnt++] = up2;
 
       } else if (lo1 == up1) {
         // rs1 interval is a singleton
         // false case
-        false_branch_rs1_minterval_los[mint_num_false_rs1]   = lo1;
-        false_branch_rs1_minterval_ups[mint_num_false_rs1++] = up1;
-        false_branch_rs2_minterval_los[mint_num_false_rs2]   = lo2;
-        false_branch_rs2_minterval_ups[mint_num_false_rs2++] = lo1;
+        false_branch_rs1_minterval_los[false_branch_rs1_minterval_cnt]   = lo1;
+        false_branch_rs1_minterval_ups[false_branch_rs1_minterval_cnt++] = up1;
+        false_branch_rs2_minterval_los[false_branch_rs2_minterval_cnt]   = lo2;
+        false_branch_rs2_minterval_ups[false_branch_rs2_minterval_cnt++] = lo1;
 
         // true case
-        true_branch_rs1_minterval_los[mint_num_true_rs1]   = lo1;
-        true_branch_rs1_minterval_ups[mint_num_true_rs1++] = up1;
-        true_branch_rs2_minterval_los[mint_num_true_rs2]   = lo1 + 1; // never overflow
-        true_branch_rs2_minterval_ups[mint_num_true_rs2++] = up2;
+        true_branch_rs1_minterval_los[true_branch_rs1_minterval_cnt]   = lo1;
+        true_branch_rs1_minterval_ups[true_branch_rs1_minterval_cnt++] = up1;
+        true_branch_rs2_minterval_los[true_branch_rs2_minterval_cnt]   = lo1 + 1; // never overflow
+        true_branch_rs2_minterval_ups[true_branch_rs2_minterval_cnt++] = up2;
 
       } else {
         // be careful about case [10, 20] < [20, 30] where needs a relation
@@ -1896,40 +1906,40 @@ void create_true_false_constraints(uint64_t lo1, uint64_t up1, uint64_t lo2, uin
       // rs1 interval is not wrapped around but rs2 is
       if (up1 < lo2 && up2 <= lo1) {
         // false
-        false_branch_rs1_minterval_los[mint_num_false_rs1]   = lo1;
-        false_branch_rs1_minterval_ups[mint_num_false_rs1++] = up1;
-        false_branch_rs2_minterval_los[mint_num_false_rs2]   = 0;
-        false_branch_rs2_minterval_ups[mint_num_false_rs2++] = up2;
+        false_branch_rs1_minterval_los[false_branch_rs1_minterval_cnt]   = lo1;
+        false_branch_rs1_minterval_ups[false_branch_rs1_minterval_cnt++] = up1;
+        false_branch_rs2_minterval_los[false_branch_rs2_minterval_cnt]   = 0;
+        false_branch_rs2_minterval_ups[false_branch_rs2_minterval_cnt++] = up2;
 
         // true
-        true_branch_rs1_minterval_los[mint_num_true_rs1]   = lo1;
-        true_branch_rs1_minterval_ups[mint_num_true_rs1++] = up1;
-        true_branch_rs2_minterval_los[mint_num_true_rs2]   = lo2;
-        true_branch_rs2_minterval_ups[mint_num_true_rs2++] = UINT64_MAX_T;
+        true_branch_rs1_minterval_los[true_branch_rs1_minterval_cnt]   = lo1;
+        true_branch_rs1_minterval_ups[true_branch_rs1_minterval_cnt++] = up1;
+        true_branch_rs2_minterval_los[true_branch_rs2_minterval_cnt]   = lo2;
+        true_branch_rs2_minterval_ups[true_branch_rs2_minterval_cnt++] = UINT64_MAX_T;
 
       } else if (lo1 == up1) {
         uint64_t lo_p;
         uint64_t up_p;
 
         if (lo1 >= lo2) { // upper part
-          false_branch_rs1_minterval_los[mint_num_false_rs1]   = lo1;
-          false_branch_rs1_minterval_ups[mint_num_false_rs1++] = up1;
+          false_branch_rs1_minterval_los[false_branch_rs1_minterval_cnt]   = lo1;
+          false_branch_rs1_minterval_ups[false_branch_rs1_minterval_cnt++] = up1;
           // non-empty false case 1
-          false_branch_rs2_minterval_los[mint_num_false_rs2]   = lo2;
-          false_branch_rs2_minterval_ups[mint_num_false_rs2++] = lo1;
+          false_branch_rs2_minterval_los[false_branch_rs2_minterval_cnt]   = lo2;
+          false_branch_rs2_minterval_ups[false_branch_rs2_minterval_cnt++] = lo1;
           // non-empty false case 2
-          false_branch_rs2_minterval_los[mint_num_false_rs2]   = 0;
-          false_branch_rs2_minterval_ups[mint_num_false_rs2++] = up2;
+          false_branch_rs2_minterval_los[false_branch_rs2_minterval_cnt]   = 0;
+          false_branch_rs2_minterval_ups[false_branch_rs2_minterval_cnt++] = up2;
 
           // true case
           if (lo1 != UINT64_MAX_T) {
             lo_p = compute_lower_bound(lo2, reg_steps[rs1], lo1 + 1);
             up_p = compute_upper_bound(lo1, reg_steps[rs1], UINT64_MAX_T);
             if (lo_p <= up_p) {
-              true_branch_rs1_minterval_los[mint_num_true_rs1]   = lo1;
-              true_branch_rs1_minterval_ups[mint_num_true_rs1++] = up1;
-              true_branch_rs2_minterval_los[mint_num_true_rs2]   = lo_p;
-              true_branch_rs2_minterval_ups[mint_num_true_rs2++] = up_p;
+              true_branch_rs1_minterval_los[true_branch_rs1_minterval_cnt]   = lo1;
+              true_branch_rs1_minterval_ups[true_branch_rs1_minterval_cnt++] = up1;
+              true_branch_rs2_minterval_los[true_branch_rs2_minterval_cnt]   = lo_p;
+              true_branch_rs2_minterval_ups[true_branch_rs2_minterval_cnt++] = up_p;
             }
           }
 
@@ -1938,20 +1948,20 @@ void create_true_false_constraints(uint64_t lo1, uint64_t up1, uint64_t lo2, uin
           lo_p = compute_lower_bound(lo2, reg_steps[rs1], 0);
           up_p = compute_upper_bound(lo1, reg_steps[rs1], lo1);
           if (lo_p <= up_p) {
-            false_branch_rs1_minterval_los[mint_num_false_rs1]   = lo1;
-            false_branch_rs1_minterval_ups[mint_num_false_rs1++] = up1;
-            false_branch_rs2_minterval_los[mint_num_false_rs2]   = lo_p;
-            false_branch_rs2_minterval_ups[mint_num_false_rs2++] = up_p;
+            false_branch_rs1_minterval_los[false_branch_rs1_minterval_cnt]   = lo1;
+            false_branch_rs1_minterval_ups[false_branch_rs1_minterval_cnt++] = up1;
+            false_branch_rs2_minterval_los[false_branch_rs2_minterval_cnt]   = lo_p;
+            false_branch_rs2_minterval_ups[false_branch_rs2_minterval_cnt++] = up_p;
           }
 
-          true_branch_rs1_minterval_los[mint_num_true_rs1]   = lo1;
-          true_branch_rs1_minterval_ups[mint_num_true_rs1++] = up1;
+          true_branch_rs1_minterval_los[true_branch_rs1_minterval_cnt]   = lo1;
+          true_branch_rs1_minterval_ups[true_branch_rs1_minterval_cnt++] = up1;
           // non-empty true case 1
-          true_branch_rs2_minterval_los[mint_num_true_rs2]   = lo1 + 1;
-          true_branch_rs2_minterval_ups[mint_num_true_rs2++] = up2;
+          true_branch_rs2_minterval_los[true_branch_rs2_minterval_cnt]   = lo1 + 1;
+          true_branch_rs2_minterval_ups[true_branch_rs2_minterval_cnt++] = up2;
           // non-empty true case 2
-          true_branch_rs2_minterval_los[mint_num_true_rs2]   = lo2;
-          true_branch_rs2_minterval_ups[mint_num_true_rs2++] = UINT64_MAX_T;
+          true_branch_rs2_minterval_los[true_branch_rs2_minterval_cnt]   = lo2;
+          true_branch_rs2_minterval_ups[true_branch_rs2_minterval_cnt++] = UINT64_MAX_T;
         }
 
       } else {
@@ -1964,16 +1974,16 @@ void create_true_false_constraints(uint64_t lo1, uint64_t up1, uint64_t lo2, uin
     // rs2 interval is not wrapped around but rs1 is
     if (up1 < lo2 && up2 <= lo1) {
       // false case
-      false_branch_rs1_minterval_los[mint_num_false_rs1]   = lo1;
-      false_branch_rs1_minterval_ups[mint_num_false_rs1++] = UINT64_MAX_T;
-      false_branch_rs2_minterval_los[mint_num_false_rs2]   = lo2;
-      false_branch_rs2_minterval_ups[mint_num_false_rs2++] = up2;
+      false_branch_rs1_minterval_los[false_branch_rs1_minterval_cnt]   = lo1;
+      false_branch_rs1_minterval_ups[false_branch_rs1_minterval_cnt++] = UINT64_MAX_T;
+      false_branch_rs2_minterval_los[false_branch_rs2_minterval_cnt]   = lo2;
+      false_branch_rs2_minterval_ups[false_branch_rs2_minterval_cnt++] = up2;
 
       // true case
-      true_branch_rs1_minterval_los[mint_num_true_rs1]   = 0;
-      true_branch_rs1_minterval_ups[mint_num_true_rs1++] = up1;
-      true_branch_rs2_minterval_los[mint_num_true_rs2]   = lo2;
-      true_branch_rs2_minterval_ups[mint_num_true_rs2++] = up2;
+      true_branch_rs1_minterval_los[true_branch_rs1_minterval_cnt]   = 0;
+      true_branch_rs1_minterval_ups[true_branch_rs1_minterval_cnt++] = up1;
+      true_branch_rs2_minterval_los[true_branch_rs2_minterval_cnt]   = lo2;
+      true_branch_rs2_minterval_ups[true_branch_rs2_minterval_cnt++] = up2;
     } else if (lo2 == up2) {
       // construct constraint for true case
       uint64_t lo_p;
@@ -1984,42 +1994,42 @@ void create_true_false_constraints(uint64_t lo1, uint64_t up1, uint64_t lo2, uin
         lo_p = compute_lower_bound(lo1, reg_steps[rs1], lo2);
         up_p = compute_upper_bound(lo1, reg_steps[rs1], UINT64_MAX_T);
         if (lo_p <= up_p) {
-          false_branch_rs1_minterval_los[mint_num_false_rs1]   = lo_p;
-          false_branch_rs1_minterval_ups[mint_num_false_rs1++] = up_p;
-          false_branch_rs2_minterval_los[mint_num_false_rs2]   = lo2;
-          false_branch_rs2_minterval_ups[mint_num_false_rs2++] = up2;
+          false_branch_rs1_minterval_los[false_branch_rs1_minterval_cnt]   = lo_p;
+          false_branch_rs1_minterval_ups[false_branch_rs1_minterval_cnt++] = up_p;
+          false_branch_rs2_minterval_los[false_branch_rs2_minterval_cnt]   = lo2;
+          false_branch_rs2_minterval_ups[false_branch_rs2_minterval_cnt++] = up2;
         }
 
         // non-empty true 1
-        true_branch_rs1_minterval_los[mint_num_true_rs1]   = lo1;
-        true_branch_rs1_minterval_ups[mint_num_true_rs1++] = lo2 - 1; // never lo2 = 0
+        true_branch_rs1_minterval_los[true_branch_rs1_minterval_cnt]   = lo1;
+        true_branch_rs1_minterval_ups[true_branch_rs1_minterval_cnt++] = lo2 - 1; // never lo2 = 0
         // non-empty true 2
-        true_branch_rs1_minterval_los[mint_num_true_rs1]   = 0;
-        true_branch_rs1_minterval_ups[mint_num_true_rs1++] = up1;
+        true_branch_rs1_minterval_los[true_branch_rs1_minterval_cnt]   = 0;
+        true_branch_rs1_minterval_ups[true_branch_rs1_minterval_cnt++] = up1;
 
-        true_branch_rs2_minterval_los[mint_num_true_rs2]   = lo2;
-        true_branch_rs2_minterval_ups[mint_num_true_rs2++] = up2;
+        true_branch_rs2_minterval_los[true_branch_rs2_minterval_cnt]   = lo2;
+        true_branch_rs2_minterval_ups[true_branch_rs2_minterval_cnt++] = up2;
 
       } else {
         // non-empty false case 1
-        false_branch_rs1_minterval_los[mint_num_false_rs1]   = lo2;
-        false_branch_rs1_minterval_ups[mint_num_false_rs1++] = up1;
+        false_branch_rs1_minterval_los[false_branch_rs1_minterval_cnt]   = lo2;
+        false_branch_rs1_minterval_ups[false_branch_rs1_minterval_cnt++] = up1;
         // non-empty false case 2
-        false_branch_rs1_minterval_los[mint_num_false_rs1]   = lo1;
-        false_branch_rs1_minterval_ups[mint_num_false_rs1++] = UINT64_MAX_T;
+        false_branch_rs1_minterval_los[false_branch_rs1_minterval_cnt]   = lo1;
+        false_branch_rs1_minterval_ups[false_branch_rs1_minterval_cnt++] = UINT64_MAX_T;
 
-        false_branch_rs2_minterval_los[mint_num_false_rs2]   = lo2;
-        false_branch_rs2_minterval_ups[mint_num_false_rs2++] = up2;
+        false_branch_rs2_minterval_los[false_branch_rs2_minterval_cnt]   = lo2;
+        false_branch_rs2_minterval_ups[false_branch_rs2_minterval_cnt++] = up2;
 
         // true case
         if (lo2 != 0) {
           lo_p = compute_lower_bound(lo1, reg_steps[rs1], 0);
           up_p = compute_upper_bound(lo1, reg_steps[rs1], lo2 - 1);
           if (lo_p <= up_p) {
-            true_branch_rs1_minterval_los[mint_num_true_rs1]   = lo_p;
-            true_branch_rs1_minterval_ups[mint_num_true_rs1++] = up_p;
-            true_branch_rs2_minterval_los[mint_num_true_rs2]   = lo2;
-            true_branch_rs2_minterval_ups[mint_num_true_rs2++] = up2;
+            true_branch_rs1_minterval_los[true_branch_rs1_minterval_cnt]   = lo_p;
+            true_branch_rs1_minterval_ups[true_branch_rs1_minterval_cnt++] = up_p;
+            true_branch_rs2_minterval_los[true_branch_rs2_minterval_cnt]   = lo2;
+            true_branch_rs2_minterval_ups[true_branch_rs2_minterval_cnt++] = up2;
           }
         }
       }
@@ -2047,43 +2057,43 @@ void create_mconstraints(std::vector<uint64_t>& lo1_p, std::vector<uint64_t>& up
   uint64_t lo2;
   uint64_t up2;
 
-  mint_num_true_rs1  = 0;
-  mint_num_true_rs2  = 0;
-  mint_num_false_rs1 = 0;
-  mint_num_false_rs2 = 0;
+  true_branch_rs1_minterval_cnt  = 0;
+  true_branch_rs2_minterval_cnt  = 0;
+  false_branch_rs1_minterval_cnt = 0;
+  false_branch_rs2_minterval_cnt = 0;
 
-  for (uint32_t i = 0; i < reg_mints_idx[rs1]; i++) {
+  for (uint32_t i = 0; i < reg_mintervals_cnts[rs1]; i++) {
     lo1 = lo1_p[i];
     up1 = up1_p[i];
-    for (uint32_t j = 0; j < reg_mints_idx[rs2]; j++) {
+    for (uint32_t j = 0; j < reg_mintervals_cnts[rs2]; j++) {
       lo2 = lo2_p[j];
       up2 = up2_p[j];
       create_true_false_constraints(lo1, up1, lo2, up2);
     }
   }
 
-  if (mint_num_true_rs1 > 0 && mint_num_true_rs2 > 0)
+  if (true_branch_rs1_minterval_cnt > 0 && true_branch_rs2_minterval_cnt > 0)
     true_reachable  = true;
-  if (mint_num_false_rs1 > 0 && mint_num_false_rs2 > 0)
+  if (false_branch_rs1_minterval_cnt > 0 && false_branch_rs2_minterval_cnt > 0)
     false_reachable = true;
 
   if (true_reachable) {
     if (false_reachable) {
-      constrain_memory(rs1, true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, mint_num_true_rs1, trb, false);
-      constrain_memory(rs2, true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, mint_num_true_rs2, trb, false);
+      constrain_memory(rs1, true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, true_branch_rs1_minterval_cnt, trb, false);
+      constrain_memory(rs2, true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, true_branch_rs2_minterval_cnt, trb, false);
       take_branch(1, 1);
-      constrain_memory(rs1, false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups,mint_num_false_rs1, trb, false);
-      constrain_memory(rs2, false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups,mint_num_false_rs2, trb, false);
+      constrain_memory(rs1, false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups,false_branch_rs1_minterval_cnt, trb, false);
+      constrain_memory(rs2, false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups,false_branch_rs2_minterval_cnt, trb, false);
       take_branch(0, 0);
     } else {
-      constrain_memory(rs1, true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, mint_num_true_rs1, trb, true);
-      constrain_memory(rs2, true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, mint_num_true_rs2, trb, true);
+      constrain_memory(rs1, true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, true_branch_rs1_minterval_cnt, trb, true);
+      constrain_memory(rs2, true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, true_branch_rs2_minterval_cnt, trb, true);
       is_only_one_branch_reachable = true;
       take_branch(1, 0);
     }
   } else if (false_reachable) {
-    constrain_memory(rs1, false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups,mint_num_false_rs1, trb, true);
-    constrain_memory(rs2, false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups,mint_num_false_rs2, trb, true);
+    constrain_memory(rs1, false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups,false_branch_rs1_minterval_cnt, trb, true);
+    constrain_memory(rs2, false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups,false_branch_rs2_minterval_cnt, trb, true);
     is_only_one_branch_reachable = true;
     take_branch(0, 0);
   } else {
@@ -2100,39 +2110,39 @@ void create_mconstraints_lptr(uint64_t lo1, uint64_t up1, std::vector<uint64_t>&
   uint64_t lo2;
   uint64_t up2;
 
-  mint_num_true_rs1  = 0;
-  mint_num_true_rs2  = 0;
-  mint_num_false_rs1 = 0;
-  mint_num_false_rs2 = 0;
+  true_branch_rs1_minterval_cnt  = 0;
+  true_branch_rs2_minterval_cnt  = 0;
+  false_branch_rs1_minterval_cnt = 0;
+  false_branch_rs2_minterval_cnt = 0;
 
-  for (uint32_t j = 0; j < reg_mints_idx[rs2]; j++) {
+  for (uint32_t j = 0; j < reg_mintervals_cnts[rs2]; j++) {
     lo2 = lo2_p[j];
     up2 = up2_p[j];
     create_true_false_constraints(lo1, up1, lo2, up2);
   }
 
-  if (mint_num_true_rs1 > 0 && mint_num_true_rs2 > 0)
+  if (true_branch_rs1_minterval_cnt > 0 && true_branch_rs2_minterval_cnt > 0)
     true_reachable  = true;
-  if (mint_num_false_rs1 > 0 && mint_num_false_rs2 > 0)
+  if (false_branch_rs1_minterval_cnt > 0 && false_branch_rs2_minterval_cnt > 0)
     false_reachable = true;
 
   if (true_reachable) {
     if (false_reachable) {
-      constrain_memory(rs1, true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, mint_num_true_rs1, trb, false);
-      constrain_memory(rs2, true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, mint_num_true_rs2, trb, false);
+      constrain_memory(rs1, true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, true_branch_rs1_minterval_cnt, trb, false);
+      constrain_memory(rs2, true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, true_branch_rs2_minterval_cnt, trb, false);
       take_branch(1, 1);
-      constrain_memory(rs1, false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups,mint_num_false_rs1, trb, false);
-      constrain_memory(rs2, false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups,mint_num_false_rs2, trb, false);
+      constrain_memory(rs1, false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups,false_branch_rs1_minterval_cnt, trb, false);
+      constrain_memory(rs2, false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups,false_branch_rs2_minterval_cnt, trb, false);
       take_branch(0, 0);
     } else {
-      constrain_memory(rs1, true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, mint_num_true_rs1, trb, true);
-      constrain_memory(rs2, true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, mint_num_true_rs2, trb, true);
+      constrain_memory(rs1, true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, true_branch_rs1_minterval_cnt, trb, true);
+      constrain_memory(rs2, true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, true_branch_rs2_minterval_cnt, trb, true);
       is_only_one_branch_reachable = true;
       take_branch(1, 0);
     }
   } else if (false_reachable) {
-    constrain_memory(rs1, false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups,mint_num_false_rs1, trb, true);
-    constrain_memory(rs2, false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups,mint_num_false_rs2, trb, true);
+    constrain_memory(rs1, false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups,false_branch_rs1_minterval_cnt, trb, true);
+    constrain_memory(rs2, false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups,false_branch_rs2_minterval_cnt, trb, true);
     is_only_one_branch_reachable = true;
     take_branch(0, 0);
   } else {
@@ -2148,39 +2158,39 @@ void create_mconstraints_rptr(std::vector<uint64_t>& lo1_p, std::vector<uint64_t
   uint64_t lo1;
   uint64_t up1;
 
-  mint_num_true_rs1  = 0;
-  mint_num_true_rs2  = 0;
-  mint_num_false_rs1 = 0;
-  mint_num_false_rs2 = 0;
+  true_branch_rs1_minterval_cnt  = 0;
+  true_branch_rs2_minterval_cnt  = 0;
+  false_branch_rs1_minterval_cnt = 0;
+  false_branch_rs2_minterval_cnt = 0;
 
-  for (uint32_t i = 0; i < reg_mints_idx[rs1]; i++) {
+  for (uint32_t i = 0; i < reg_mintervals_cnts[rs1]; i++) {
     lo1 = lo1_p[i];
     up1 = up1_p[i];
     create_true_false_constraints(lo1, up1, lo2, up2);
   }
 
-  if (mint_num_true_rs1 > 0 && mint_num_true_rs2 > 0)
+  if (true_branch_rs1_minterval_cnt > 0 && true_branch_rs2_minterval_cnt > 0)
     true_reachable  = true;
-  if (mint_num_false_rs1 > 0 && mint_num_false_rs2 > 0)
+  if (false_branch_rs1_minterval_cnt > 0 && false_branch_rs2_minterval_cnt > 0)
     false_reachable = true;
 
   if (true_reachable) {
     if (false_reachable) {
-      constrain_memory(rs1, true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, mint_num_true_rs1, trb, false);
-      constrain_memory(rs2, true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, mint_num_true_rs2, trb, false);
+      constrain_memory(rs1, true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, true_branch_rs1_minterval_cnt, trb, false);
+      constrain_memory(rs2, true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, true_branch_rs2_minterval_cnt, trb, false);
       take_branch(1, 1);
-      constrain_memory(rs1, false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups,mint_num_false_rs1, trb, false);
-      constrain_memory(rs2, false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups,mint_num_false_rs2, trb, false);
+      constrain_memory(rs1, false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups,false_branch_rs1_minterval_cnt, trb, false);
+      constrain_memory(rs2, false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups,false_branch_rs2_minterval_cnt, trb, false);
       take_branch(0, 0);
     } else {
-      constrain_memory(rs1, true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, mint_num_true_rs1, trb, true);
-      constrain_memory(rs2, true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, mint_num_true_rs2, trb, true);
+      constrain_memory(rs1, true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, true_branch_rs1_minterval_cnt, trb, true);
+      constrain_memory(rs2, true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, true_branch_rs2_minterval_cnt, trb, true);
       is_only_one_branch_reachable = true;
       take_branch(1, 0);
     }
   } else if (false_reachable) {
-    constrain_memory(rs1, false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups,mint_num_false_rs1, trb, true);
-    constrain_memory(rs2, false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups,mint_num_false_rs2, trb, true);
+    constrain_memory(rs1, false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups,false_branch_rs1_minterval_cnt, trb, true);
+    constrain_memory(rs2, false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups,false_branch_rs2_minterval_cnt, trb, true);
     is_only_one_branch_reachable = true;
     take_branch(0, 0);
   } else {
@@ -2198,66 +2208,66 @@ bool create_xor_true_false_constraints(uint64_t lo1, uint64_t up1, uint64_t lo2,
       // rs2 non-wrapped
       if (up1 < lo2) {
         // rs1 interval is strictly less than rs2 interval
-        true_branch_rs1_minterval_los[mint_num_true_rs1]   = lo1;
-        true_branch_rs1_minterval_ups[mint_num_true_rs1++] = up1;
-        true_branch_rs2_minterval_los[mint_num_true_rs2]   = lo2;
-        true_branch_rs2_minterval_ups[mint_num_true_rs2++] = up2;
+        true_branch_rs1_minterval_los[true_branch_rs1_minterval_cnt]   = lo1;
+        true_branch_rs1_minterval_ups[true_branch_rs1_minterval_cnt++] = up1;
+        true_branch_rs2_minterval_los[true_branch_rs2_minterval_cnt]   = lo2;
+        true_branch_rs2_minterval_ups[true_branch_rs2_minterval_cnt++] = up2;
 
       } else if (up2 < lo1) {
         // rs2 interval is strictly less than rs1 interval
-        true_branch_rs1_minterval_los[mint_num_true_rs1]   = lo1;
-        true_branch_rs1_minterval_ups[mint_num_true_rs1++] = up1;
-        true_branch_rs2_minterval_los[mint_num_true_rs2]   = lo2;
-        true_branch_rs2_minterval_ups[mint_num_true_rs2++] = up2;
+        true_branch_rs1_minterval_los[true_branch_rs1_minterval_cnt]   = lo1;
+        true_branch_rs1_minterval_ups[true_branch_rs1_minterval_cnt++] = up1;
+        true_branch_rs2_minterval_los[true_branch_rs2_minterval_cnt]   = lo2;
+        true_branch_rs2_minterval_ups[true_branch_rs2_minterval_cnt++] = up2;
 
       } else if (lo2 == up2) {
         // rs2 interval is a singleton
         /* one of the true cases are definitly happens since rs1 at least has two values. */
-        true_branch_rs2_minterval_los[mint_num_true_rs2]   = lo2;
-        true_branch_rs2_minterval_ups[mint_num_true_rs2++] = up2;
+        true_branch_rs2_minterval_los[true_branch_rs2_minterval_cnt]   = lo2;
+        true_branch_rs2_minterval_ups[true_branch_rs2_minterval_cnt++] = up2;
         // true case 1
         if (lo2 != lo1) {
           // non empty
-          true_branch_rs1_minterval_los[mint_num_true_rs1]   = lo1;
-          true_branch_rs1_minterval_ups[mint_num_true_rs1++] = lo2 - 1;
+          true_branch_rs1_minterval_los[true_branch_rs1_minterval_cnt]   = lo1;
+          true_branch_rs1_minterval_ups[true_branch_rs1_minterval_cnt++] = lo2 - 1;
         }
         // true case 2
         if (lo2 != up1) {
           // non empty
-          true_branch_rs1_minterval_los[mint_num_true_rs1]   = lo2 + 1;
-          true_branch_rs1_minterval_ups[mint_num_true_rs1++] = up1;
+          true_branch_rs1_minterval_los[true_branch_rs1_minterval_cnt]   = lo2 + 1;
+          true_branch_rs1_minterval_ups[true_branch_rs1_minterval_cnt++] = up1;
         }
 
         // check emptiness of false case
         if ((lo2 - lo1) % reg_steps[rs1] == 0) {
-          false_branch_rs1_minterval_los[mint_num_false_rs1]   = lo2;
-          false_branch_rs1_minterval_ups[mint_num_false_rs1++] = up2;
-          false_branch_rs2_minterval_los[mint_num_false_rs2]   = lo2;
-          false_branch_rs2_minterval_ups[mint_num_false_rs2++] = up2;
+          false_branch_rs1_minterval_los[false_branch_rs1_minterval_cnt]   = lo2;
+          false_branch_rs1_minterval_ups[false_branch_rs1_minterval_cnt++] = up2;
+          false_branch_rs2_minterval_los[false_branch_rs2_minterval_cnt]   = lo2;
+          false_branch_rs2_minterval_ups[false_branch_rs2_minterval_cnt++] = up2;
         }
 
       } else if (lo1 == up1) {
         // rs1 interval is a singleton
-        true_branch_rs1_minterval_los[mint_num_true_rs1]   = lo1;
-        true_branch_rs1_minterval_ups[mint_num_true_rs1++] = up1;
+        true_branch_rs1_minterval_los[true_branch_rs1_minterval_cnt]   = lo1;
+        true_branch_rs1_minterval_ups[true_branch_rs1_minterval_cnt++] = up1;
         // true case 1
         if (lo1 != lo2) {
-          true_branch_rs2_minterval_los[mint_num_true_rs2]   = lo2;
-          true_branch_rs2_minterval_ups[mint_num_true_rs2++] = lo1 - 1;
+          true_branch_rs2_minterval_los[true_branch_rs2_minterval_cnt]   = lo2;
+          true_branch_rs2_minterval_ups[true_branch_rs2_minterval_cnt++] = lo1 - 1;
         }
         // true case 2
         if (lo1 != up2) {
           // non empty
-          true_branch_rs2_minterval_los[mint_num_true_rs2]   = lo1 + 1;
-          true_branch_rs2_minterval_ups[mint_num_true_rs2++] = up2;
+          true_branch_rs2_minterval_los[true_branch_rs2_minterval_cnt]   = lo1 + 1;
+          true_branch_rs2_minterval_ups[true_branch_rs2_minterval_cnt++] = up2;
         }
 
         // check emptiness of false case
         if ( (lo1 - lo2) % reg_steps[rs2] == 0) {
-          false_branch_rs1_minterval_los[mint_num_false_rs1]   = lo1;
-          false_branch_rs1_minterval_ups[mint_num_false_rs1++] = up1;
-          false_branch_rs2_minterval_los[mint_num_false_rs2]   = lo1;
-          false_branch_rs2_minterval_ups[mint_num_false_rs2++] = up1;
+          false_branch_rs1_minterval_los[false_branch_rs1_minterval_cnt]   = lo1;
+          false_branch_rs1_minterval_ups[false_branch_rs1_minterval_cnt++] = up1;
+          false_branch_rs2_minterval_los[false_branch_rs2_minterval_cnt]   = lo1;
+          false_branch_rs2_minterval_ups[false_branch_rs2_minterval_cnt++] = up1;
         }
 
       } else {
@@ -2268,33 +2278,33 @@ bool create_xor_true_false_constraints(uint64_t lo1, uint64_t up1, uint64_t lo2,
       // rs2 wrapped
       if (up1 < lo2 && up2 < lo1) {
         // true case
-        true_branch_rs1_minterval_los[mint_num_true_rs1]   = lo1;
-        true_branch_rs1_minterval_ups[mint_num_true_rs1++] = up1;
-        true_branch_rs2_minterval_los[mint_num_true_rs2]   = lo2;
-        true_branch_rs2_minterval_ups[mint_num_true_rs2++] = up2;
+        true_branch_rs1_minterval_los[true_branch_rs1_minterval_cnt]   = lo1;
+        true_branch_rs1_minterval_ups[true_branch_rs1_minterval_cnt++] = up1;
+        true_branch_rs2_minterval_los[true_branch_rs2_minterval_cnt]   = lo2;
+        true_branch_rs2_minterval_ups[true_branch_rs2_minterval_cnt++] = up2;
 
       } else if (lo1 == up1) {
-        true_branch_rs1_minterval_los[mint_num_true_rs1]   = lo1;
-        true_branch_rs1_minterval_ups[mint_num_true_rs1++] = up1;
+        true_branch_rs1_minterval_los[true_branch_rs1_minterval_cnt]   = lo1;
+        true_branch_rs1_minterval_ups[true_branch_rs1_minterval_cnt++] = up1;
         // true case 1
         if (lo1 != lo2) {
           // non empty
-          true_branch_rs2_minterval_los[mint_num_true_rs2]   = lo2;
-          true_branch_rs2_minterval_ups[mint_num_true_rs2++] = lo1 - 1;
+          true_branch_rs2_minterval_los[true_branch_rs2_minterval_cnt]   = lo2;
+          true_branch_rs2_minterval_ups[true_branch_rs2_minterval_cnt++] = lo1 - 1;
         }
         // true case 2
         if (lo1 != up2) {
           // non empty
-          true_branch_rs2_minterval_los[mint_num_true_rs2]   = lo1 + 1;
-          true_branch_rs2_minterval_ups[mint_num_true_rs2++] = up2;
+          true_branch_rs2_minterval_los[true_branch_rs2_minterval_cnt]   = lo1 + 1;
+          true_branch_rs2_minterval_ups[true_branch_rs2_minterval_cnt++] = up2;
         }
 
         // check emptiness of false case
         if ((lo1 - lo2) % reg_steps[rs2] == 0) {
-          false_branch_rs1_minterval_los[mint_num_false_rs1]   = lo1;
-          false_branch_rs1_minterval_ups[mint_num_false_rs1++] = up1;
-          false_branch_rs2_minterval_los[mint_num_false_rs2]   = lo1;
-          false_branch_rs2_minterval_ups[mint_num_false_rs2++] = up1;
+          false_branch_rs1_minterval_los[false_branch_rs1_minterval_cnt]   = lo1;
+          false_branch_rs1_minterval_ups[false_branch_rs1_minterval_cnt++] = up1;
+          false_branch_rs2_minterval_los[false_branch_rs2_minterval_cnt]   = lo1;
+          false_branch_rs2_minterval_ups[false_branch_rs2_minterval_cnt++] = up1;
         }
 
       } else {
@@ -2307,33 +2317,33 @@ bool create_xor_true_false_constraints(uint64_t lo1, uint64_t up1, uint64_t lo2,
     // rs1 wrapped, rs2 non-wrapped
     if (up2 < lo1 && up1 < lo2) {
       // true case
-      true_branch_rs1_minterval_los[mint_num_true_rs1]   = lo1;
-      true_branch_rs1_minterval_ups[mint_num_true_rs1++] = up1;
-      true_branch_rs2_minterval_los[mint_num_true_rs2]   = lo2;
-      true_branch_rs2_minterval_ups[mint_num_true_rs2++] = up2;
+      true_branch_rs1_minterval_los[true_branch_rs1_minterval_cnt]   = lo1;
+      true_branch_rs1_minterval_ups[true_branch_rs1_minterval_cnt++] = up1;
+      true_branch_rs2_minterval_los[true_branch_rs2_minterval_cnt]   = lo2;
+      true_branch_rs2_minterval_ups[true_branch_rs2_minterval_cnt++] = up2;
 
     } else if (lo2 == up2) {
-      true_branch_rs2_minterval_los[mint_num_true_rs2]   = lo2;
-      true_branch_rs2_minterval_ups[mint_num_true_rs2++] = up2;
+      true_branch_rs2_minterval_los[true_branch_rs2_minterval_cnt]   = lo2;
+      true_branch_rs2_minterval_ups[true_branch_rs2_minterval_cnt++] = up2;
       // true case 1
       if (lo2 != lo1) {
         // non empty
-        true_branch_rs1_minterval_los[mint_num_true_rs1]   = lo1;
-        true_branch_rs1_minterval_ups[mint_num_true_rs1++] = lo2 - 1;
+        true_branch_rs1_minterval_los[true_branch_rs1_minterval_cnt]   = lo1;
+        true_branch_rs1_minterval_ups[true_branch_rs1_minterval_cnt++] = lo2 - 1;
       }
       // true case 2
       if (lo2 != up1) {
         // non empty
-        true_branch_rs1_minterval_los[mint_num_true_rs1]   = lo2 + 1;
-        true_branch_rs1_minterval_ups[mint_num_true_rs1++] = up1;
+        true_branch_rs1_minterval_los[true_branch_rs1_minterval_cnt]   = lo2 + 1;
+        true_branch_rs1_minterval_ups[true_branch_rs1_minterval_cnt++] = up1;
       }
 
       // check emptiness of false case
       if ((lo2 - lo1) % reg_steps[rs1] == 0) {
-        false_branch_rs1_minterval_los[mint_num_false_rs1]   = lo2;
-        false_branch_rs1_minterval_ups[mint_num_false_rs1++] = up2;
-        false_branch_rs2_minterval_los[mint_num_false_rs2]   = lo2;
-        false_branch_rs2_minterval_ups[mint_num_false_rs2++] = up2;
+        false_branch_rs1_minterval_los[false_branch_rs1_minterval_cnt]   = lo2;
+        false_branch_rs1_minterval_ups[false_branch_rs1_minterval_cnt++] = up2;
+        false_branch_rs2_minterval_los[false_branch_rs2_minterval_cnt]   = lo2;
+        false_branch_rs2_minterval_ups[false_branch_rs2_minterval_cnt++] = up2;
       }
 
     } else {
@@ -2360,15 +2370,15 @@ void create_xor_mconstraints(std::vector<uint64_t>& lo1_p, std::vector<uint64_t>
   uint64_t lo2;
   uint64_t up2;
 
-  mint_num_true_rs1  = 0;
-  mint_num_true_rs2  = 0;
-  mint_num_false_rs1 = 0;
-  mint_num_false_rs2 = 0;
+  true_branch_rs1_minterval_cnt  = 0;
+  true_branch_rs2_minterval_cnt  = 0;
+  false_branch_rs1_minterval_cnt = 0;
+  false_branch_rs2_minterval_cnt = 0;
 
-  for (uint32_t i = 0; i < reg_mints_idx[rs1]; i++) {
+  for (uint32_t i = 0; i < reg_mintervals_cnts[rs1]; i++) {
     lo1 = lo1_p[i];
     up1 = up1_p[i];
-    for (uint32_t j = 0; j < reg_mints_idx[rs2]; j++) {
+    for (uint32_t j = 0; j < reg_mintervals_cnts[rs2]; j++) {
       lo2 = lo2_p[j];
       up2 = up2_p[j];
       cannot_handle = create_xor_true_false_constraints(lo1, up1, lo2, up2);
@@ -2376,11 +2386,11 @@ void create_xor_mconstraints(std::vector<uint64_t>& lo1_p, std::vector<uint64_t>
   }
 
   if (cannot_handle) {
-    if (reg_mints_idx[rs1] == 1 && reg_mints_idx[rs2] == 1) {
-      if (steps[current_rs1_tc] > 1) {
-        if (steps[current_rs2_tc] > 1) {
-          uint64_t los_diff = (mintervals_los[current_rs1_tc][0] >= mintervals_los[current_rs2_tc][0]) ? (mintervals_los[current_rs1_tc][0] - mintervals_los[current_rs2_tc][0]) : (mintervals_los[current_rs2_tc][0] - mintervals_los[current_rs1_tc][0]);
-          if ( los_diff % gcd(steps[current_rs1_tc], steps[current_rs2_tc]) != 0) {
+    if (reg_mintervals_cnts[rs1] == 1 && reg_mintervals_cnts[rs2] == 1) {
+      if (steps[tc_before_branch_evaluation_rs1] > 1) {
+        if (steps[tc_before_branch_evaluation_rs2] > 1) {
+          uint64_t los_diff = (mintervals_los[tc_before_branch_evaluation_rs1][0] >= mintervals_los[tc_before_branch_evaluation_rs2][0]) ? (mintervals_los[tc_before_branch_evaluation_rs1][0] - mintervals_los[tc_before_branch_evaluation_rs2][0]) : (mintervals_los[tc_before_branch_evaluation_rs2][0] - mintervals_los[tc_before_branch_evaluation_rs1][0]);
+          if ( los_diff % gcd(steps[tc_before_branch_evaluation_rs1], steps[tc_before_branch_evaluation_rs2]) != 0) {
             constrain_memory(rs1, zero_v, zero_v, 0, trb, true);
             constrain_memory(rs2, zero_v, zero_v, 0, trb, true);
 
@@ -2399,28 +2409,28 @@ void create_xor_mconstraints(std::vector<uint64_t>& lo1_p, std::vector<uint64_t>
     }
 
   } else {
-    if (mint_num_true_rs1 > 0 && mint_num_true_rs2 > 0)
+    if (true_branch_rs1_minterval_cnt > 0 && true_branch_rs2_minterval_cnt > 0)
       true_reachable  = true;
-    if (mint_num_false_rs1 > 0 && mint_num_false_rs2 > 0)
+    if (false_branch_rs1_minterval_cnt > 0 && false_branch_rs2_minterval_cnt > 0)
       false_reachable = true;
 
     if (true_reachable) {
       if (false_reachable) {
-        constrain_memory(rs1, true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, mint_num_true_rs1, trb, false);
-        constrain_memory(rs2, true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, mint_num_true_rs2, trb, false);
+        constrain_memory(rs1, true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, true_branch_rs1_minterval_cnt, trb, false);
+        constrain_memory(rs2, true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, true_branch_rs2_minterval_cnt, trb, false);
         take_branch(1, 1);
-        constrain_memory(rs1, false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups,mint_num_false_rs1, trb, false);
-        constrain_memory(rs2, false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups,mint_num_false_rs2, trb, false);
+        constrain_memory(rs1, false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups,false_branch_rs1_minterval_cnt, trb, false);
+        constrain_memory(rs2, false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups,false_branch_rs2_minterval_cnt, trb, false);
         take_branch(0, 0);
       } else {
-        constrain_memory(rs1, true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, mint_num_true_rs1, trb, true);
-        constrain_memory(rs2, true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, mint_num_true_rs2, trb, true);
+        constrain_memory(rs1, true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, true_branch_rs1_minterval_cnt, trb, true);
+        constrain_memory(rs2, true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, true_branch_rs2_minterval_cnt, trb, true);
         is_only_one_branch_reachable = true;
         take_branch(1, 0);
       }
     } else if (false_reachable) {
-      constrain_memory(rs1, false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups,mint_num_false_rs1, trb, true);
-      constrain_memory(rs2, false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups,mint_num_false_rs2, trb, true);
+      constrain_memory(rs1, false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups,false_branch_rs1_minterval_cnt, trb, true);
+      constrain_memory(rs2, false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups,false_branch_rs2_minterval_cnt, trb, true);
       is_only_one_branch_reachable = true;
       take_branch(0, 0);
     } else {
@@ -2438,23 +2448,23 @@ void create_xor_mconstraints_lptr(uint64_t lo1, uint64_t up1, std::vector<uint64
   uint64_t lo2;
   uint64_t up2;
 
-  mint_num_true_rs1  = 0;
-  mint_num_true_rs2  = 0;
-  mint_num_false_rs1 = 0;
-  mint_num_false_rs2 = 0;
+  true_branch_rs1_minterval_cnt  = 0;
+  true_branch_rs2_minterval_cnt  = 0;
+  false_branch_rs1_minterval_cnt = 0;
+  false_branch_rs2_minterval_cnt = 0;
 
-  for (uint32_t j = 0; j < reg_mints_idx[rs2]; j++) {
+  for (uint32_t j = 0; j < reg_mintervals_cnts[rs2]; j++) {
     lo2 = lo2_p[j];
     up2 = up2_p[j];
     cannot_handle = create_xor_true_false_constraints(lo1, up1, lo2, up2);
   }
 
   if (cannot_handle) {
-    if (reg_mints_idx[rs1] == 1 && reg_mints_idx[rs2] == 1) {
-      if (steps[current_rs1_tc] > 1) {
-        if (steps[current_rs2_tc] > 1) {
-          uint64_t los_diff = (mintervals_los[current_rs1_tc][0] >= mintervals_los[current_rs2_tc][0]) ? (mintervals_los[current_rs1_tc][0] - mintervals_los[current_rs2_tc][0]) : (mintervals_los[current_rs2_tc][0] - mintervals_los[current_rs1_tc][0]);
-          if ( los_diff % gcd(steps[current_rs1_tc], steps[current_rs2_tc]) != 0) {
+    if (reg_mintervals_cnts[rs1] == 1 && reg_mintervals_cnts[rs2] == 1) {
+      if (steps[tc_before_branch_evaluation_rs1] > 1) {
+        if (steps[tc_before_branch_evaluation_rs2] > 1) {
+          uint64_t los_diff = (mintervals_los[tc_before_branch_evaluation_rs1][0] >= mintervals_los[tc_before_branch_evaluation_rs2][0]) ? (mintervals_los[tc_before_branch_evaluation_rs1][0] - mintervals_los[tc_before_branch_evaluation_rs2][0]) : (mintervals_los[tc_before_branch_evaluation_rs2][0] - mintervals_los[tc_before_branch_evaluation_rs1][0]);
+          if ( los_diff % gcd(steps[tc_before_branch_evaluation_rs1], steps[tc_before_branch_evaluation_rs2]) != 0) {
             constrain_memory(rs1, zero_v, zero_v, 0, trb, true);
             constrain_memory(rs2, zero_v, zero_v, 0, trb, true);
 
@@ -2473,28 +2483,28 @@ void create_xor_mconstraints_lptr(uint64_t lo1, uint64_t up1, std::vector<uint64
     }
 
   } else {
-    if (mint_num_true_rs1 > 0 && mint_num_true_rs2 > 0)
+    if (true_branch_rs1_minterval_cnt > 0 && true_branch_rs2_minterval_cnt > 0)
       true_reachable  = true;
-    if (mint_num_false_rs1 > 0 && mint_num_false_rs2 > 0)
+    if (false_branch_rs1_minterval_cnt > 0 && false_branch_rs2_minterval_cnt > 0)
       false_reachable = true;
 
     if (true_reachable) {
       if (false_reachable) {
-        constrain_memory(rs1, true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, mint_num_true_rs1, trb, false);
-        constrain_memory(rs2, true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, mint_num_true_rs2, trb, false);
+        constrain_memory(rs1, true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, true_branch_rs1_minterval_cnt, trb, false);
+        constrain_memory(rs2, true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, true_branch_rs2_minterval_cnt, trb, false);
         take_branch(1, 1);
-        constrain_memory(rs1, false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups,mint_num_false_rs1, trb, false);
-        constrain_memory(rs2, false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups,mint_num_false_rs2, trb, false);
+        constrain_memory(rs1, false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups,false_branch_rs1_minterval_cnt, trb, false);
+        constrain_memory(rs2, false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups,false_branch_rs2_minterval_cnt, trb, false);
         take_branch(0, 0);
       } else {
-        constrain_memory(rs1, true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, mint_num_true_rs1, trb, true);
-        constrain_memory(rs2, true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, mint_num_true_rs2, trb, true);
+        constrain_memory(rs1, true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, true_branch_rs1_minterval_cnt, trb, true);
+        constrain_memory(rs2, true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, true_branch_rs2_minterval_cnt, trb, true);
         is_only_one_branch_reachable = true;
         take_branch(1, 0);
       }
     } else if (false_reachable) {
-      constrain_memory(rs1, false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups,mint_num_false_rs1, trb, true);
-      constrain_memory(rs2, false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups,mint_num_false_rs2, trb, true);
+      constrain_memory(rs1, false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups,false_branch_rs1_minterval_cnt, trb, true);
+      constrain_memory(rs2, false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups,false_branch_rs2_minterval_cnt, trb, true);
       is_only_one_branch_reachable = true;
       take_branch(0, 0);
     } else {
@@ -2512,23 +2522,23 @@ void create_xor_mconstraints_rptr(std::vector<uint64_t>& lo1_p, std::vector<uint
   uint64_t lo1;
   uint64_t up1;
 
-  mint_num_true_rs1  = 0;
-  mint_num_true_rs2  = 0;
-  mint_num_false_rs1 = 0;
-  mint_num_false_rs2 = 0;
+  true_branch_rs1_minterval_cnt  = 0;
+  true_branch_rs2_minterval_cnt  = 0;
+  false_branch_rs1_minterval_cnt = 0;
+  false_branch_rs2_minterval_cnt = 0;
 
-  for (uint32_t i = 0; i < reg_mints_idx[rs1]; i++) {
+  for (uint32_t i = 0; i < reg_mintervals_cnts[rs1]; i++) {
     lo1 = lo1_p[i];
     up1 = up1_p[i];
     cannot_handle = create_xor_true_false_constraints(lo1, up1, lo2, up2);
   }
 
   if (cannot_handle) {
-    if (reg_mints_idx[rs1] == 1 && reg_mints_idx[rs2] == 1) {
-      if (steps[current_rs1_tc] > 1) {
-        if (steps[current_rs2_tc] > 1) {
-          uint64_t los_diff = (mintervals_los[current_rs1_tc][0] >= mintervals_los[current_rs2_tc][0]) ? (mintervals_los[current_rs1_tc][0] - mintervals_los[current_rs2_tc][0]) : (mintervals_los[current_rs2_tc][0] - mintervals_los[current_rs1_tc][0]);
-          if ( los_diff % gcd(steps[current_rs1_tc], steps[current_rs2_tc]) != 0) {
+    if (reg_mintervals_cnts[rs1] == 1 && reg_mintervals_cnts[rs2] == 1) {
+      if (steps[tc_before_branch_evaluation_rs1] > 1) {
+        if (steps[tc_before_branch_evaluation_rs2] > 1) {
+          uint64_t los_diff = (mintervals_los[tc_before_branch_evaluation_rs1][0] >= mintervals_los[tc_before_branch_evaluation_rs2][0]) ? (mintervals_los[tc_before_branch_evaluation_rs1][0] - mintervals_los[tc_before_branch_evaluation_rs2][0]) : (mintervals_los[tc_before_branch_evaluation_rs2][0] - mintervals_los[tc_before_branch_evaluation_rs1][0]);
+          if ( los_diff % gcd(steps[tc_before_branch_evaluation_rs1], steps[tc_before_branch_evaluation_rs2]) != 0) {
             constrain_memory(rs1, zero_v, zero_v, 0, trb, true);
             constrain_memory(rs2, zero_v, zero_v, 0, trb, true);
 
@@ -2547,28 +2557,28 @@ void create_xor_mconstraints_rptr(std::vector<uint64_t>& lo1_p, std::vector<uint
     }
 
   } else {
-    if (mint_num_true_rs1 > 0 && mint_num_true_rs2 > 0)
+    if (true_branch_rs1_minterval_cnt > 0 && true_branch_rs2_minterval_cnt > 0)
       true_reachable  = true;
-    if (mint_num_false_rs1 > 0 && mint_num_false_rs2 > 0)
+    if (false_branch_rs1_minterval_cnt > 0 && false_branch_rs2_minterval_cnt > 0)
       false_reachable = true;
 
     if (true_reachable) {
       if (false_reachable) {
-        constrain_memory(rs1, true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, mint_num_true_rs1, trb, false);
-        constrain_memory(rs2, true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, mint_num_true_rs2, trb, false);
+        constrain_memory(rs1, true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, true_branch_rs1_minterval_cnt, trb, false);
+        constrain_memory(rs2, true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, true_branch_rs2_minterval_cnt, trb, false);
         take_branch(1, 1);
-        constrain_memory(rs1, false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups,mint_num_false_rs1, trb, false);
-        constrain_memory(rs2, false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups,mint_num_false_rs2, trb, false);
+        constrain_memory(rs1, false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups,false_branch_rs1_minterval_cnt, trb, false);
+        constrain_memory(rs2, false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups,false_branch_rs2_minterval_cnt, trb, false);
         take_branch(0, 0);
       } else {
-        constrain_memory(rs1, true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, mint_num_true_rs1, trb, true);
-        constrain_memory(rs2, true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, mint_num_true_rs2, trb, true);
+        constrain_memory(rs1, true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, true_branch_rs1_minterval_cnt, trb, true);
+        constrain_memory(rs2, true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, true_branch_rs2_minterval_cnt, trb, true);
         is_only_one_branch_reachable = true;
         take_branch(1, 0);
       }
     } else if (false_reachable) {
-      constrain_memory(rs1, false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups,mint_num_false_rs1, trb, true);
-      constrain_memory(rs2, false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups,mint_num_false_rs2, trb, true);
+      constrain_memory(rs1, false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups,false_branch_rs1_minterval_cnt, trb, true);
+      constrain_memory(rs2, false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups,false_branch_rs2_minterval_cnt, trb, true);
       is_only_one_branch_reachable = true;
       take_branch(0, 0);
     } else {
@@ -2587,23 +2597,23 @@ void backtrack_sltu() {
     print_symbolic_memory(tc);
   }
 
-  vaddr = *(vaddrs + tc);
+  vaddr = vaddrs[tc];
 
   if (vaddr < NUMBEROFREGISTERS) {
     if (vaddr > 0) {
       // the register is identified by vaddr
-      *(reg_data_typ + vaddr) = *(data_types + tc);
-      *(registers    + vaddr) = *(values     + tc);
+      reg_data_type[vaddr]         = data_types[tc];
+      registers[vaddr]             = values[tc];
       reg_mintervals_los[vaddr][0] = mintervals_los[tc][0];
       reg_mintervals_ups[vaddr][0] = mintervals_ups[tc][0];
-      reg_mints_idx[vaddr]    = 1;
-      reg_steps[vaddr]        = 1;
-      reg_addrs_idx[rd]       = 0;
+      reg_mintervals_cnts[vaddr]   = 1;
+      reg_steps[vaddr]             = 1;
+      reg_vaddrs_cnts[rd]          = 0;
 
       set_correction(vaddr, 0, 0, 0, 0, 0);
 
       // restoring mrcc
-      mrcc = *(tcs + tc);
+      mrcc = tcs[tc];
 
       if (vaddr != REG_FP)
         if (vaddr != REG_SP) {
@@ -2614,14 +2624,16 @@ void backtrack_sltu() {
         }
     }
   } else {
-    if (is_inputs[tc] && data_types[tc] == 3) { // undo the input record on trace; there was no memory update
+    if (is_inputs[tc] && data_types[tc] == INPUT_T) {
+      // undo the input record on trace; there was no memory update
       input_table.at(is_inputs[tc] - 1) = tcs[tc];
       efree();
       return;
-    } else if (is_inputs[tc])                   // undo x = input(); if(x);
+    } else if (is_inputs[tc])
+      // undo x = input(); if(x);
       input_table.at(is_inputs[tc] - 1) = tcs[tc];
 
-    store_virtual_memory(pt, vaddr, *(tcs + tc));
+    store_virtual_memory(pt, vaddr, tcs[tc]);
   }
 
   efree();
@@ -2638,12 +2650,12 @@ void backtrack_sd() {
     input_table.pop_back();
 
   uint64_t idx;
-  for (uint32_t i = 0; i < ld_froms_idx[tc]; i++) {
+  for (uint32_t i = 0; i < ld_from_tcs_cnts[tc]; i++) {
     idx = ld_from_tcs[tc][i];
-    sd_to_idxs[idx]--;
+    forward_propagated_to_tcs_cnts[idx]--;
   }
 
-  store_virtual_memory(pt, *(vaddrs + tc), *(tcs + tc));
+  store_virtual_memory(pt, vaddrs[tc], tcs[tc]);
 
   efree();
 }
@@ -2654,7 +2666,7 @@ void backtrack_ecall() {
     print_symbolic_memory(tc);
   }
 
-  if (*(vaddrs + tc) == 0) {
+  if (vaddrs[tc] == 0) {
     // backtracking malloc
     if (get_program_break(current_context) == mintervals_los[tc][0] + mintervals_ups[tc][0])
       set_program_break(current_context, mintervals_los[tc][0]);
@@ -2667,12 +2679,11 @@ void backtrack_ecall() {
     rc = rc + 1;
 
     // record value, lower and upper bound
-    *(read_values + rc) = *(values + tc);
+    read_values[rc] = values[tc];
+    read_los[rc]    = mintervals_los[tc][0];
+    read_ups[rc]    = mintervals_ups[tc][0];
 
-    *(read_los + rc) = mintervals_los[tc][0];
-    *(read_ups + rc) = mintervals_ups[tc][0];
-
-    store_virtual_memory(pt, *(vaddrs + tc), *(tcs + tc));
+    store_virtual_memory(pt, vaddrs[tc], tcs[tc]);
   }
 
   efree();
@@ -2683,7 +2694,6 @@ void backtrack_trace(uint64_t* context) {
 
   if (debug_symbolic) {
     printf("OUTPUT: backtracking from exit code \n");
-    // printf3((uint64_t*) "%s: backtracking %s from exit code %d\n", exe_name, get_name(context), (uint64_t*) sign_extend(get_exit_code(context), SYSCALL_BITWIDTH));
   }
 
   symbolic = 0;
@@ -2691,7 +2701,7 @@ void backtrack_trace(uint64_t* context) {
   backtrack = 1;
 
   while (backtrack) {
-    pc = *(pcs + tc);
+    pc = pcs[tc];
 
     if (pc == 0) {
       // we have backtracked all code back to the data segment
@@ -2718,22 +2728,22 @@ void backtrack_trace(uint64_t* context) {
 
 void propagate_mul(uint64_t step, uint64_t k) {
   bool cnd;
-  for (uint32_t i = 0; i < mints_num_prop; i++) {
-    cnd = mul_condition(lo_prop[i], up_prop[i], k);
+  for (uint32_t i = 0; i < propagated_minterval_cnt; i++) {
+    cnd = mul_condition(propagated_minterval_lo[i], propagated_minterval_up[i], k);
     if (cnd == true) {
-      lo_prop[i] = lo_prop[i] * k;
-      up_prop[i] = up_prop[i] * k;
+      propagated_minterval_lo[i] = propagated_minterval_lo[i] * k;
+      propagated_minterval_up[i] = propagated_minterval_up[i] * k;
     } else {
       // potential of overflow
       // assert: reg_mintervals_los[rs2][0] * reg_steps[rs1] <= UINT64_MAX_T
       uint128_t lcm_ = lcm_128(TWO_TO_THE_POWER_OF_64, (uint128_t) k * step);
       uint128_t rhs  = (uint128_t) (lcm_ - (uint128_t) k * step) / k;
-      uint128_t lhs  = (up_prop[i] - lo_prop[i]);
+      uint128_t lhs  = (propagated_minterval_up[i] - propagated_minterval_lo[i]);
       if (lhs >= rhs) {
         uint64_t gcd_step_k = gcd_128( (uint128_t) k * step, TWO_TO_THE_POWER_OF_64);
-        uint64_t lo_p       = (lo_prop[i] * k);
-        lo_prop[i]          = lo_p - (lo_p / gcd_step_k) * gcd_step_k;
-        up_prop[i]          = compute_upper_bound(lo_prop[i], gcd_step_k, UINT64_MAX_T);
+        uint64_t lo_p       = (propagated_minterval_lo[i] * k);
+        propagated_minterval_lo[i]          = lo_p - (lo_p / gcd_step_k) * gcd_step_k;
+        propagated_minterval_up[i]          = compute_upper_bound(propagated_minterval_lo[i], gcd_step_k, UINT64_MAX_T);
       } else {
         printf("OUTPUT: cannot reason about overflowed mul at %x\n", pc - entry_point);
         exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
@@ -2744,44 +2754,44 @@ void propagate_mul(uint64_t step, uint64_t k) {
 
 void propagate_divu(uint64_t step, uint64_t k, uint64_t step_rd) {
   // interval semantics of divu
-  for (uint32_t i = 0; i < mints_num_prop; i++) {
-    if (lo_prop[i] > up_prop[i]) {
+  for (uint32_t i = 0; i < propagated_minterval_cnt; i++) {
+    if (propagated_minterval_lo[i] > propagated_minterval_up[i]) {
       // rs1 constraint is wrapped: [lo, UINT64_MAX_T], [0, up]
       // lo/k == up/k (or) up/k + step_rd
-      if (lo_prop[i]/k != up_prop[i]/k)
-        if (lo_prop[i]/k > up_prop[i]/k + step_rd) {
+      if (propagated_minterval_lo[i]/k != propagated_minterval_up[i]/k)
+        if (propagated_minterval_lo[i]/k > propagated_minterval_up[i]/k + step_rd) {
           printf("OUTPUT: wrapped divison rsults two intervals at %x \n", pc);
           exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
         }
 
-      uint64_t max = compute_upper_bound(lo_prop[i], step, UINT64_MAX_T);
-      lo_prop[i] = (max + step) / k;
-      up_prop[i] = max          / k;
+      uint64_t max = compute_upper_bound(propagated_minterval_lo[i], step, UINT64_MAX_T);
+      propagated_minterval_lo[i] = (max + step) / k;
+      propagated_minterval_up[i] = max          / k;
     } else {
-      lo_prop[i] = lo_prop[i] / k;
-      up_prop[i] = up_prop[i] / k;
+      propagated_minterval_lo[i] = propagated_minterval_lo[i] / k;
+      propagated_minterval_up[i] = propagated_minterval_up[i] / k;
     }
   }
 }
 
 void propagate_remu(uint64_t step, uint64_t divisor) {
   // interval semantics of remu
-  for (uint32_t i = 0; i < mints_num_prop; i++) {
-    if (lo_prop[i] <= up_prop[i]) {
+  for (uint32_t i = 0; i < propagated_minterval_cnt; i++) {
+    if (propagated_minterval_lo[i] <= propagated_minterval_up[i]) {
       // rs1 interval is not wrapped
-      int rem_typ = remu_condition(lo_prop[i], up_prop[i], step, divisor);
+      int rem_typ = remu_condition(propagated_minterval_lo[i], propagated_minterval_up[i], step, divisor);
       if (rem_typ == 0) {
-        lo_prop[i] = lo_prop[i] % divisor;
-        up_prop[i] = up_prop[i] % divisor;
-        step_prop  = step;
+        propagated_minterval_lo[i] = propagated_minterval_lo[i] % divisor;
+        propagated_minterval_up[i] = propagated_minterval_up[i] % divisor;
+        propagated_minterval_step  = step;
       } else if (rem_typ == 1) {
         printf("OUTPUT: modulo results two intervals at %x\n", pc - entry_point);
         exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
       } else if (rem_typ == 2) {
         uint64_t gcd_step_k = gcd(step, divisor);
-        lo_prop[i] = lo_prop[i]%divisor - ((lo_prop[i]%divisor) / gcd_step_k) * gcd_step_k;
-        up_prop[i] = compute_upper_bound(lo_prop[i], gcd_step_k, divisor - 1);
-        step_prop  = gcd_step_k;
+        propagated_minterval_lo[i] = propagated_minterval_lo[i]%divisor - ((propagated_minterval_lo[i]%divisor) / gcd_step_k) * gcd_step_k;
+        propagated_minterval_up[i] = compute_upper_bound(propagated_minterval_lo[i], gcd_step_k, divisor - 1);
+        propagated_minterval_step  = gcd_step_k;
       } else {
         printf("OUTPUT: modulo results many intervals at %x\n", pc - entry_point);
         exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
@@ -2792,14 +2802,14 @@ void propagate_remu(uint64_t step, uint64_t divisor) {
       uint64_t gcd_step_k = gcd(step, divisor);
       uint64_t lcm        = (step * divisor) / gcd_step_k;
 
-      if (up_prop[i] - lo_prop[i] < lcm - step) {
+      if (propagated_minterval_up[i] - propagated_minterval_lo[i] < lcm - step) {
         printf("OUTPUT: wrapped modulo results many intervals at %x \n", pc - entry_point);
         exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
       }
 
-      lo_prop[i] = lo_prop[i]%divisor - ((lo_prop[i]%divisor) / gcd_step_k) * gcd_step_k;
-      up_prop[i] = compute_upper_bound(lo_prop[i], gcd_step_k, divisor - 1);
-      step_prop  = gcd_step_k;
+      propagated_minterval_lo[i] = propagated_minterval_lo[i]%divisor - ((propagated_minterval_lo[i]%divisor) / gcd_step_k) * gcd_step_k;
+      propagated_minterval_up[i] = compute_upper_bound(propagated_minterval_lo[i], gcd_step_k, divisor - 1);
+      propagated_minterval_step  = gcd_step_k;
     } else {
       printf("OUTPUT: wrapped modulo results many intervals at %x \n", pc - entry_point);
       exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);

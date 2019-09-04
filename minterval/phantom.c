@@ -2382,18 +2382,17 @@ void implement_read(uint64_t* context) {
       } else
         printf2((uint64_t*) "%s: big read in read syscall: %d\n", exe_name, (uint64_t*) *(get_regs(context) + REG_A0));
     } else {
-      *(reg_data_typ + REG_A0) = 0;
-
-      reg_mintervals_los[REG_A0][0]   = *(get_regs(context) + REG_A0);
-      reg_mintervals_ups[REG_A0][0]   = *(get_regs(context) + REG_A0);
-      reg_mints_idx[REG_A0]      = 1;
-      reg_steps[REG_A0]          = 1;
-      reg_addrs_idx[REG_A0]      = 0;
-      reg_symb_typ[REG_A0]       = CONCRETE;
-      reg_hasmn[REG_A0]          = 0;
-      reg_addsub_corr[REG_A0]    = 0;
-      reg_muldivrem_corr[REG_A0] = 0;
-      reg_corr_validity[REG_A0]  = 0;
+      reg_data_type[REG_A0]         = 0;
+      reg_mintervals_los[REG_A0][0] = *(get_regs(context) + REG_A0);
+      reg_mintervals_ups[REG_A0][0] = *(get_regs(context) + REG_A0);
+      reg_mintervals_cnts[REG_A0]   = 1;
+      reg_steps[REG_A0]             = 1;
+      reg_vaddrs_cnts[REG_A0]       = 0;
+      reg_symb_type[REG_A0]         = CONCRETE;
+      reg_hasmn[REG_A0]             = 0;
+      reg_addsub_corr[REG_A0]       = 0;
+      reg_muldivrem_corr[REG_A0]    = 0;
+      reg_corr_validity[REG_A0]     = 0;
     }
   }
 
@@ -2468,18 +2467,17 @@ void implement_printsv(uint64_t* context) {
 
   if (symbolic && sase_symbolic == 0) {
     id   = *(get_regs(context) + REG_A0);
-    addr = (reg_addrs_idx[REG_A1] > 0) ? vaddrs[ld_from_tcs[load_symbolic_memory(get_pt(context), reg_vaddrs[REG_A1][0])][0]] : 0;
+    addr = (reg_vaddrs_cnts[REG_A1] > 0) ? vaddrs[ld_from_tcs[load_symbolic_memory(get_pt(context), reg_vaddrs[REG_A1][0])][0]] : 0;
 
-    for (uint32_t i = 0; i < reg_mints_idx[REG_A1]; i++) {
+    for (uint32_t i = 0; i < reg_mintervals_cnts[REG_A1]; i++) {
       printf("PRINTSV :=) id: %-3llu, mint: %-2u; vaddr: %-10llu => lo: %-5llu, up: %-5llu, step: %-5llu\n", id, i, addr, reg_mintervals_los[REG_A1][i], reg_mintervals_ups[REG_A1][i], reg_steps[REG_A1]);
     }
 
     for (size_t j = 0; j < input_table.size(); j++) {
-      for (uint32_t i = 0; i < mints_idxs[input_table[j]]; i++) {
-        printf("-------- :=) id: %-3llu, mint: %-2u; => lo: %-5llu, up: %-5llu, step: %-5llu\n", j+1, i, mintervals_los[input_table[j]][i], mintervals_ups[input_table[j]][i], steps[input_table[j]]);
+      for (uint32_t i = 0; i < mintervals_cnts[input_table[j]]; i++) {
+        printf("---INPUT :=) id: %-3llu, mint: %-2u; => lo: %-5llu, up: %-5llu, step: %-5llu\n", j+1, i, mintervals_los[input_table[j]][i], mintervals_ups[input_table[j]][i], steps[input_table[j]]);
       }
     }
-
   }
 
   set_pc(context, get_pc(context) + INSTRUCTIONSIZE);
@@ -2516,14 +2514,14 @@ void implement_symbolic_input(uint64_t* context) {
       sase_regs_typ[REG_A0] = SYMBOLIC_T;
 
     } else {
-      registers[REG_A0]        = lo;
-      reg_data_typ[REG_A0]     = 0;
+      registers[REG_A0]             = lo;
+      reg_data_type[REG_A0]         = 0;
       reg_mintervals_los[REG_A0][0] = lo;
       reg_mintervals_ups[REG_A0][0] = compute_upper_bound(lo, step, up);
-      reg_mints_idx[REG_A0]    = 1;
-      reg_steps[REG_A0]        = step;
-      reg_addrs_idx[REG_A0]    = 0;
-      reg_symb_typ[REG_A0]     = (lo == reg_mintervals_ups[REG_A0][0]) ? CONCRETE : SYMBOLIC;
+      reg_mintervals_cnts[REG_A0]   = 1;
+      reg_steps[REG_A0]             = step;
+      reg_vaddrs_cnts[REG_A0]       = 0;
+      reg_symb_type[REG_A0]         = (lo == reg_mintervals_ups[REG_A0][0]) ? CONCRETE : SYMBOLIC;
       reg_hasmn[REG_A0]             = 0;
       reg_addsub_corr[REG_A0]       = 0;
       reg_muldivrem_corr[REG_A0]    = 0;
@@ -2638,18 +2636,17 @@ void implement_write(uint64_t* context) {
       } else
         printf2((uint64_t*) "%s: big write in write syscall: %d\n", exe_name, (uint64_t*) *(get_regs(context) + REG_A0));
     } else {
-      *(reg_data_typ + REG_A0) = 0;
-
-      reg_mintervals_los[REG_A0][0]   = *(get_regs(context) + REG_A0);
-      reg_mintervals_ups[REG_A0][0]   = *(get_regs(context) + REG_A0);
-      reg_mints_idx[REG_A0]      = 1;
-      reg_steps[REG_A0]          = 1;
-      reg_addrs_idx[REG_A0]      = 0;
-      reg_symb_typ[REG_A0]       = CONCRETE;
-      reg_hasmn[REG_A0]          = 0;
-      reg_addsub_corr[REG_A0]    = 0;
-      reg_muldivrem_corr[REG_A0] = 0;
-      reg_corr_validity[REG_A0]  = 0;
+      reg_data_type[REG_A0]         = 0;
+      reg_mintervals_los[REG_A0][0] = *(get_regs(context) + REG_A0);
+      reg_mintervals_ups[REG_A0][0] = *(get_regs(context) + REG_A0);
+      reg_mintervals_cnts[REG_A0]   = 1;
+      reg_steps[REG_A0]             = 1;
+      reg_vaddrs_cnts[REG_A0]       = 0;
+      reg_symb_type[REG_A0]         = CONCRETE;
+      reg_hasmn[REG_A0]             = 0;
+      reg_addsub_corr[REG_A0]       = 0;
+      reg_muldivrem_corr[REG_A0]    = 0;
+      reg_corr_validity[REG_A0]     = 0;
     }
   }
 
@@ -2681,7 +2678,7 @@ uint64_t down_load_string(uint64_t* table, uint64_t vaddr, uint64_t* s) {
 
             *(s + i) = *(values + mrvc);
 
-            if (is_symbolic_value(data_types[mrvc], mints_idxs[mrvc], mintervals_los[mrvc][0], mintervals_ups[mrvc][0])) {
+            if (is_symbolic_value(data_types[mrvc], mintervals_cnts[mrvc], mintervals_los[mrvc][0], mintervals_ups[mrvc][0])) {
               printf1((uint64_t*) "%s: detected symbolic value ", exe_name);
               print_symbolic_memory(mrvc);
               print((uint64_t*) " in filename of open call\n");
@@ -2767,18 +2764,17 @@ void implement_open(uint64_t* context) {
       sase_regs[REG_A0]     = boolector_unsigned_int(btor, *(get_regs(context) + REG_A0), bv_sort);
       sase_regs_typ[REG_A0] = CONCRETE_T;
     } else {
-      *(reg_data_typ + REG_A0) = 0;
-
-      reg_mintervals_los[REG_A0][0]   = *(get_regs(context) + REG_A0);
-      reg_mintervals_ups[REG_A0][0]   = *(get_regs(context) + REG_A0);
-      reg_mints_idx[REG_A0]      = 1;
-      reg_steps[REG_A0]          = 1;
-      reg_addrs_idx[REG_A0]      = 0;
-      reg_symb_typ[REG_A0]       = CONCRETE;
-      reg_hasmn[REG_A0]          = 0;
-      reg_addsub_corr[REG_A0]    = 0;
-      reg_muldivrem_corr[REG_A0] = 0;
-      reg_corr_validity[REG_A0]  = 0;
+      reg_data_type[REG_A0]         = 0;
+      reg_mintervals_los[REG_A0][0] = *(get_regs(context) + REG_A0);
+      reg_mintervals_ups[REG_A0][0] = *(get_regs(context) + REG_A0);
+      reg_mintervals_cnts[REG_A0]   = 1;
+      reg_steps[REG_A0]             = 1;
+      reg_vaddrs_cnts[REG_A0]       = 0;
+      reg_symb_type[REG_A0]         = CONCRETE;
+      reg_hasmn[REG_A0]             = 0;
+      reg_addsub_corr[REG_A0]       = 0;
+      reg_muldivrem_corr[REG_A0]    = 0;
+      reg_corr_validity[REG_A0]     = 0;
     }
   }
 
@@ -2836,15 +2832,14 @@ void implement_brk(uint64_t* context) {
         size = program_break - previous_program_break;
 
         // interval is memory range, not symbolic value
-        *(reg_data_typ + REG_A0)      = POINTER_T;
+        reg_data_type[REG_A0]         = POINTER_T;
         *(get_regs(context) + REG_A0) = previous_program_break;
-        // remember start and size of memory block for checking memory safety
-        reg_mintervals_los[REG_A0][0]      = previous_program_break;
-        reg_mintervals_ups[REG_A0][0]      = size;
-        reg_mints_idx[REG_A0]         = 1;
+        reg_mintervals_los[REG_A0][0] = previous_program_break; // remember start and size of memory block for checking memory safety
+        reg_mintervals_ups[REG_A0][0] = size;                   // remember start and size of memory block for checking memory safety
+        reg_mintervals_cnts[REG_A0]   = 1;
         reg_steps[REG_A0]             = 1;
-        reg_addrs_idx[REG_A0]         = 0;
-        reg_symb_typ[REG_A0]          = CONCRETE;
+        reg_vaddrs_cnts[REG_A0]       = 0;
+        reg_symb_type[REG_A0]         = CONCRETE;
         reg_hasmn[REG_A0]             = 0;
         reg_addsub_corr[REG_A0]       = 0;
         reg_muldivrem_corr[REG_A0]    = 0;
@@ -2889,17 +2884,17 @@ void implement_brk(uint64_t* context) {
         sase_regs[REG_A0]     = boolector_unsigned_int(btor, 0, bv_sort);
         sase_regs_typ[REG_A0] = CONCRETE_T;
       } else {
-        *(reg_data_typ + REG_A0)   = VALUE_T;
-        reg_mintervals_los[REG_A0][0]   = 0;
-        reg_mintervals_ups[REG_A0][0]   = 0;
-        reg_mints_idx[REG_A0]      = 1;
-        reg_steps[REG_A0]          = 1;
-        reg_addrs_idx[REG_A0]      = 0;
-        reg_symb_typ[REG_A0]       = CONCRETE;
-        reg_hasmn[REG_A0]          = 0;
-        reg_addsub_corr[REG_A0]    = 0;
-        reg_muldivrem_corr[REG_A0] = 0;
-        reg_corr_validity[REG_A0]  = 0;
+        reg_data_type[REG_A0]         = VALUE_T;
+        reg_mintervals_los[REG_A0][0] = 0;
+        reg_mintervals_ups[REG_A0][0] = 0;
+        reg_mintervals_cnts[REG_A0]   = 1;
+        reg_steps[REG_A0]             = 1;
+        reg_vaddrs_cnts[REG_A0]       = 0;
+        reg_symb_type[REG_A0]         = CONCRETE;
+        reg_hasmn[REG_A0]             = 0;
+        reg_addsub_corr[REG_A0]       = 0;
+        reg_muldivrem_corr[REG_A0]    = 0;
+        reg_corr_validity[REG_A0]     = 0;
       }
     }
   }
@@ -4278,18 +4273,17 @@ void up_load_arguments(uint64_t* context, uint64_t argc, uint64_t* argv) {
       sase_regs[REG_SP]     = boolector_unsigned_int(btor, SP, bv_sort);
       sase_regs_typ[REG_SP] = CONCRETE_T;
     } else {
-      *(reg_data_typ + REG_SP) = 0;
-
-      reg_mintervals_los[REG_SP][0]   = SP;
-      reg_mintervals_ups[REG_SP][0]   = SP;
-      reg_mints_idx[REG_SP]      = 1;
-      reg_steps[REG_SP]          = 1;
-      reg_addrs_idx[REG_SP]      = 0;
-      reg_symb_typ[REG_SP]       = CONCRETE;
-      reg_hasmn[REG_SP]          = 0;
-      reg_addsub_corr[REG_SP]    = 0;
-      reg_muldivrem_corr[REG_SP] = 0;
-      reg_corr_validity[REG_SP]  = 0;
+      reg_data_type[REG_SP]         = 0;
+      reg_mintervals_los[REG_SP][0] = SP;
+      reg_mintervals_ups[REG_SP][0] = SP;
+      reg_mintervals_cnts[REG_SP]   = 1;
+      reg_steps[REG_SP]             = 1;
+      reg_vaddrs_cnts[REG_SP]       = 0;
+      reg_symb_type[REG_SP]         = CONCRETE;
+      reg_hasmn[REG_SP]             = 0;
+      reg_addsub_corr[REG_SP]       = 0;
+      reg_muldivrem_corr[REG_SP]    = 0;
+      reg_corr_validity[REG_SP]     = 0;
     }
   }
 }
