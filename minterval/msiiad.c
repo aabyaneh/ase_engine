@@ -1165,9 +1165,9 @@ uint64_t constrain_sd() {
       // interval semantics of sd
       retrieve_ld_from_tcs(reg_vaddrs[rs2], reg_vaddrs_cnts[rs2]);
 
-      if (reg_symb_type[rs2] == SYMBOLIC && reg_vaddrs_cnts[rs2] == 0) // means it is an x = input();
-        store_symbolic_memory(pt, vaddr, registers[rs2], reg_data_type[rs2], reg_mintervals_los[rs2], reg_mintervals_ups[rs2], reg_mintervals_cnts[rs2], reg_steps[rs2], reg_vaddrs[rs2], reg_vaddrs_cnts[rs2], reg_hasmn[rs2], reg_addsub_corr[rs2], reg_muldivrem_corr[rs2], reg_corr_validity[rs2], mrcc, 0, symbolic_input_cnt - 1);
-      else
+      if (reg_symb_type[rs2] == SYMBOLIC && reg_vaddrs_cnts[rs2] == 0) { // means it is an x = input();
+        store_symbolic_memory(pt, vaddr, registers[rs2], reg_data_type[rs2], reg_mintervals_los[rs2], reg_mintervals_ups[rs2], reg_mintervals_cnts[rs2], reg_steps[rs2], reg_vaddrs[rs2], reg_vaddrs_cnts[rs2], reg_hasmn[rs2], reg_addsub_corr[rs2], reg_muldivrem_corr[rs2], reg_corr_validity[rs2], mrcc, 0, symbolic_input_cnt-1); // doesn't matter symbolic_input_cnt-1 or anything greater than 0
+      } else
         store_symbolic_memory(pt, vaddr, registers[rs2], reg_data_type[rs2], reg_mintervals_los[rs2], reg_mintervals_ups[rs2], reg_mintervals_cnts[rs2], reg_steps[rs2], reg_vaddrs[rs2], reg_vaddrs_cnts[rs2], reg_hasmn[rs2], reg_addsub_corr[rs2], reg_muldivrem_corr[rs2], reg_corr_validity[rs2], mrcc, 0, 0);
 
       // keep track of instruction address for profiling stores
@@ -1343,11 +1343,15 @@ void store_symbolic_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, uint32_
     corr_validitys[tc]  = corr_validity;
 
     // keep track of symbolic inputs
-    is_inputs[tc]       = is_input;
-    if (is_input && to_tc == 0) // when sd
+    if (is_input && to_tc == 0) { // when sd
       input_table.push_back(tc);
-    else if (is_input)          // when sltu
+      is_inputs[tc] = input_table.size();
+    } else if (is_input) {        // when sltu
       input_table.at(is_input - 1) = tc;
+      is_inputs[tc] = is_input;
+    } else {
+      is_inputs[tc] = is_input;
+    }
 
     mintervals_cnts[tc] = mints_num;
     mintervals_los[tc].clear();
@@ -2629,9 +2633,10 @@ void backtrack_sltu() {
       input_table.at(is_inputs[tc] - 1) = tcs[tc];
       efree();
       return;
-    } else if (is_inputs[tc])
+    } else if (is_inputs[tc]) {
       // undo x = input(); if(x);
       input_table.at(is_inputs[tc] - 1) = tcs[tc];
+    }
 
     store_virtual_memory(pt, vaddr, tcs[tc]);
   }
@@ -2646,8 +2651,10 @@ void backtrack_sd() {
   }
 
   // if x = input(); pop the already inserted is_inputs[tc] on input table
-  if (is_inputs[tc])
+  if (is_inputs[tc]) {
+    symbolic_input_cnt = input_table.size();
     input_table.pop_back();
+  }
 
   uint64_t idx;
   for (uint32_t i = 0; i < ld_from_tcs_cnts[tc]; i++) {
