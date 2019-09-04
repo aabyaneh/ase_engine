@@ -7,7 +7,7 @@
 #include <vector>
 
 #define MAX_SD_TO_NUM        100
-#define MAX_NUM_OF_INTERVALS 100
+#define MAX_NUM_OF_INTERVALS 2001
 #define MAX_NUM_OF_OP_VADDRS 100
 
 // ------ shared variables and procedures between source files -----
@@ -114,12 +114,10 @@ extern uint64_t* values;
 extern uint64_t* data_types;
 extern uint64_t* steps;
 
-struct minterval {
-  uint64_t los[MAX_NUM_OF_INTERVALS];
-  uint64_t ups[MAX_NUM_OF_INTERVALS];
-};
-extern struct minterval* reg_mints;
-extern struct minterval* mints;
+extern std::vector<std::vector<uint64_t> > mintervals_los;
+extern std::vector<std::vector<uint64_t> > mintervals_ups;
+extern std::vector<std::vector<uint64_t> > reg_mintervals_los;
+extern std::vector<std::vector<uint64_t> > reg_mintervals_ups;
 extern uint32_t* mints_idxs;
 extern uint32_t* reg_mints_idx;
 
@@ -178,26 +176,26 @@ uint64_t is_trace_space_available();
 void ealloc();
 void efree();
 
-void store_symbolic_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, uint32_t data_type, uint64_t* lo, uint64_t* up, uint32_t mints_num, uint64_t step, uint64_t* ld_from, uint32_t ld_from_num, bool hasmn, uint64_t addsub_corr, uint64_t muldivrem_corr, uint64_t corr_validity, uint64_t trb, uint64_t to_tc, uint64_t is_input);
-void store_constrained_memory(uint64_t vaddr, uint64_t* lo, uint64_t* up, uint32_t mints_num, uint64_t step, uint64_t* ld_from, uint32_t ld_from_num, bool hasmn, uint64_t addsub_corr, uint64_t muldivrem_corr, uint64_t corr_validity, uint64_t to_tc, uint64_t is_input);
+void store_symbolic_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, uint32_t data_type, std::vector<uint64_t>& lo, std::vector<uint64_t>& up, uint32_t mints_num, uint64_t step, uint64_t* ld_from, uint32_t ld_from_num, bool hasmn, uint64_t addsub_corr, uint64_t muldivrem_corr, uint64_t corr_validity, uint64_t trb, uint64_t to_tc, uint64_t is_input);
+void store_constrained_memory(uint64_t vaddr, std::vector<uint64_t>& lo, std::vector<uint64_t>& up, uint32_t mints_num, uint64_t step, uint64_t* ld_from, uint32_t ld_from_num, bool hasmn, uint64_t addsub_corr, uint64_t muldivrem_corr, uint64_t corr_validity, uint64_t to_tc, uint64_t is_input);
 void store_register_memory(uint64_t reg, uint64_t* value);
 
-void constrain_memory(uint64_t reg, uint64_t* lo, uint64_t* up, uint32_t mints_num, uint64_t trb, bool only_reachable_branch);
-void propagate_backwards(uint64_t vaddr, uint64_t* lo_before_op, uint64_t* up_before_op);
+void constrain_memory(uint64_t reg, std::vector<uint64_t>& lo, std::vector<uint64_t>& up, uint32_t mints_num, uint64_t trb, bool only_reachable_branch);
+void propagate_backwards(uint64_t vaddr, std::vector<uint64_t>& lo_before_op, std::vector<uint64_t>& up_before_op);
 void propagate_mul(uint64_t step, uint64_t k);
 void propagate_divu(uint64_t step, uint64_t k, uint64_t step_rd);
 void propagate_remu(uint64_t step, uint64_t divisor);
-void propagate_backwards_rhs(uint64_t* lo, uint64_t* up, uint32_t mints_num, uint64_t mrvc);
+void propagate_backwards_rhs(std::vector<uint64_t>& lo, std::vector<uint64_t>& up, uint32_t mints_num, uint64_t mrvc);
 
 void set_vaddrs(uint64_t reg, uint64_t* vaddrs, uint32_t start_idx, uint32_t vaddr_num);
 void set_correction(uint64_t reg, uint32_t hasco, uint32_t hasmn, uint64_t addsub_corr, uint64_t muldivrem_corr, uint64_t corr_validity);
 
 void take_branch(uint64_t b, uint64_t how_many_more);
-void create_mconstraints(uint64_t* lo1_p, uint64_t* up1_p, uint64_t* lo2_p, uint64_t* up2_p, uint64_t trb);
-void create_mconstraints_rptr(uint64_t* lo1_p, uint64_t* up1_p, uint64_t lo2, uint64_t up2, uint64_t trb);
-void create_mconstraints_lptr(uint64_t lo1, uint64_t up1, uint64_t* lo2_p, uint64_t* up2_p, uint64_t trb);
-void create_xor_mconstraints(uint64_t* lo1_p, uint64_t* up1_p, uint64_t* lo2_p, uint64_t* up2_p, uint64_t trb);
-void create_xor_mconstraints_rptr(uint64_t* lo1_p, uint64_t* up1_p, uint64_t lo2, uint64_t up2, uint64_t trb);
-void create_xor_mconstraints_lptr(uint64_t lo1, uint64_t up1, uint64_t* lo2_p, uint64_t* up2_p, uint64_t trb);
+void create_mconstraints(std::vector<uint64_t>& lo1_p, std::vector<uint64_t>& up1_p, std::vector<uint64_t>& lo2_p, std::vector<uint64_t>& up2_p, uint64_t trb);
+void create_mconstraints_rptr(std::vector<uint64_t>& lo1_p, std::vector<uint64_t>& up1_p, uint64_t lo2, uint64_t up2, uint64_t trb);
+void create_mconstraints_lptr(uint64_t lo1, uint64_t up1, std::vector<uint64_t>& lo2_p, std::vector<uint64_t>& up2_p, uint64_t trb);
+void create_xor_mconstraints(std::vector<uint64_t>& lo1_p, std::vector<uint64_t>& up1_p, std::vector<uint64_t>& lo2_p, std::vector<uint64_t>& up2_p, uint64_t trb);
+void create_xor_mconstraints_rptr(std::vector<uint64_t>& lo1_p, std::vector<uint64_t>& up1_p, uint64_t lo2, uint64_t up2, uint64_t trb);
+void create_xor_mconstraints_lptr(uint64_t lo1, uint64_t up1, std::vector<uint64_t>& lo2_p, std::vector<uint64_t>& up2_p, uint64_t trb);
 
 uint64_t compute_upper_bound(uint64_t lo, uint64_t step, uint64_t value);

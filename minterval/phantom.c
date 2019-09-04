@@ -72,8 +72,8 @@ uint64_t round_up(uint64_t n, uint64_t m);
 uint64_t* smalloc(uint64_t size);
 uint64_t* zalloc(uint64_t size);
 
-uint64_t val_ptr_1[1];
-uint64_t val_ptr_2[1];
+std::vector<uint64_t> val_ptr_1(1);
+std::vector<uint64_t> val_ptr_2(1);
 
 // ------------------------ GLOBAL CONSTANTS -----------------------
 
@@ -2384,8 +2384,8 @@ void implement_read(uint64_t* context) {
     } else {
       *(reg_data_typ + REG_A0) = 0;
 
-      reg_mints[REG_A0].los[0]   = *(get_regs(context) + REG_A0);
-      reg_mints[REG_A0].ups[0]   = *(get_regs(context) + REG_A0);
+      reg_mintervals_los[REG_A0][0]   = *(get_regs(context) + REG_A0);
+      reg_mintervals_ups[REG_A0][0]   = *(get_regs(context) + REG_A0);
       reg_mints_idx[REG_A0]      = 1;
       reg_steps[REG_A0]          = 1;
       reg_addrs_idx[REG_A0]      = 0;
@@ -2471,12 +2471,12 @@ void implement_printsv(uint64_t* context) {
     addr = (reg_addrs_idx[REG_A1] > 0) ? vaddrs[ld_froms_tc[load_symbolic_memory(get_pt(context), reg_addr[REG_A1].addrs[0])].addrs[0]] : 0;
 
     for (uint32_t i = 0; i < reg_mints_idx[REG_A1]; i++) {
-      printf("PRINTSV :=) id: %-3llu, mint: %-2u; vaddr: %-10llu => lo: %-5llu, up: %-5llu, step: %-5llu\n", id, i, addr, reg_mints[REG_A1].los[i], reg_mints[REG_A1].ups[i], reg_steps[REG_A1]);
+      printf("PRINTSV :=) id: %-3llu, mint: %-2u; vaddr: %-10llu => lo: %-5llu, up: %-5llu, step: %-5llu\n", id, i, addr, reg_mintervals_los[REG_A1][i], reg_mintervals_ups[REG_A1][i], reg_steps[REG_A1]);
     }
 
     for (size_t j = 0; j < input_table.size(); j++) {
       for (uint32_t i = 0; i < mints_idxs[input_table[j]]; i++) {
-        printf("-------- :=) id: %-3llu, mint: %-2u; => lo: %-5llu, up: %-5llu, step: %-5llu\n", j+1, i, mints[input_table[j]].los[i], mints[input_table[j]].ups[i], steps[input_table[j]]);
+        printf("-------- :=) id: %-3llu, mint: %-2u; => lo: %-5llu, up: %-5llu, step: %-5llu\n", j+1, i, mintervals_los[input_table[j]][i], mintervals_ups[input_table[j]][i], steps[input_table[j]]);
       }
     }
 
@@ -2518,18 +2518,18 @@ void implement_symbolic_input(uint64_t* context) {
     } else {
       registers[REG_A0]        = lo;
       reg_data_typ[REG_A0]     = 0;
-      reg_mints[REG_A0].los[0] = lo;
-      reg_mints[REG_A0].ups[0] = compute_upper_bound(lo, step, up);
+      reg_mintervals_los[REG_A0][0] = lo;
+      reg_mintervals_ups[REG_A0][0] = compute_upper_bound(lo, step, up);
       reg_mints_idx[REG_A0]    = 1;
       reg_steps[REG_A0]        = step;
       reg_addrs_idx[REG_A0]    = 0;
-      reg_symb_typ[REG_A0]     = (lo == reg_mints[REG_A0].ups[0]) ? CONCRETE : SYMBOLIC;
+      reg_symb_typ[REG_A0]     = (lo == reg_mintervals_ups[REG_A0][0]) ? CONCRETE : SYMBOLIC;
       reg_hasmn[REG_A0]             = 0;
       reg_addsub_corr[REG_A0]       = 0;
       reg_muldivrem_corr[REG_A0]    = 0;
       reg_corr_validity[REG_A0]     = 0;
 
-      printf("symbolic input: lo: %llu, up: %llu, step: %llu, cnt: %llu\n", reg_mints[REG_A0].los[0], reg_mints[REG_A0].ups[0], step, symbolic_input_cnt++);
+      printf("symbolic input: lo: %llu, up: %llu, step: %llu, cnt: %llu\n", reg_mintervals_los[REG_A0][0], reg_mintervals_ups[REG_A0][0], step, symbolic_input_cnt++);
     }
 
     set_pc(context, get_pc(context) + INSTRUCTIONSIZE);
@@ -2640,8 +2640,8 @@ void implement_write(uint64_t* context) {
     } else {
       *(reg_data_typ + REG_A0) = 0;
 
-      reg_mints[REG_A0].los[0]   = *(get_regs(context) + REG_A0);
-      reg_mints[REG_A0].ups[0]   = *(get_regs(context) + REG_A0);
+      reg_mintervals_los[REG_A0][0]   = *(get_regs(context) + REG_A0);
+      reg_mintervals_ups[REG_A0][0]   = *(get_regs(context) + REG_A0);
       reg_mints_idx[REG_A0]      = 1;
       reg_steps[REG_A0]          = 1;
       reg_addrs_idx[REG_A0]      = 0;
@@ -2681,7 +2681,7 @@ uint64_t down_load_string(uint64_t* table, uint64_t vaddr, uint64_t* s) {
 
             *(s + i) = *(values + mrvc);
 
-            if (is_symbolic_value(data_types[mrvc], mints_idxs[mrvc], mints[mrvc].los[0], mints[mrvc].ups[0])) {
+            if (is_symbolic_value(data_types[mrvc], mints_idxs[mrvc], mintervals_los[mrvc][0], mintervals_ups[mrvc][0])) {
               printf1((uint64_t*) "%s: detected symbolic value ", exe_name);
               print_symbolic_memory(mrvc);
               print((uint64_t*) " in filename of open call\n");
@@ -2769,8 +2769,8 @@ void implement_open(uint64_t* context) {
     } else {
       *(reg_data_typ + REG_A0) = 0;
 
-      reg_mints[REG_A0].los[0]   = *(get_regs(context) + REG_A0);
-      reg_mints[REG_A0].ups[0]   = *(get_regs(context) + REG_A0);
+      reg_mintervals_los[REG_A0][0]   = *(get_regs(context) + REG_A0);
+      reg_mintervals_ups[REG_A0][0]   = *(get_regs(context) + REG_A0);
       reg_mints_idx[REG_A0]      = 1;
       reg_steps[REG_A0]          = 1;
       reg_addrs_idx[REG_A0]      = 0;
@@ -2839,8 +2839,8 @@ void implement_brk(uint64_t* context) {
         *(reg_data_typ + REG_A0)      = POINTER_T;
         *(get_regs(context) + REG_A0) = previous_program_break;
         // remember start and size of memory block for checking memory safety
-        reg_mints[REG_A0].los[0]      = previous_program_break;
-        reg_mints[REG_A0].ups[0]      = size;
+        reg_mintervals_los[REG_A0][0]      = previous_program_break;
+        reg_mintervals_ups[REG_A0][0]      = size;
         reg_mints_idx[REG_A0]         = 1;
         reg_steps[REG_A0]             = 1;
         reg_addrs_idx[REG_A0]         = 0;
@@ -2890,8 +2890,8 @@ void implement_brk(uint64_t* context) {
         sase_regs_typ[REG_A0] = CONCRETE_T;
       } else {
         *(reg_data_typ + REG_A0)   = VALUE_T;
-        reg_mints[REG_A0].los[0]   = 0;
-        reg_mints[REG_A0].ups[0]   = 0;
+        reg_mintervals_los[REG_A0][0]   = 0;
+        reg_mintervals_ups[REG_A0][0]   = 0;
         reg_mints_idx[REG_A0]      = 1;
         reg_steps[REG_A0]          = 1;
         reg_addrs_idx[REG_A0]      = 0;
@@ -4280,8 +4280,8 @@ void up_load_arguments(uint64_t* context, uint64_t argc, uint64_t* argv) {
     } else {
       *(reg_data_typ + REG_SP) = 0;
 
-      reg_mints[REG_SP].los[0]   = SP;
-      reg_mints[REG_SP].ups[0]   = SP;
+      reg_mintervals_los[REG_SP][0]   = SP;
+      reg_mintervals_ups[REG_SP][0]   = SP;
       reg_mints_idx[REG_SP]      = 1;
       reg_steps[REG_SP]          = 1;
       reg_addrs_idx[REG_SP]      = 0;
