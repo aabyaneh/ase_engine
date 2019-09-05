@@ -2478,6 +2478,13 @@ void implement_printsv(uint64_t* context) {
         printf("---INPUT :=) id: %-3llu, mint: %-2u; => lo: %-5llu, up: %-5llu, step: %-5llu\n", j+1, i, mintervals_los[input_table[j]][i], mintervals_ups[input_table[j]][i], steps[input_table[j]]);
       }
     }
+
+    if (IS_TEST_MODE) {
+      for (uint32_t i = 0; i < reg_mintervals_cnts[REG_A1]; i++) {
+        // output_results << std::left << "PRINTSV :=) id: " << std::setw(5) << id << "; mints:" << std::setw(5) << i+1 << "; lo:" << std::setw(20) << reg_mintervals_los[REG_A1][i] << "; up:" << std::setw(20) << reg_mintervals_ups[REG_A1][i] << "; step:" << std::setw(20) << reg_steps[REG_A1] << std::endl;
+        output_results << std::left << "P=" << id << ";" << i+1 << ";" << reg_mintervals_los[REG_A1][i] << ";" << reg_mintervals_ups[REG_A1][i] << ";" << reg_steps[REG_A1] << std::endl;
+      }
+    }
   }
 
   set_pc(context, get_pc(context) + INSTRUCTIONSIZE);
@@ -4448,7 +4455,17 @@ uint64_t engine(uint64_t* to_context) {
           }
         }
       } else {
-        // printf("%\n backtracking %llu\n", b);
+        // printf("%\nbacktracking %llu\n", b+1);
+
+        if (IS_TEST_MODE) {
+          for (size_t j = 0; j < input_table.size(); j++) {
+            for (uint32_t i = 0; i < mintervals_cnts[input_table[j]]; i++) {
+              // output_results << std::left << "--INPUT :=) id: " << std::setw(5) << j+1 << "; mints:" << std::setw(5) << i+1 << "; lo:" << std::setw(20) << mintervals_los[input_table[j]][i] << "; up:" << std::setw(20) << mintervals_ups[input_table[j]][i] << "; step:" << std::setw(20) << steps[input_table[j]] << std::endl;
+              output_results << std::left << "I=" << j+1 << ";" << i+1 << ";" << mintervals_los[input_table[j]][i] << ";" << mintervals_ups[input_table[j]][i] << ";" << steps[input_table[j]] << std::endl;
+            }
+          }
+          output_results << "B=" << b+1 << "\n";
+        }
 
         backtrack_trace(current_context);
 
@@ -4520,6 +4537,9 @@ uint64_t selfie_run(uint64_t machine) {
   println();
 
   exit_code = engine(current_context);
+
+  if (IS_TEST_MODE)
+    output_results.close();
 
   execute = 0;
 

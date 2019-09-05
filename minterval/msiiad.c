@@ -96,6 +96,13 @@ std::vector<std::vector<uint64_t> > reg_vaddrs(NUMBEROFREGISTERS); // virtual ad
 uint32_t* reg_vaddrs_cnts     = (uint32_t*) 0;
 
 // ---------------------------------------------
+// --------------- testing
+// ---------------------------------------------
+
+bool     IS_TEST_MODE         = false;
+std::ofstream output_results;
+
+// ---------------------------------------------
 // --------------- branch evaluation
 // ---------------------------------------------
 
@@ -204,6 +211,10 @@ void init_symbolic_engine() {
 
   TWO_TO_THE_POWER_OF_32 = two_to_the_power_of(32);
   TWO_TO_THE_POWER_OF_64 = UINT64_MAX_VALUE + 1U;
+
+  if (IS_TEST_MODE) {
+    output_results.open("results.txt", std::ofstream::trunc);
+  }
 }
 
 ////////////////////////////////////////////////////////////////////////////////

@@ -3,6 +3,8 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <vector>
+#include <fstream>
+#include <iomanip>
 
 // ------ shared variables and procedures between source files -----
 
@@ -122,6 +124,9 @@ extern uint64_t mrcc;
 extern uint64_t symbolic_input_cnt;
 
 extern std::vector<uint64_t> input_table;
+
+extern bool IS_TEST_MODE;
+extern std::ofstream output_results;
 
 // ------------------------ INSTRUCTIONS -----------------------
 
