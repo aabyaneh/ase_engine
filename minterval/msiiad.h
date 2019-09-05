@@ -179,5 +179,7 @@ void create_mconstraints_lptr(uint64_t lo1, uint64_t up1, std::vector<uint64_t>&
 void create_xor_mconstraints(std::vector<uint64_t>& lo1_p, std::vector<uint64_t>& up1_p, std::vector<uint64_t>& lo2_p, std::vector<uint64_t>& up2_p, uint64_t trb);
 void create_xor_mconstraints_rptr(std::vector<uint64_t>& lo1_p, std::vector<uint64_t>& up1_p, uint64_t lo2, uint64_t up2, uint64_t trb);
 void create_xor_mconstraints_lptr(uint64_t lo1, uint64_t up1, std::vector<uint64_t>& lo2_p, std::vector<uint64_t>& up2_p, uint64_t trb);
+uint64_t check_conditional_type_equality_or_disequality();
+uint64_t check_conditional_type_lte_or_gte();
 
 uint64_t compute_upper_bound(uint64_t lo, uint64_t step, uint64_t value);

@@ -2094,12 +2094,21 @@ void create_mconstraints(std::vector<uint64_t>& lo1_p, std::vector<uint64_t>& up
 
   if (true_reachable) {
     if (false_reachable) {
-      constrain_memory(rs1, true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, true_branch_rs1_minterval_cnt, trb, false);
-      constrain_memory(rs2, true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, true_branch_rs2_minterval_cnt, trb, false);
-      take_branch(1, 1);
-      constrain_memory(rs1, false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups,false_branch_rs1_minterval_cnt, trb, false);
-      constrain_memory(rs2, false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups,false_branch_rs2_minterval_cnt, trb, false);
-      take_branch(0, 0);
+      if (check_conditional_type_lte_or_gte() == LGTE) {
+        constrain_memory(rs1, true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, true_branch_rs1_minterval_cnt, trb, false);
+        constrain_memory(rs2, true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, true_branch_rs2_minterval_cnt, trb, false);
+        take_branch(1, 1);
+        constrain_memory(rs1, false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups,false_branch_rs1_minterval_cnt, trb, false);
+        constrain_memory(rs2, false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups,false_branch_rs2_minterval_cnt, trb, false);
+        take_branch(0, 0);
+      } else {
+        constrain_memory(rs1, false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups,false_branch_rs1_minterval_cnt, trb, false);
+        constrain_memory(rs2, false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups,false_branch_rs2_minterval_cnt, trb, false);
+        take_branch(0, 1);
+        constrain_memory(rs1, true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, true_branch_rs1_minterval_cnt, trb, false);
+        constrain_memory(rs2, true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, true_branch_rs2_minterval_cnt, trb, false);
+        take_branch(1, 0);
+      }
     } else {
       constrain_memory(rs1, true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, true_branch_rs1_minterval_cnt, trb, true);
       constrain_memory(rs2, true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, true_branch_rs2_minterval_cnt, trb, true);
@@ -2143,12 +2152,21 @@ void create_mconstraints_lptr(uint64_t lo1, uint64_t up1, std::vector<uint64_t>&
 
   if (true_reachable) {
     if (false_reachable) {
-      constrain_memory(rs1, true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, true_branch_rs1_minterval_cnt, trb, false);
-      constrain_memory(rs2, true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, true_branch_rs2_minterval_cnt, trb, false);
-      take_branch(1, 1);
-      constrain_memory(rs1, false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups,false_branch_rs1_minterval_cnt, trb, false);
-      constrain_memory(rs2, false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups,false_branch_rs2_minterval_cnt, trb, false);
-      take_branch(0, 0);
+      if (check_conditional_type_lte_or_gte() == LGTE) {
+        constrain_memory(rs1, true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, true_branch_rs1_minterval_cnt, trb, false);
+        constrain_memory(rs2, true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, true_branch_rs2_minterval_cnt, trb, false);
+        take_branch(1, 1);
+        constrain_memory(rs1, false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups,false_branch_rs1_minterval_cnt, trb, false);
+        constrain_memory(rs2, false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups,false_branch_rs2_minterval_cnt, trb, false);
+        take_branch(0, 0);
+      } else {
+        constrain_memory(rs1, false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups,false_branch_rs1_minterval_cnt, trb, false);
+        constrain_memory(rs2, false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups,false_branch_rs2_minterval_cnt, trb, false);
+        take_branch(0, 1);
+        constrain_memory(rs1, true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, true_branch_rs1_minterval_cnt, trb, false);
+        constrain_memory(rs2, true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, true_branch_rs2_minterval_cnt, trb, false);
+        take_branch(1, 0);
+      }
     } else {
       constrain_memory(rs1, true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, true_branch_rs1_minterval_cnt, trb, true);
       constrain_memory(rs2, true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, true_branch_rs2_minterval_cnt, trb, true);
@@ -2191,12 +2209,21 @@ void create_mconstraints_rptr(std::vector<uint64_t>& lo1_p, std::vector<uint64_t
 
   if (true_reachable) {
     if (false_reachable) {
-      constrain_memory(rs1, true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, true_branch_rs1_minterval_cnt, trb, false);
-      constrain_memory(rs2, true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, true_branch_rs2_minterval_cnt, trb, false);
-      take_branch(1, 1);
-      constrain_memory(rs1, false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups,false_branch_rs1_minterval_cnt, trb, false);
-      constrain_memory(rs2, false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups,false_branch_rs2_minterval_cnt, trb, false);
-      take_branch(0, 0);
+      if (check_conditional_type_lte_or_gte() == LGTE) {
+        constrain_memory(rs1, true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, true_branch_rs1_minterval_cnt, trb, false);
+        constrain_memory(rs2, true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, true_branch_rs2_minterval_cnt, trb, false);
+        take_branch(1, 1);
+        constrain_memory(rs1, false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups,false_branch_rs1_minterval_cnt, trb, false);
+        constrain_memory(rs2, false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups,false_branch_rs2_minterval_cnt, trb, false);
+        take_branch(0, 0);
+      } else {
+        constrain_memory(rs1, false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups,false_branch_rs1_minterval_cnt, trb, false);
+        constrain_memory(rs2, false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups,false_branch_rs2_minterval_cnt, trb, false);
+        take_branch(0, 1);
+        constrain_memory(rs1, true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, true_branch_rs1_minterval_cnt, trb, false);
+        constrain_memory(rs2, true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, true_branch_rs2_minterval_cnt, trb, false);
+        take_branch(1, 0);
+      }
     } else {
       constrain_memory(rs1, true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, true_branch_rs1_minterval_cnt, trb, true);
       constrain_memory(rs2, true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, true_branch_rs2_minterval_cnt, trb, true);
@@ -2431,12 +2458,22 @@ void create_xor_mconstraints(std::vector<uint64_t>& lo1_p, std::vector<uint64_t>
 
     if (true_reachable) {
       if (false_reachable) {
-        constrain_memory(rs1, true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, true_branch_rs1_minterval_cnt, trb, false);
-        constrain_memory(rs2, true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, true_branch_rs2_minterval_cnt, trb, false);
-        take_branch(1, 1);
-        constrain_memory(rs1, false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups,false_branch_rs1_minterval_cnt, trb, false);
-        constrain_memory(rs2, false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups,false_branch_rs2_minterval_cnt, trb, false);
-        take_branch(0, 0);
+        if (check_conditional_type_equality_or_disequality() == EQ) {
+          printf("EQUAL-------------------\n");
+          constrain_memory(rs1, true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, true_branch_rs1_minterval_cnt, trb, false);
+          constrain_memory(rs2, true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, true_branch_rs2_minterval_cnt, trb, false);
+          take_branch(1, 1);
+          constrain_memory(rs1, false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups,false_branch_rs1_minterval_cnt, trb, false);
+          constrain_memory(rs2, false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups,false_branch_rs2_minterval_cnt, trb, false);
+          take_branch(0, 0);
+        } else {
+          constrain_memory(rs1, false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups,false_branch_rs1_minterval_cnt, trb, false);
+          constrain_memory(rs2, false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups,false_branch_rs2_minterval_cnt, trb, false);
+          take_branch(0, 1);
+          constrain_memory(rs1, true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, true_branch_rs1_minterval_cnt, trb, false);
+          constrain_memory(rs2, true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, true_branch_rs2_minterval_cnt, trb, false);
+          take_branch(1, 0);
+        }
       } else {
         constrain_memory(rs1, true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, true_branch_rs1_minterval_cnt, trb, true);
         constrain_memory(rs2, true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, true_branch_rs2_minterval_cnt, trb, true);
@@ -2505,12 +2542,21 @@ void create_xor_mconstraints_lptr(uint64_t lo1, uint64_t up1, std::vector<uint64
 
     if (true_reachable) {
       if (false_reachable) {
-        constrain_memory(rs1, true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, true_branch_rs1_minterval_cnt, trb, false);
-        constrain_memory(rs2, true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, true_branch_rs2_minterval_cnt, trb, false);
-        take_branch(1, 1);
-        constrain_memory(rs1, false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups,false_branch_rs1_minterval_cnt, trb, false);
-        constrain_memory(rs2, false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups,false_branch_rs2_minterval_cnt, trb, false);
-        take_branch(0, 0);
+        if (check_conditional_type_equality_or_disequality() == EQ) {
+          constrain_memory(rs1, true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, true_branch_rs1_minterval_cnt, trb, false);
+          constrain_memory(rs2, true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, true_branch_rs2_minterval_cnt, trb, false);
+          take_branch(1, 1);
+          constrain_memory(rs1, false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups,false_branch_rs1_minterval_cnt, trb, false);
+          constrain_memory(rs2, false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups,false_branch_rs2_minterval_cnt, trb, false);
+          take_branch(0, 0);
+        } else {
+          constrain_memory(rs1, false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups,false_branch_rs1_minterval_cnt, trb, false);
+          constrain_memory(rs2, false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups,false_branch_rs2_minterval_cnt, trb, false);
+          take_branch(0, 1);
+          constrain_memory(rs1, true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, true_branch_rs1_minterval_cnt, trb, false);
+          constrain_memory(rs2, true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, true_branch_rs2_minterval_cnt, trb, false);
+          take_branch(1, 0);
+        }
       } else {
         constrain_memory(rs1, true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, true_branch_rs1_minterval_cnt, trb, true);
         constrain_memory(rs2, true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, true_branch_rs2_minterval_cnt, trb, true);
@@ -2579,12 +2625,21 @@ void create_xor_mconstraints_rptr(std::vector<uint64_t>& lo1_p, std::vector<uint
 
     if (true_reachable) {
       if (false_reachable) {
-        constrain_memory(rs1, true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, true_branch_rs1_minterval_cnt, trb, false);
-        constrain_memory(rs2, true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, true_branch_rs2_minterval_cnt, trb, false);
-        take_branch(1, 1);
-        constrain_memory(rs1, false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups,false_branch_rs1_minterval_cnt, trb, false);
-        constrain_memory(rs2, false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups,false_branch_rs2_minterval_cnt, trb, false);
-        take_branch(0, 0);
+        if (check_conditional_type_equality_or_disequality() == EQ) {
+          constrain_memory(rs1, true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, true_branch_rs1_minterval_cnt, trb, false);
+          constrain_memory(rs2, true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, true_branch_rs2_minterval_cnt, trb, false);
+          take_branch(1, 1);
+          constrain_memory(rs1, false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups,false_branch_rs1_minterval_cnt, trb, false);
+          constrain_memory(rs2, false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups,false_branch_rs2_minterval_cnt, trb, false);
+          take_branch(0, 0);
+        } else {
+          constrain_memory(rs1, false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups,false_branch_rs1_minterval_cnt, trb, false);
+          constrain_memory(rs2, false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups,false_branch_rs2_minterval_cnt, trb, false);
+          take_branch(0, 1);
+          constrain_memory(rs1, true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, true_branch_rs1_minterval_cnt, trb, false);
+          constrain_memory(rs2, true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, true_branch_rs2_minterval_cnt, trb, false);
+          take_branch(1, 0);
+        }
       } else {
         constrain_memory(rs1, true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, true_branch_rs1_minterval_cnt, trb, true);
         constrain_memory(rs2, true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, true_branch_rs2_minterval_cnt, trb, true);
@@ -2837,41 +2892,89 @@ void propagate_remu(uint64_t step, uint64_t divisor) {
 
 // --------------------------- conditional expression --------------------------
 
-// uint32_t check_conditional_type() {
-//   uint64_t saved_pc = pc;
-//
-//   pc = pc - INSTRUCTIONSIZE;
-//   fetch();
-//   if (get_opcode(ir) == OP_OP && get_funct3(ir) == F3_XOR) {
-//     // !=
-//     pc = saved_pc;
-//     return DEQ;
-//   }
-//
-//   pc = pc - INSTRUCTIONSIZE;
-//   fetch();
-//   if (get_opcode(ir) == OP_OP && get_funct3(ir) == F3_XOR) {
-//     // ==
-//     pc = saved_pc;
-//     return EQ;
-//   }
-//
-//   pc = saved_pc + INSTRUCTIONSIZE;
-//   fetch();
-//   if (get_opcode(ir) == OP_IMM) {
-//     if (match_addi()) {
-//       uint64_t rd_ = get_rd(ir);
-//       pc = saved_pc + 2 * INSTRUCTIONSIZE;
-//       fetch();
-//       if (get_opcode(ir) == OP_OP) {
-//         if (match_sub(rd_)) {
-//           pc = saved_pc;
-//           return LGTE;
-//         }
-//       }
-//     }
-//   }
-//
-//   pc = saved_pc;
-//   return LT;
-// }
+bool match_addi_instruction() {
+  uint64_t rs1_;
+  uint64_t rd_;
+  uint64_t funct3_;
+  uint64_t imm_;
+
+  rs1_    = get_rs1(ir);
+  rd_     = get_rd(ir);
+  funct3_ = get_funct3(ir);
+  imm_    = get_immediate_i_format(ir);
+
+  if (funct3_ == F3_ADDI) {
+    if (imm_ == 1)
+      if (rs1_ == REG_ZR)
+        if (rd_ != rd)
+          return true;
+  }
+
+  return false;
+}
+
+bool match_sub_instruction(uint64_t prev_instr_rd) {
+  uint64_t rs1_;
+  uint64_t rs2_;
+  uint64_t rd_;
+  uint64_t funct3_;
+  uint64_t funct7_;
+
+  funct7_ = get_funct7(ir);
+  funct3_ = get_funct3(ir);
+  rs1_    = get_rs1(ir);
+  rs2_    = get_rs2(ir);
+  rd_     = get_rd(ir);
+
+  if (funct3_ == F3_ADD) {
+    if (funct7_ == F7_SUB)
+      if (rs1_ == prev_instr_rd)
+        if (rs2_ == rd)
+          if (rd_ == rs2_)
+            return true;
+  }
+
+  return false;
+}
+
+uint64_t check_conditional_type_equality_or_disequality() {
+  uint64_t saved_pc = pc;
+  uint64_t op_code;
+  uint64_t funct_3;
+
+  pc = saved_pc + INSTRUCTIONSIZE;
+  fetch();
+  op_code = get_opcode(ir);
+  funct_3 = get_funct3(ir);
+  if (op_code == OP_IMM && funct_3 == F3_ADDI) {
+    pc = saved_pc;
+    return EQ;
+  } else if (op_code == OP_OP && funct_3 == F3_SLTU) {
+    pc = saved_pc;
+    return DEQ;
+  } else {
+    printf("OUTPUT: XOR instruction is incorrectly used at %x \n", pc - entry_point);
+    exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
+  }
+
+  return 0;
+}
+
+uint64_t check_conditional_type_lte_or_gte() {
+  uint64_t saved_pc = pc;
+
+  pc = saved_pc + INSTRUCTIONSIZE;
+  fetch();
+  if (get_opcode(ir) == OP_IMM && match_addi_instruction()) {
+    uint64_t rd_ = get_rd(ir);
+    pc = saved_pc + 2 * INSTRUCTIONSIZE;
+    fetch();
+    if (get_opcode(ir) == OP_OP && match_sub_instruction(rd_)) {
+      pc = saved_pc;
+      return LGTE;
+    }
+  }
+
+  pc = saved_pc;
+  return LT;
+}
