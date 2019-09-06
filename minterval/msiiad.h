@@ -3,6 +3,7 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <vector>
+#include <string>
 #include <fstream>
 #include <iomanip>
 
@@ -42,6 +43,7 @@ extern uint64_t* current_context;
 extern uint64_t* registers;
 extern uint64_t* loads_per_instruction;
 extern uint64_t* stores_per_instruction;
+extern uint64_t* binary_name;
 
 extern uint64_t entry_point;
 extern bool     assert_zone;
