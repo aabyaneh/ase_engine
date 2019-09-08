@@ -1552,10 +1552,13 @@ uint64_t reverse_division_up(uint64_t ups_mrvc, uint64_t up, uint64_t codiv) {
 // mrvc is mrvc of x
 // lo_before_op is previouse lo of y
 void apply_correction(std::vector<uint64_t>& lo, std::vector<uint64_t>& up, uint32_t mints_num, bool hasmn, uint64_t addsub_corr, uint64_t muldivrem_corr, uint64_t corr_validity, std::vector<uint64_t>& lo_before_op, std::vector<uint64_t>& up_before_op, uint64_t step, uint64_t mrvc, bool should_be_stored_or_not) {
-  uint64_t lo_p[MAX_NUM_OF_INTERVALS];
-  uint64_t up_p[MAX_NUM_OF_INTERVALS];
-  uint32_t idxs[MAX_NUM_OF_INTERVALS];
-  bool     is_lo_p_up_p_used = false;
+  bool is_lo_p_up_p_used = false;
+  std::vector<uint64_t> lo_p;
+  std::vector<uint64_t> up_p;
+  std::vector<uint32_t> idxs;
+  // uint64_t lo_p[mints_num];
+  // uint64_t up_p[mints_num];
+  // uint32_t idxs[mints_num];
 
   uint32_t j;
   // bool is_found;
@@ -1574,7 +1577,8 @@ void apply_correction(std::vector<uint64_t>& lo, std::vector<uint64_t>& up, uint
     //   exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
     // }
 
-    idxs[i] = j;
+    idxs.push_back(j);
+    // idxs[i] = j;
     propagated_minterval_lo[i] = compute_lower_bound(lo_before_op[j], step, lo[i]);
     propagated_minterval_up[i] = compute_upper_bound(lo_before_op[j], step, up[i]);
   }
@@ -1699,8 +1703,10 @@ void apply_correction(std::vector<uint64_t>& lo, std::vector<uint64_t>& up, uint
   // assert: (ld_from_tcs_cnts[mrvc] > 1) never reach here
   if (ld_from_tcs_cnts[mrvc]) {
     for (uint32_t i = 0; i < mints_num; i++) {
-      lo_p[i] = propagated_minterval_lo[i];
-      up_p[i] = propagated_minterval_up[i];
+      lo_p.push_back(propagated_minterval_lo[i]);
+      up_p.push_back(propagated_minterval_up[i]);
+      // lo_p[i] = propagated_minterval_lo[i];
+      // up_p[i] = propagated_minterval_up[i];
     }
     is_lo_p_up_p_used = true;
 
@@ -1728,12 +1734,16 @@ void propagate_backwards_rhs(std::vector<uint64_t>& lo, std::vector<uint64_t>& u
   uint64_t stored_to_tc;
   uint64_t mr_stored_to_tc;
   uint64_t tmp;
-  uint64_t lo_p[MAX_NUM_OF_INTERVALS];
-  uint64_t up_p[MAX_NUM_OF_INTERVALS];
+  std::vector<uint64_t> lo_p;
+  std::vector<uint64_t> up_p;
+  // uint64_t lo_p[mints_num];
+  // uint64_t up_p[mints_num];
 
   for (uint32_t j = 0; j < mints_num; j++) {
-    lo_p[j] = lo[j];
-    up_p[j] = up[j];
+    lo_p.push_back(lo[j]);
+    up_p.push_back(up[j]);
+    // lo_p[j] = lo[j];
+    // up_p[j] = up[j];
   }
 
   propagated_minterval_cnt = mints_num;
