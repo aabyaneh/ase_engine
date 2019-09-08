@@ -2474,7 +2474,7 @@ void implement_printsv(uint64_t* context) {
     }
 
     for (size_t j = 0; j < input_table.size(); j++) {
-      for (uint32_t i = 0; i < mintervals_cnts[input_table[j]]; i++) {
+      for (uint32_t i = 0; i < mintervals_los[input_table[j]].size(); i++) {
         printf("---INPUT :=) id: %-3llu, mint: %-2u; => lo: %-5llu, up: %-5llu, step: %-5llu\n", j+1, i, mintervals_los[input_table[j]][i], mintervals_ups[input_table[j]][i], steps[input_table[j]]);
       }
     }
@@ -2685,7 +2685,7 @@ uint64_t down_load_string(uint64_t* table, uint64_t vaddr, uint64_t* s) {
 
             *(s + i) = *(values + mrvc);
 
-            if (is_symbolic_value(data_types[mrvc], mintervals_cnts[mrvc], mintervals_los[mrvc][0], mintervals_ups[mrvc][0])) {
+            if (is_symbolic_value(data_types[mrvc], mintervals_los[mrvc].size(), mintervals_los[mrvc][0], mintervals_ups[mrvc][0])) {
               printf1((uint64_t*) "%s: detected symbolic value ", exe_name);
               print_symbolic_memory(mrvc);
               print((uint64_t*) " in filename of open call\n");
@@ -4459,7 +4459,7 @@ uint64_t engine(uint64_t* to_context) {
 
         if (IS_TEST_MODE) {
           for (size_t j = 0; j < input_table.size(); j++) {
-            for (uint32_t i = 0; i < mintervals_cnts[input_table[j]]; i++) {
+            for (uint32_t i = 0; i < mintervals_los[input_table[j]].size(); i++) {
               // output_results << std::left << "--INPUT :=) id: " << std::setw(5) << j+1 << "; mints:" << std::setw(5) << i+1 << "; lo:" << std::setw(20) << mintervals_los[input_table[j]][i] << "; up:" << std::setw(20) << mintervals_ups[input_table[j]][i] << "; step:" << std::setw(20) << steps[input_table[j]] << std::endl;
               output_results << std::left << "I=" << j+1 << ";" << i+1 << ";" << mintervals_los[input_table[j]][i] << ";" << mintervals_ups[input_table[j]][i] << ";" << steps[input_table[j]] << std::endl;
             }

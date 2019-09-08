@@ -31,11 +31,9 @@ uint64_t* mr_sds          = (uint64_t*) 0; // the tc of most recent store to a m
 
 // propagation from right to left
 std::vector<std::vector<uint64_t> > forward_propagated_to_tcs(MAX_TRACE_LENGTH);
-uint64_t* forward_propagated_to_tcs_cnts = (uint64_t*) 0;
 
 // propagation from left to right (chain)
 std::vector<std::vector<uint64_t> > ld_from_tcs(MAX_TRACE_LENGTH);
-uint32_t* ld_from_tcs_cnts = (uint32_t*) 0;
 
 // temporary data-structure to pass values targeting propagations
 std::vector<uint64_t> propagated_minterval_lo(MAX_NUM_OF_INTERVALS);
@@ -70,7 +68,6 @@ bool*     hasmns          = (bool*) 0;     // corrections
 
 std::vector<std::vector<uint64_t> > mintervals_los(MAX_TRACE_LENGTH);
 std::vector<std::vector<uint64_t> > mintervals_ups(MAX_TRACE_LENGTH);
-uint32_t* mintervals_cnts = (uint32_t*) 0;
 
 // ---------------------------------------------
 // --------------- registers
@@ -147,10 +144,6 @@ std::ofstream output_results;
 // ------------------------- INITIALIZATION ------------------------
 
 void init_symbolic_engine() {
-  forward_propagated_to_tcs_cnts = (uint64_t*) malloc(MAX_TRACE_LENGTH  * sizeof(uint64_t));
-  ld_from_tcs_cnts               = (uint32_t*) malloc(MAX_TRACE_LENGTH  * sizeof(uint32_t));
-  mintervals_cnts                = (uint32_t*) malloc(MAX_TRACE_LENGTH  * sizeof(uint32_t));
-
   pcs                  = (uint64_t*) malloc(MAX_TRACE_LENGTH  * sizeof(uint64_t));
   tcs                  = (uint64_t*) malloc(MAX_TRACE_LENGTH  * sizeof(uint64_t));
   values               = (uint64_t*) malloc(MAX_TRACE_LENGTH  * sizeof(uint64_t));
@@ -201,10 +194,6 @@ void init_symbolic_engine() {
   hasmns[0]          = 0;
   mr_sds[0]          = 0;
   is_inputs[0]       = 0;
-
-  mintervals_cnts[0]                = 0;
-  forward_propagated_to_tcs_cnts[0] = 0;
-  ld_from_tcs_cnts[0]               = 0;
 
   mintervals_los[0].push_back(0);
   mintervals_ups[0].push_back(0);
@@ -1118,7 +1107,7 @@ uint64_t constrain_ld() {
 
         registers[rd]     = values[mrvc];
         reg_steps[rd]     = steps[mrvc];
-        reg_mintervals_cnts[rd] = mintervals_cnts[mrvc];
+        reg_mintervals_cnts[rd] = mintervals_los[mrvc].size();
         if (reg_mintervals_cnts[rd] == 0) {
           printf("OUTPUT: reg_mintervals_cnts is zero\n");
         }
@@ -1129,7 +1118,7 @@ uint64_t constrain_ld() {
 
         // assert: vaddr == *(vaddrs + mrvc)
 
-        if (is_symbolic_value(reg_data_type[rd], mintervals_cnts[mrvc], reg_mintervals_los[rd][0], reg_mintervals_ups[rd][0])) {
+        if (is_symbolic_value(reg_data_type[rd], mintervals_los[mrvc].size(), reg_mintervals_los[rd][0], reg_mintervals_ups[rd][0])) {
           // vaddr is constrained by rd if value interval is not singleton
           set_correction(rd, SYMBOLIC, 0, 0, 0, 0);
           reg_vaddrs_cnts[rd] = 1;
@@ -1306,7 +1295,7 @@ void store_symbolic_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, uint32_
     mrvc = load_symbolic_memory(pt, vaddr);
 
     bool is_this_value_symbolic = is_pure_concrete_value(data_type, mints_num, lo[0], up[0], ld_from_num, is_input);
-    bool is_prev_value_symbolic = is_pure_concrete_value(data_types[mrvc], mintervals_cnts[mrvc], mintervals_los[mrvc][0], mintervals_ups[mrvc][0], ld_from_tcs_cnts[mrvc], is_inputs[mrvc]);
+    bool is_prev_value_symbolic = is_pure_concrete_value(data_types[mrvc], mintervals_los[mrvc].size(), mintervals_los[mrvc][0], mintervals_ups[mrvc][0], ld_from_tcs[mrvc].size(), is_inputs[mrvc]);
 
     if (is_this_value_symbolic && is_prev_value_symbolic && trb < mrvc) {
       // overwrite
@@ -1318,7 +1307,6 @@ void store_symbolic_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, uint32_
       data_types[mrvc]      = data_type;
       values[mrvc]          = value;
       steps[mrvc]           = step;
-      mintervals_cnts[mrvc] = mints_num;
 
       mintervals_los[mrvc].clear();
       mintervals_ups[mrvc].clear();
@@ -1366,7 +1354,6 @@ void store_symbolic_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, uint32_
       is_inputs[tc] = is_input;
     }
 
-    mintervals_cnts[tc] = mints_num;
     mintervals_los[tc].clear();
     mintervals_ups[tc].clear();
     for (uint32_t i = 0; i < mints_num; i++) {
@@ -1374,29 +1361,24 @@ void store_symbolic_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, uint32_
       mintervals_ups[tc].push_back(up[i]);
     }
 
-    ld_from_tcs_cnts[tc] = ld_from_num;
     if (to_tc == 0) { // means SD instruction
+      ld_from_tcs[tc].clear();
       if (ld_from_num != 0 && reg_symb_type[rs2] == SYMBOLIC) {
         // updating relations between memory locations, both ways
-        ld_from_tcs[tc].clear(); // this place is correct when we have ld_from_tcs_cnts[tc] = 0; in else
         for (uint32_t i = 0; i < ld_from_num; i++) {
           idx = ld_from_tc[i];
           ld_from_tcs[tc].push_back(idx);
-          if (forward_propagated_to_tcs_cnts[idx] < MAX_SD_TO_NUM) {
+          if (forward_propagated_to_tcs[idx].size() < MAX_SD_TO_NUM) {
             forward_propagated_to_tcs[idx].push_back(tc);
-            forward_propagated_to_tcs_cnts[idx]++;
           } else {
             printf("OUTPUT: maximum number of possible sd_to is reached at %x\n", pc - entry_point);
             exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
           }
         }
-      } else {
-        ld_from_tcs_cnts[tc] = 0;
       }
-      forward_propagated_to_tcs_cnts[tc] = 0;
+      forward_propagated_to_tcs[tc].clear();
       mr_sds[tc] = tc;
     } else {
-      forward_propagated_to_tcs_cnts[tc] = forward_propagated_to_tcs_cnts[to_tc];
       forward_propagated_to_tcs[tc]      = forward_propagated_to_tcs[to_tc];
       mr_sds[tc]                         = mr_sds[mrvc];
 
@@ -1419,8 +1401,10 @@ void store_symbolic_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, uint32_
       printf("OUTPUT: storing\n");
       print_symbolic_memory(tc);
     }
-  } else
+  } else {
+    printf("OUTPUT: storing\n");
     throw_exception(EXCEPTION_MAXTRACE, 0);
+  }
 }
 
 // store temporarily an updated symbolic variable on trace without updating the memory and tc++; just for passing args
@@ -1454,7 +1438,6 @@ void store_temp_constrained_memory(uint64_t* pt, uint64_t vaddr, uint64_t value,
 
     is_inputs[tc]       = 0;
 
-    mintervals_cnts[tc] = mints_num;
     mintervals_los[tc].clear();
     mintervals_ups[tc].clear();
     for (uint32_t i = 0; i < mints_num; i++) {
@@ -1462,7 +1445,6 @@ void store_temp_constrained_memory(uint64_t* pt, uint64_t vaddr, uint64_t value,
       mintervals_ups[tc].push_back(up[i]);
     }
 
-    ld_from_tcs_cnts[tc] = ld_from_num;
     ld_from_tcs[tc].clear();
     for (uint32_t i = 0; i < ld_from_num; i++) {
       ld_from_tcs[tc].push_back(ld_from_tcs[to_tc][i]);
@@ -1509,7 +1491,6 @@ void store_input_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, uint32_t d
     is_inputs[tc]       = is_input;
     input_table.at(is_input - 1) = tc;
 
-    mintervals_cnts[tc] = mints_num;
     mintervals_los[tc].clear();
     mintervals_ups[tc].clear();
     for (uint32_t i = 0; i < mints_num; i++) {
@@ -1517,7 +1498,6 @@ void store_input_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, uint32_t d
       mintervals_ups[tc].push_back(up[i]);
     }
 
-    ld_from_tcs_cnts[tc] = ld_from_num;
     ld_from_tcs[tc].clear();
     for (uint32_t i = 0; i < ld_from_num; i++) {
       ld_from_tcs[tc].push_back(ld_from_tcs[to_tc][i]);
@@ -1564,7 +1544,7 @@ void apply_correction(std::vector<uint64_t>& lo, std::vector<uint64_t>& up, uint
   // bool is_found;
   for (uint32_t i = 0; i < mints_num; i++) {
     // is_found = false;
-    for (j = 0; j < mintervals_cnts[mrvc]; j++) {
+    for (j = 0; j < mintervals_los[mrvc].size(); j++) {
       if (up_before_op[j] - lo_before_op[j] >= lo[i] - lo_before_op[j]) {
         // is_found = true;
         break;
@@ -1578,7 +1558,6 @@ void apply_correction(std::vector<uint64_t>& lo, std::vector<uint64_t>& up, uint
     // }
 
     idxs.push_back(j);
-    // idxs[i] = j;
     propagated_minterval_lo[i] = compute_lower_bound(lo_before_op[j], step, lo[i]);
     propagated_minterval_up[i] = compute_upper_bound(lo_before_op[j], step, up[i]);
   }
@@ -1687,26 +1666,24 @@ void apply_correction(std::vector<uint64_t>& lo, std::vector<uint64_t>& up, uint
 
   //////////////////////////////////////////////////////////////////////////////
   if (should_be_stored_or_not == true) {
-    store_constrained_memory(vaddrs[mrvc], propagated_minterval_lo, propagated_minterval_up, mints_num, steps[mrvc], ld_from_tcs[mrvc], ld_from_tcs_cnts[mrvc], hasmns[mrvc], addsub_corrs[mrvc], muldivrem_corrs[mrvc], corr_validitys[mrvc], mrvc, is_inputs[mrvc]);
+    store_constrained_memory(vaddrs[mrvc], propagated_minterval_lo, propagated_minterval_up, mints_num, steps[mrvc], ld_from_tcs[mrvc], ld_from_tcs[mrvc].size(), hasmns[mrvc], addsub_corrs[mrvc], muldivrem_corrs[mrvc], corr_validitys[mrvc], mrvc, is_inputs[mrvc]);
   } else {
     // if memory addr is recently updated by a new variable, but we need to propagate constraints through its previouse value
     // carefull about: x = input(); y = x; x = input(); if(y);
     if (is_inputs[mrvc]) {
       // at (tc + 1) with ealloc()
-      store_input_memory(pt, vaddrs[mrvc], propagated_minterval_lo[0], VALUE_T, propagated_minterval_lo, propagated_minterval_up, mints_num, steps[mrvc], ld_from_tcs[mrvc], ld_from_tcs_cnts[mrvc], hasmns[mrvc], addsub_corrs[mrvc], muldivrem_corrs[mrvc], corr_validitys[mrvc], tc, mrvc, is_inputs[mrvc]);
+      store_input_memory(pt, vaddrs[mrvc], propagated_minterval_lo[0], VALUE_T, propagated_minterval_lo, propagated_minterval_up, mints_num, steps[mrvc], ld_from_tcs[mrvc], ld_from_tcs[mrvc].size(), hasmns[mrvc], addsub_corrs[mrvc], muldivrem_corrs[mrvc], corr_validitys[mrvc], tc, mrvc, is_inputs[mrvc]);
     } else {
       // at (tc + 1) but without ealloc()
-      store_temp_constrained_memory(pt, vaddrs[mrvc], propagated_minterval_lo[0], VALUE_T, propagated_minterval_lo, propagated_minterval_up, mints_num, steps[mrvc], ld_from_tcs[mrvc], ld_from_tcs_cnts[mrvc], hasmns[mrvc], addsub_corrs[mrvc], muldivrem_corrs[mrvc], corr_validitys[mrvc], tc, mrvc);
+      store_temp_constrained_memory(pt, vaddrs[mrvc], propagated_minterval_lo[0], VALUE_T, propagated_minterval_lo, propagated_minterval_up, mints_num, steps[mrvc], ld_from_tcs[mrvc], ld_from_tcs[mrvc].size(), hasmns[mrvc], addsub_corrs[mrvc], muldivrem_corrs[mrvc], corr_validitys[mrvc], tc, mrvc);
     }
   }
 
-  // assert: (ld_from_tcs_cnts[mrvc] > 1) never reach here
-  if (ld_from_tcs_cnts[mrvc]) {
+  // assert: (ld_from_tcs[mrvc].size() > 1) never reach here
+  if (ld_from_tcs[mrvc].size()) {
     for (uint32_t i = 0; i < mints_num; i++) {
       lo_p.push_back(propagated_minterval_lo[i]);
       up_p.push_back(propagated_minterval_up[i]);
-      // lo_p[i] = propagated_minterval_lo[i];
-      // up_p[i] = propagated_minterval_up[i];
     }
     is_lo_p_up_p_used = true;
 
@@ -1717,7 +1694,7 @@ void apply_correction(std::vector<uint64_t>& lo, std::vector<uint64_t>& up, uint
 
   }
 
-  if (forward_propagated_to_tcs_cnts[mrvc]) {
+  if (forward_propagated_to_tcs[mrvc].size()) {
     if (is_lo_p_up_p_used) {
       for (uint32_t i = 0; i < mints_num; i++) {
         propagated_minterval_lo[i] = lo_p[i];
@@ -1727,7 +1704,6 @@ void apply_correction(std::vector<uint64_t>& lo, std::vector<uint64_t>& up, uint
     propagate_backwards_rhs(propagated_minterval_lo, propagated_minterval_up, mints_num, mrvc);
   }
   //////////////////////////////////////////////////////////////////////////////
-
 }
 
 void propagate_backwards_rhs(std::vector<uint64_t>& lo, std::vector<uint64_t>& up, uint32_t mints_num, uint64_t mrvc) {
@@ -1742,12 +1718,10 @@ void propagate_backwards_rhs(std::vector<uint64_t>& lo, std::vector<uint64_t>& u
   for (uint32_t j = 0; j < mints_num; j++) {
     lo_p.push_back(lo[j]);
     up_p.push_back(up[j]);
-    // lo_p[j] = lo[j];
-    // up_p[j] = up[j];
   }
 
   propagated_minterval_cnt = mints_num;
-  for (int i = 0; i < forward_propagated_to_tcs_cnts[mrvc]; i++) {
+  for (int i = 0; i < forward_propagated_to_tcs[mrvc].size(); i++) {
     stored_to_tc = forward_propagated_to_tcs[mrvc].at(i);
     mr_stored_to_tc = load_symbolic_memory(pt, vaddrs[stored_to_tc]);
     mr_stored_to_tc = mr_sds[mr_stored_to_tc];
@@ -1786,14 +1760,14 @@ void propagate_backwards_rhs(std::vector<uint64_t>& lo, std::vector<uint64_t>& u
     }
 
     if (mr_stored_to_tc == stored_to_tc) {
-      store_constrained_memory(vaddrs[stored_to_tc], propagated_minterval_lo, propagated_minterval_up, mints_num, propagated_minterval_step, ld_from_tcs[stored_to_tc], ld_from_tcs_cnts[stored_to_tc], hasmns[stored_to_tc], addsub_corrs[stored_to_tc], muldivrem_corrs[stored_to_tc], corr_validitys[stored_to_tc], stored_to_tc, is_inputs[stored_to_tc]);
+      store_constrained_memory(vaddrs[stored_to_tc], propagated_minterval_lo, propagated_minterval_up, mints_num, propagated_minterval_step, ld_from_tcs[stored_to_tc], ld_from_tcs[stored_to_tc].size(), hasmns[stored_to_tc], addsub_corrs[stored_to_tc], muldivrem_corrs[stored_to_tc], corr_validitys[stored_to_tc], stored_to_tc, is_inputs[stored_to_tc]);
     } else if (mr_stored_to_tc < stored_to_tc) {
       printf("OUTPUT: mr_stored_to_tc < stored_to_tc at %x\n", pc - entry_point);
       exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
     }
     // else if mr_stored_to_tc > stored_to_tc => means it is overwritten
 
-    if (forward_propagated_to_tcs_cnts[stored_to_tc]) {
+    if (forward_propagated_to_tcs[stored_to_tc].size()) {
       propagate_backwards_rhs(propagated_minterval_lo, propagated_minterval_up, mints_num, stored_to_tc);
     }
   }
@@ -1810,10 +1784,10 @@ void propagate_backwards(uint64_t mrvc_y, std::vector<uint64_t>& lo_before_op, s
   if (mr_sds[mrvc_x] > ld_from_tcs[mrvc_y][0]) {
     // means x is overwritten
     mrvc_x = ld_from_tcs[mrvc_y][0];
-    apply_correction(mintervals_los[mrvc_y], mintervals_ups[mrvc_y], mintervals_cnts[mrvc_y], hasmns[mrvc_y], addsub_corrs[mrvc_y], muldivrem_corrs[mrvc_y], corr_validitys[mrvc_y], lo_before_op, up_before_op, steps[mrvc_y], mrvc_x, false);
+    apply_correction(mintervals_los[mrvc_y], mintervals_ups[mrvc_y], mintervals_los[mrvc_y].size(), hasmns[mrvc_y], addsub_corrs[mrvc_y], muldivrem_corrs[mrvc_y], corr_validitys[mrvc_y], lo_before_op, up_before_op, steps[mrvc_y], mrvc_x, false);
   } else {
     mrvc_x = ld_from_tcs[mrvc_y][0];
-    apply_correction(mintervals_los[mrvc_y], mintervals_ups[mrvc_y], mintervals_cnts[mrvc_y], hasmns[mrvc_y], addsub_corrs[mrvc_y], muldivrem_corrs[mrvc_y], corr_validitys[mrvc_y], lo_before_op, up_before_op, steps[mrvc_y], mrvc_x, true);
+    apply_correction(mintervals_los[mrvc_y], mintervals_ups[mrvc_y], mintervals_los[mrvc_y].size(), hasmns[mrvc_y], addsub_corrs[mrvc_y], muldivrem_corrs[mrvc_y], corr_validitys[mrvc_y], lo_before_op, up_before_op, steps[mrvc_y], mrvc_x, true);
   }
 }
 
@@ -1826,7 +1800,7 @@ void constrain_memory(uint64_t reg, std::vector<uint64_t>& lo, std::vector<uint6
       //   mrvc = load_symbolic_memory(pt, reg_vaddrs[reg][i]);
       //   lo = mintervals_los[mrvc];
       //   up = mintervals_ups[mrvc];
-      //   store_constrained_memory(reg_vaddrs[reg][i], lo, up, mintervals_cnts[mrvc], steps[mrvc], ld_from_tcs[mrvc], ld_from_tcs_cnts[mrvc], hasmns[mrvc], addsub_corrs[mrvc], muldivrem_corrs[mrvc], corr_validitys[mrvc], mrvc, is_inputs[mrvc]);
+      //   store_constrained_memory(reg_vaddrs[reg][i], lo, up, mintervals_los[mrvc].size(), steps[mrvc], ld_from_tcs[mrvc], ld_from_tcs[mrvc].size(), hasmns[mrvc], addsub_corrs[mrvc], muldivrem_corrs[mrvc], corr_validitys[mrvc], mrvc, is_inputs[mrvc]);
       // }
     } else {
       mrvc = (reg == rs1) ? tc_before_branch_evaluation_rs1 : tc_before_branch_evaluation_rs2;
@@ -2471,7 +2445,6 @@ void create_xor_mconstraints(std::vector<uint64_t>& lo1_p, std::vector<uint64_t>
     if (true_reachable) {
       if (false_reachable) {
         if (check_conditional_type_equality_or_disequality() == EQ) {
-          printf("EQUAL-------------------\n");
           constrain_memory(rs1, true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, true_branch_rs1_minterval_cnt, trb, false);
           constrain_memory(rs2, true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, true_branch_rs2_minterval_cnt, trb, false);
           take_branch(1, 1);
@@ -2735,9 +2708,9 @@ void backtrack_sd() {
   }
 
   uint64_t idx;
-  for (uint32_t i = 0; i < ld_from_tcs_cnts[tc]; i++) {
+  for (uint32_t i = 0; i < ld_from_tcs[tc].size(); i++) {
     idx = ld_from_tcs[tc][i];
-    forward_propagated_to_tcs_cnts[idx]--;
+    forward_propagated_to_tcs[idx].pop_back();
   }
 
   store_virtual_memory(pt, vaddrs[tc], tcs[tc]);

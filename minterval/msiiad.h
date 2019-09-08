@@ -112,7 +112,6 @@ extern std::vector<std::vector<uint64_t> > reg_vaddrs;
 extern uint64_t* values;
 extern uint64_t* data_types;
 extern uint64_t* steps;
-extern uint32_t* mintervals_cnts;
 extern std::vector<std::vector<uint64_t> > mintervals_los;
 extern std::vector<std::vector<uint64_t> > mintervals_ups;
 extern std::vector<std::vector<uint64_t> > reg_mintervals_los;
@@ -162,7 +161,7 @@ void efree();
 
 void store_symbolic_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, uint32_t data_type, std::vector<uint64_t>& lo, std::vector<uint64_t>& up, uint32_t mints_num, uint64_t step, std::vector<uint64_t>& ld_from, uint32_t ld_from_num, bool hasmn, uint64_t addsub_corr, uint64_t muldivrem_corr, uint64_t corr_validity, uint64_t trb, uint64_t to_tc, uint64_t is_input);
 void store_constrained_memory(uint64_t vaddr, std::vector<uint64_t>& lo, std::vector<uint64_t>& up, uint32_t mints_num, uint64_t step, std::vector<uint64_t>& ld_from, uint32_t ld_from_num, bool hasmn, uint64_t addsub_corr, uint64_t muldivrem_corr, uint64_t corr_validity, uint64_t to_tc, uint64_t is_input);
-void store_register_memory(uint64_t reg, uint64_t* value);
+void store_register_memory(uint64_t reg, std::vector<uint64_t>& value);
 
 void constrain_memory(uint64_t reg, std::vector<uint64_t>& lo, std::vector<uint64_t>& up, uint32_t mints_num, uint64_t trb, bool only_reachable_branch);
 void propagate_backwards(uint64_t vaddr, std::vector<uint64_t>& lo_before_op, std::vector<uint64_t>& up_before_op);
