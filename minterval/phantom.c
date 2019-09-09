@@ -2238,12 +2238,17 @@ void implement_read(uint64_t* context) {
               lo = fuzz_lo(value);
               up = fuzz_up(value);
 
-              printf("reused read: %llu, lo: %llu, up: %llu, read_tc_cur: %llu, read_tc: %llu tc: %llu\n", value, lo, up, read_tc_current, read_tc, sase_tc);
+              printf("reused read: %llu, lo: %llu, up: %llu, read_tc_cur: %llu, read_tc: %llu tc: %llu\n", value, lo,up, read_tc_current, read_tc, sase_tc);
 
-              // assert: up < 2^32
-              boolector_assert(btor, boolector_ulte(btor, constrained_reads[read_tc_current], boolector_unsigned_int(btor, up, bv_sort)));
-              // assert: lo < 2^32
-              boolector_assert(btor, boolector_ugte(btor, constrained_reads[read_tc_current], boolector_unsigned_int(btor, lo, bv_sort)));
+              if (up < two_to_the_power_of_32)
+                boolector_assert(btor, boolector_ulte(btor, constrained_reads[read_tc_current], boolector_unsigned_int(btor, up, bv_sort)));
+              else
+                boolector_assert(btor, boolector_ulte(btor, constrained_reads[read_tc_current], boolector_unsigned_int_64(up)));
+              // >= lo
+              if (lo < two_to_the_power_of_32)
+                boolector_assert(btor, boolector_ugte(btor, constrained_reads[read_tc_current], boolector_unsigned_int(btor, lo, bv_sort)));
+              else
+                boolector_assert(btor, boolector_ugte(btor, constrained_reads[read_tc_current], boolector_unsigned_int_64(lo)));
 
               sase_store_memory(get_pt(context), vbuffer, SYMBOLIC_T, value, constrained_reads[read_tc_current]);
               read_tc_current++;
@@ -2271,16 +2276,21 @@ void implement_read(uint64_t* context) {
               up = fuzz_up(value);
 
               if (actually_read) {
-                printf("read: %llu, lo: %llu, up: %llu, read_tc_cur: %llu, read_tc: %llu, tc: %llu\n", value, lo, up, read_tc_current, read_tc, sase_tc);
+                printf("read: %llu, lo: %llu, up: %llu, read_tc_cur: %llu, read_tc: %llu, tc: %llu\n", value, lo, up,read_tc_current, read_tc, sase_tc);
 
                 concrete_reads[read_tc] = value;
 
                 sprintf(var_buffer, "rv_%llu", read_tc);
-                // assert: up < 2^32
                 constrained_reads[read_tc] = boolector_var(btor, bv_sort, var_buffer);
-                boolector_assert(btor, boolector_ulte(btor, constrained_reads[read_tc], boolector_unsigned_int(btor, up, bv_sort)));
-                // assert: lo < 2^32
-                boolector_assert(btor, boolector_ugte(btor, constrained_reads[read_tc], boolector_unsigned_int(btor, lo, bv_sort)));
+                if (up < two_to_the_power_of_32)
+                  boolector_assert(btor, boolector_ulte(btor, constrained_reads[read_tc], boolector_unsigned_int(btor, up, bv_sort)));
+                else
+                  boolector_assert(btor, boolector_ulte(btor, constrained_reads[read_tc], boolector_unsigned_int_64(up)));
+                // >= lo
+                if (lo < two_to_the_power_of_32)
+                  boolector_assert(btor, boolector_ugte(btor, constrained_reads[read_tc], boolector_unsigned_int(btor, lo, bv_sort)));
+                else
+                  boolector_assert(btor, boolector_ugte(btor, constrained_reads[read_tc], boolector_unsigned_int_64(lo)));
 
                 sase_store_memory(get_pt(context), vbuffer, SYMBOLIC_T, value, constrained_reads[read_tc]);
                 read_tc++;
@@ -2378,9 +2388,10 @@ void implement_read(uint64_t* context) {
     if (sase_symbolic) {
       if (*(get_regs(context) + REG_A0) < two_to_the_power_of_32) {
         sase_regs[REG_A0]     = boolector_unsigned_int(btor, *(get_regs(context) + REG_A0), bv_sort);
-        sase_regs_typ[REG_A0] = CONCRETE_T;
       } else
-        printf2((uint64_t*) "%s: big read in read syscall: %d\n", exe_name, (uint64_t*) *(get_regs(context) + REG_A0));
+        sase_regs[REG_A0] = boolector_unsigned_int_64(*(get_regs(context) + REG_A0));
+
+      sase_regs_typ[REG_A0] = CONCRETE_T;
     } else {
       reg_data_type[REG_A0]         = 0;
       reg_mintervals_los[REG_A0][0] = *(get_regs(context) + REG_A0);
@@ -2430,31 +2441,16 @@ void implement_assert(uint64_t* context) {
   res = *(get_regs(context) + REG_A0);
 
   if (symbolic) {
-    if (sase_symbolic) {
-      if (which_branch) {
-        if (res == 0) {
-          printf(RED "assertion failed 1 at %llx\n" RESET, pc - entry_point);
-          exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
-        }
-      } else {
-        boolector_push(btor, 1);
-        boolector_assert(btor, sase_false_branchs[sase_tc]);
-        if (boolector_sat(btor) == BOOLECTOR_SAT) {
-          printf(RED "assertion failed 2 at %llx\n" RESET, pc - entry_point);
-          exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
-        }
-        boolector_pop(btor, 1);
-      }
-
-      which_branch = 0;
-
-    } else {
+    if (sase_symbolic == 0) {
       if (res == 0 || is_only_one_branch_reachable == false) {
         printf("OUTPUT: assertion failed %llu, %d at %x", res, is_only_one_branch_reachable, pc - entry_point);
         exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
       }
 
       is_only_one_branch_reachable = false;
+    } else {
+      printf("OUTPUT: assertion not supported %x", pc - entry_point);
+      exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
     }
   }
 
@@ -2502,22 +2498,51 @@ void implement_symbolic_input(uint64_t* context) {
 
   if (symbolic) {
     if (sase_symbolic) {
-      printf("symbolic input: lo: %llu, up: %llu, step: %llu, cnt: %llu, tc: %llu\n", lo, up, step, symbolic_input_cnt, sase_tc);
+      printf("symbolic input: lo: %llu, up: %llu, step: %llu, cnt: %llu\n", lo, up, step, input_cnt_current);
 
-      sprintf(var_buffer, "in_%llu", symbolic_input_cnt++);
-      in = boolector_var(btor, bv_sort, var_buffer);
-      // <= up
-      if (up < two_to_the_power_of_32)
-        boolector_assert(btor, boolector_ulte(btor, in, boolector_unsigned_int(btor, up, bv_sort)));
-      else
-        boolector_assert(btor, boolector_ulte(btor, in, boolector_unsigned_int_64(up)));
-      // >= lo
-      if (lo < two_to_the_power_of_32)
-        boolector_assert(btor, boolector_ugte(btor, in, boolector_unsigned_int(btor, lo, bv_sort)));
-      else
-        boolector_assert(btor, boolector_ugte(btor, in, boolector_unsigned_int_64(lo)));
+      if (step > 1) {
+        printf("%s\n", "step is greater than 1; continue assuming step = 1");
+      }
 
-      sase_regs[REG_A0]     = in;
+      if (input_cnt_current < input_cnt) {
+        if (up < two_to_the_power_of_32)
+          boolector_assert(btor, boolector_ulte(btor, constrained_inputs[input_cnt_current], boolector_unsigned_int(btor, up, bv_sort)));
+        else
+          boolector_assert(btor, boolector_ulte(btor, constrained_inputs[input_cnt_current], boolector_unsigned_int_64(up)));
+        // >= lo
+        if (lo < two_to_the_power_of_32)
+          boolector_assert(btor, boolector_ugte(btor, constrained_inputs[input_cnt_current], boolector_unsigned_int(btor, lo, bv_sort)));
+        else
+          boolector_assert(btor, boolector_ugte(btor, constrained_inputs[input_cnt_current], boolector_unsigned_int_64(lo)));
+
+        sase_regs[REG_A0] = constrained_inputs[input_cnt_current];
+        input_cnt_current++;
+
+      } else {
+        if (input_cnt_current > input_cnt) {
+          printf("OUTPUT: input_cnt_current > input_cnt \n");
+          exit(EXITCODE_SYMBOLICEXECUTIONERROR);
+        }
+
+        sprintf(var_buffer, "in_%llu", input_cnt);
+        constrained_inputs[input_cnt] = boolector_var(btor, bv_sort, var_buffer);
+        // <= up
+        if (up < two_to_the_power_of_32)
+          boolector_assert(btor, boolector_ulte(btor, constrained_inputs[input_cnt], boolector_unsigned_int(btor, up, bv_sort)));
+        else
+          boolector_assert(btor, boolector_ulte(btor, constrained_inputs[input_cnt], boolector_unsigned_int_64(up)));
+        // >= lo
+        if (lo < two_to_the_power_of_32)
+          boolector_assert(btor, boolector_ugte(btor, constrained_inputs[input_cnt], boolector_unsigned_int(btor, lo, bv_sort)));
+        else
+          boolector_assert(btor, boolector_ugte(btor, constrained_inputs[input_cnt], boolector_unsigned_int_64(lo)));
+
+        sase_regs[REG_A0] = constrained_inputs[input_cnt];
+        input_cnt++;
+        input_cnt_current++;
+
+      }
+
       sase_regs_typ[REG_A0] = SYMBOLIC_T;
 
     } else {
@@ -2639,9 +2664,10 @@ void implement_write(uint64_t* context) {
     if (sase_symbolic) {
       if (*(get_regs(context) + REG_A0) < two_to_the_power_of_32) {
         sase_regs[REG_A0]     = boolector_unsigned_int(btor, *(get_regs(context) + REG_A0), bv_sort);
-        sase_regs_typ[REG_A0] = CONCRETE_T;
       } else
-        printf2((uint64_t*) "%s: big write in write syscall: %d\n", exe_name, (uint64_t*) *(get_regs(context) + REG_A0));
+        sase_regs[REG_A0] = boolector_unsigned_int_64(*(get_regs(context) + REG_A0));
+
+      sase_regs_typ[REG_A0] = CONCRETE_T;
     } else {
       reg_data_type[REG_A0]         = 0;
       reg_mintervals_los[REG_A0][0] = *(get_regs(context) + REG_A0);
@@ -2694,10 +2720,14 @@ uint64_t down_load_string(uint64_t* table, uint64_t vaddr, uint64_t* s) {
             }
           } else {
             mrvc = load_symbolic_memory(table, vaddr);
-            if (mrvc != 0)
-              *(s + i) = *(values + mrvc);
-            else {
-              printf("%s\n", " concrete value expected! ");
+
+            *(s + i) = *(values + mrvc);
+
+            if (*(is_symbolics + mrvc) == SYMBOLIC_T) {
+              printf1((uint64_t*) "%s: detected symbolic value ", exe_name);
+              print((uint64_t*) " in filename of open call\n");
+
+              exit(EXITCODE_SYMBOLICEXECUTIONERROR);
             }
           }
         } else
@@ -2767,8 +2797,11 @@ void implement_open(uint64_t* context) {
 
   if (symbolic) {
     if (sase_symbolic) {
-      // assert: *(get_regs(context) + REG_A0) < 2^32
-      sase_regs[REG_A0]     = boolector_unsigned_int(btor, *(get_regs(context) + REG_A0), bv_sort);
+      if (*(get_regs(context) + REG_A0) < two_to_the_power_of_32)
+        sase_regs[REG_A0] = boolector_unsigned_int(btor, *(get_regs(context) + REG_A0), bv_sort);
+      else
+        sase_regs[REG_A0] = boolector_unsigned_int_64(*(get_regs(context) + REG_A0));
+
       sase_regs_typ[REG_A0] = CONCRETE_T;
     } else {
       reg_data_type[REG_A0]         = 0;
@@ -2830,8 +2863,7 @@ void implement_brk(uint64_t* context) {
 
     if (symbolic) {
       if (sase_symbolic) {
-        // assert: previous_program_break < 2^32
-        sase_regs[REG_A0]     = boolector_unsigned_int(btor, previous_program_break, bv_sort);
+        sase_regs[REG_A0]     = (previous_program_break < two_to_the_power_of_32) ? boolector_unsigned_int(btor, previous_program_break, bv_sort) : boolector_unsigned_int_64(previous_program_break);
         sase_regs_typ[REG_A0] = CONCRETE_T;
 
         *(get_regs(context) + REG_A0) = previous_program_break;
@@ -3731,7 +3763,6 @@ void decode_execute() {
         if (debug) {
           if (symbolic) {
             if (sase_symbolic) {
-              do_xor();
               sase_xor();
             } else
               constrain_xor();
@@ -4276,8 +4307,7 @@ void up_load_arguments(uint64_t* context, uint64_t argc, uint64_t* argv) {
   // set bounds to register value for symbolic execution
   if (symbolic) {
     if (sase_symbolic) {
-      // assert: SP < 2^32
-      sase_regs[REG_SP]     = boolector_unsigned_int(btor, SP, bv_sort);
+      sase_regs[REG_SP] = (SP < two_to_the_power_of_32) ? boolector_unsigned_int(btor, SP, bv_sort) : boolector_unsigned_int_64(SP);
       sase_regs_typ[REG_SP] = CONCRETE_T;
     } else {
       reg_data_type[REG_SP]         = 0;
@@ -4426,31 +4456,16 @@ uint64_t engine(uint64_t* to_context) {
 
       if (sase_symbolic) {
         if (sase_tc == 0 || pc == 0) {
-          // print((uint64_t*) ")");
-          // println();
-          // printf("1: %llu %llu %llu\n", pc, mrif, sase_tc);
-          printf("%llu\n", b);
+          printf("backtracking: %llu\n", ++b);
           return EXITCODE_NOERROR;
         } else {
-          // if (f) {
-          //   f = 0;
-          //   printf1((uint64_t*) "%s: backtracking =>=>=> (", exe_name);
-          // }
-          //
-          // if (b && f)
-          //   unprint_integer(b);
-          //
-          b = b + 1;
-          // print_integer(b);
+          b++;
 
           sase_backtrack_sltu(0);
           set_pc(current_context, pc);
 
           if (pc == 0) {
-            // print((uint64_t*) ")");
-            // println();
-            // printf("2: %llu %llu %llu\n", pc, mrif, sase_tc);
-            printf("%llu\n", b);
+            printf("backtracking: %llu\n", b);
             return EXITCODE_NOERROR;
           }
         }
@@ -4595,8 +4610,8 @@ void set_argument(uint64_t* argv) {
 
 void print_usage() {
   printf("usage: \n");
-  printf("intervals: executable -l binary -i fuzz \n");
-  printf("SMT:       executable -l binary -k fuzz \n");
+  printf("intervals: executable -l binary -i 0 \n");
+  printf("SMT:       executable -l binary -k 0 \n");
 }
 
 int main(uint64_t argc, uint64_t* argv) {

@@ -1,11 +1,11 @@
 #include <iostream>
-// #include "stdio.h"
-#include "boolector.h"
+#include "boolector/boolector.h"
 
 #include <fcntl.h>
 #include <unistd.h>
 
 #define RED   "\x1B[31m"
+#define GREEN "\033[32m"
 #define RESET "\x1B[0m"
 
 // -----------------------------------------------------------------
@@ -25,6 +25,7 @@ extern uint64_t REG_SP;
 extern uint64_t NUMBEROFREGISTERS;
 extern uint64_t OP_BRANCH;
 extern uint64_t INSTRUCTIONSIZE;
+extern uint64_t EXCEPTION_MAXTRACE;
 extern uint64_t EXCEPTION_PAGEFAULT;
 extern uint64_t EXCEPTION_INVALIDADDRESS;
 extern uint64_t EXITCODE_SYMBOLICEXECUTIONERROR;
@@ -33,12 +34,12 @@ extern uint64_t F7_SUB;
 extern uint64_t OP_IMM;
 extern uint64_t OP_OP;
 extern uint64_t F3_ADDI;
+extern uint64_t F3_SLTU;
 
 extern uint64_t entry_point;
-extern bool     assert_zone;
-
 extern uint64_t ic_addi;
 extern uint64_t ic_sub;
+extern uint64_t ic_xor;
 extern uint64_t ic_sltu;
 extern uint64_t ic_ld;
 extern uint64_t ic_sd;
@@ -69,64 +70,58 @@ uint64_t two_to_the_power_of(uint64_t p);
 uint64_t get_bits(uint64_t n, uint64_t i, uint64_t b);
 
 // -----------------------------------------------------------------
-// ----------------------- BUILTIN PROCEDURES ----------------------
-// -----------------------------------------------------------------
-
-// void      exit(uint64_t code);
-// uint64_t  read(uint64_t fd, uint64_t* buffer, uint64_t bytes_to_read);
-// uint64_t  write(uint64_t fd, uint64_t* buffer, uint64_t bytes_to_write);
-// uint64_t  open(uint64_t* filename, uint64_t flags, uint64_t mode);
-// void*     malloc(uint64_t size);
-
-// -----------------------------------------------------------------
 // ---------------- Solver Aided Symbolic Execution ----------------
 // -----------------------------------------------------------------
 
-extern char           var_buffer[100]; // a buffer for automatic variable name generation
-extern Btor*          btor;
-extern BoolectorSort  bv_sort;
-extern BoolectorNode* zero_bv;
-extern BoolectorNode* one_bv;
-extern BoolectorNode* eight_bv;
-extern BoolectorNode* meight_bv;
-extern BoolectorNode* twelve_bv;
-extern uint64_t       sase_symbolic;
-extern uint64_t       mrif;            // most recent conditional
-extern uint64_t       b;               // counting total number of backtracking
-extern uint64_t       SASE;            // Solver Aided Symbolic Execution
-extern uint64_t       CONCRETE_T;
-extern uint64_t       SYMBOLIC_T;
-extern uint64_t       two_to_the_power_of_32;
-extern uint8_t        which_branch;
+extern char              var_buffer[100]; // a buffer for automatic variable name generation
+extern Btor*             btor;
+extern BoolectorSort     bv_sort;
+extern BoolectorNode*    zero_bv;
+extern BoolectorNode*    one_bv;
+extern BoolectorNode*    eight_bv;
+extern BoolectorNode*    meight_bv;
+extern BoolectorNode*    twelve_bv;
+extern uint64_t          sase_symbolic;
+extern uint64_t          b;
+extern uint64_t          SASE;
+extern uint8_t           CONCRETE_T;
+extern uint8_t           SYMBOLIC_T;
+extern uint64_t          two_to_the_power_of_32;
 
 // symbolic registers
-extern BoolectorNode**   sase_regs;           // array of pointers to SMT expressions
-extern uint64_t*         sase_regs_typ;       // CONCRETE_T or SYMBOLIC_T
+extern BoolectorNode**   sase_regs;
+extern uint8_t*          sase_regs_typ;
 
 // engine trace
-extern uint64_t        sase_trace_size;
-extern uint64_t        sase_tc;                // trace counter
-extern uint64_t*       sase_pcs;
-extern BoolectorNode** sase_false_branchs;
-extern uint64_t*       sase_read_trace_ptrs;   // pointers to read trace
-extern uint64_t*       sase_program_brks;      // keep track of program_break
-extern uint64_t*       sase_store_trace_ptrs;  // pointers to store trace
-extern uint64_t*       sase_rds;
+extern uint64_t          sase_trace_size;
+extern uint64_t          sase_tc;
+extern uint64_t*         sase_pcs;
+extern BoolectorNode**   sase_false_branchs;
+extern uint64_t*         sase_read_trace_ptrs;
+extern uint64_t*         sase_program_brks;
+extern uint64_t*         sase_store_trace_ptrs;
+extern uint64_t*         sase_rds;
+extern uint64_t          mrif;
 
 // store trace
-extern uint64_t  tc;
-extern uint64_t* tcs;
-extern uint64_t* vaddrs;
-extern uint64_t* values;
-extern uint8_t*        is_symbolics;
-extern BoolectorNode** symbolic_values;
+extern uint64_t          tc;
+extern uint64_t*         tcs;
+extern uint64_t*         vaddrs;
+extern uint64_t*         values;
+extern uint8_t*          is_symbolics;
+extern BoolectorNode**   symbolic_values;
 
 // read trace
-extern uint64_t*       concrete_reads;
-extern BoolectorNode** constrained_reads;
-extern uint64_t        read_tc;
-extern uint64_t        read_tc_current;
-extern uint64_t        read_buffer;
+extern uint64_t*         concrete_reads;
+extern BoolectorNode**   constrained_reads;
+extern uint64_t          read_tc;
+extern uint64_t          read_tc_current;
+extern uint64_t          read_buffer;
+
+// input trace
+extern uint64_t          input_cnt;
+extern uint64_t          input_cnt_current;
+extern BoolectorNode**   constrained_inputs;
 
 // ********************** engine functions ************************
 
