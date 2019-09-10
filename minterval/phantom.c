@@ -663,7 +663,7 @@ uint64_t fuzz_up(uint64_t value);
 uint64_t fuzz = 0; // power-of-two fuzzing factor for read calls
 
 uint64_t debug_symbolic = 0;
-uint64_t symbolic = 0;
+uint64_t symbolic  = 0;
 uint64_t backtrack = 0;
 
 // -----------------------------------------------------------------
@@ -707,9 +707,6 @@ uint64_t EXCEPTION_MAXTRACE           = 7;
 uint64_t* EXCEPTIONS; // strings representing exceptions
 
 uint64_t debug_exception = 0;
-
-// enables recording, disassembling, debugging, and symbolically executing code
-uint64_t debug = 0;
 
 uint64_t execute     = 0; // flag for executing code
 uint64_t record      = 0; // flag for recording code execution
@@ -2229,7 +2226,7 @@ void implement_read(uint64_t* context) {
           bytes_to_read = size;
 
         if (symbolic) {
-          if (sase_symbolic) {
+          if (symbolic == SASE) {
             read_buffer = vbuffer;
             if (read_tc_current < read_tc) {
               value  = concrete_reads[read_tc_current];
@@ -2385,9 +2382,9 @@ void implement_read(uint64_t* context) {
     *(get_regs(context) + REG_A0) = sign_shrink(-1, SYSCALL_BITWIDTH);
 
   if (symbolic) {
-    if (sase_symbolic) {
+    if (symbolic == SASE) {
       if (*(get_regs(context) + REG_A0) < two_to_the_power_of_32) {
-        sase_regs[REG_A0]     = boolector_unsigned_int(btor, *(get_regs(context) + REG_A0), bv_sort);
+        sase_regs[REG_A0] = boolector_unsigned_int(btor, *(get_regs(context) + REG_A0), bv_sort);
       } else
         sase_regs[REG_A0] = boolector_unsigned_int_64(*(get_regs(context) + REG_A0));
 
@@ -2441,7 +2438,7 @@ void implement_assert(uint64_t* context) {
   res = *(get_regs(context) + REG_A0);
 
   if (symbolic) {
-    if (sase_symbolic == 0) {
+    if (symbolic == MSIIAD) {
       if (res == 0 || is_only_one_branch_reachable == false) {
         printf("OUTPUT: assertion failed %llu, %d at %x", res, is_only_one_branch_reachable, pc - entry_point);
         exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
@@ -2461,7 +2458,7 @@ void implement_printsv(uint64_t* context) {
   uint64_t id;
   uint64_t addr;
 
-  if (symbolic && sase_symbolic == 0) {
+  if (symbolic && symbolic == MSIIAD) {
     id   = *(get_regs(context) + REG_A0);
     addr = (reg_vaddrs_cnts[REG_A1] > 0) ? vaddrs[ld_from_tcs[load_symbolic_memory(get_pt(context), reg_vaddrs[REG_A1][0])][0]] : 0;
 
@@ -2497,7 +2494,7 @@ void implement_symbolic_input(uint64_t* context) {
   step = *(get_regs(context) + REG_A2);
 
   if (symbolic) {
-    if (sase_symbolic) {
+    if (symbolic == SASE) {
       printf("symbolic input: lo: %llu, up: %llu, step: %llu, cnt: %llu\n", lo, up, step, input_cnt_current);
 
       if (step > 1) {
@@ -2661,7 +2658,7 @@ void implement_write(uint64_t* context) {
     *(get_regs(context) + REG_A0) = sign_shrink(-1, SYSCALL_BITWIDTH);
 
   if (symbolic) {
-    if (sase_symbolic) {
+    if (symbolic == SASE) {
       if (*(get_regs(context) + REG_A0) < two_to_the_power_of_32) {
         sase_regs[REG_A0]     = boolector_unsigned_int(btor, *(get_regs(context) + REG_A0), bv_sort);
       } else
@@ -2706,7 +2703,7 @@ uint64_t down_load_string(uint64_t* table, uint64_t vaddr, uint64_t* s) {
     if (is_valid_virtual_address(vaddr)) {
       if (is_virtual_address_mapped(table, vaddr)) {
         if (symbolic) {
-          if (sase_symbolic == 0) {
+          if (symbolic == MSIIAD) {
             mrvc = load_symbolic_memory(table, vaddr);
 
             *(s + i) = *(values + mrvc);
@@ -2796,7 +2793,7 @@ void implement_open(uint64_t* context) {
   }
 
   if (symbolic) {
-    if (sase_symbolic) {
+    if (symbolic == SASE) {
       if (*(get_regs(context) + REG_A0) < two_to_the_power_of_32)
         sase_regs[REG_A0] = boolector_unsigned_int(btor, *(get_regs(context) + REG_A0), bv_sort);
       else
@@ -2862,7 +2859,7 @@ void implement_brk(uint64_t* context) {
     set_program_break(context, program_break);
 
     if (symbolic) {
-      if (sase_symbolic) {
+      if (symbolic == SASE) {
         sase_regs[REG_A0]     = (previous_program_break < two_to_the_power_of_32) ? boolector_unsigned_int(btor, previous_program_break, bv_sort) : boolector_unsigned_int_64(previous_program_break);
         sase_regs_typ[REG_A0] = CONCRETE_T;
 
@@ -2919,7 +2916,7 @@ void implement_brk(uint64_t* context) {
     }
 
     if (symbolic) {
-      if (sase_symbolic) {
+      if (symbolic == SASE) {
         sase_regs[REG_A0]     = boolector_unsigned_int(btor, 0, bv_sort);
         sase_regs_typ[REG_A0] = CONCRETE_T;
       } else {
@@ -3621,230 +3618,181 @@ void decode_execute() {
 
   if (opcode == OP_IMM) {
     decode_i_format();
-
     if (funct3 == F3_ADDI) {
-      if (debug) {
-        if (symbolic) {
-          do_addi();
-          if (sase_symbolic)
-            sase_addi();
-          else
-            constrain_addi();
-        }
-      } else
+      if (symbolic == MSIIAD) {
+        do_addi(); constrain_addi();
+      } else if (symbolic == SASE) {
+        do_addi(); sase_addi();
+      } else {
         do_addi();
-
+      }
       return;
     }
+
   } else if (opcode == OP_LD) {
     decode_i_format();
-
     if (funct3 == F3_LD) {
-      if (debug) {
-        if (symbolic) {
-          if (sase_symbolic)
-            sase_ld();
-          else
-            constrain_ld();
-        }
-      } else
+      if (symbolic == MSIIAD) {
+        constrain_ld();
+      } else if (symbolic == SASE) {
+        sase_ld();
+      } else {
         do_ld();
-
+      }
       return;
     }
+
   } else if (opcode == OP_SD) {
     decode_s_format();
-
     if (funct3 == F3_SD) {
-      if (debug) {
-        if (symbolic) {
-          if (sase_symbolic)
-            sase_sd();
-          else
-            constrain_sd();
-        } else if (backtrack)
-          backtrack_sd();
-      } else
+      if (symbolic == MSIIAD) {
+        if (backtrack) backtrack_sd();
+        else constrain_sd();
+      } else if (symbolic == SASE) {
+        sase_sd();
+      } else {
         do_sd();
-
+      }
       return;
     }
+
   } else if (opcode == OP_OP) { // could be ADD, SUB, MUL, DIVU, REMU, SLTU
     decode_r_format();
-
     if (funct3 == F3_ADD) { // = F3_SUB = F3_MUL
       if (funct7 == F7_ADD) {
-        if (debug) {
-          if (symbolic) {
-            do_add();
-            if (sase_symbolic)
-              sase_add();
-            else
-              constrain_add();
-          }
-        } else
+        if (symbolic == MSIIAD) {
+          do_add(); constrain_add();
+        } else if (symbolic == SASE) {
+          do_add(); sase_add();
+        } else {
           do_add();
-
+        }
         return;
-      } else if (funct7 == F7_SUB) {
-        if (debug) {
-          if (symbolic) {
-            do_sub();
-            if (sase_symbolic)
-              sase_sub();
-            else
-              constrain_sub();
-          }
-        } else
-          do_sub();
 
+      } else if (funct7 == F7_SUB) {
+        if (symbolic == MSIIAD) {
+          do_sub(); constrain_sub();
+        } else if (symbolic == SASE) {
+          do_sub(); sase_sub();
+        } else {
+          do_sub();
+        }
         return;
       } else if (funct7 == F7_MUL) {
-        if (debug) {
-          if (symbolic) {
-            do_mul();
-            if (sase_symbolic)
-              sase_mul();
-            else
-              constrain_mul();
-          }
-        } else
+        if (symbolic == MSIIAD) {
+          do_mul(); constrain_mul();
+        } else if (symbolic == SASE) {
+          do_mul(); sase_mul();
+        } else {
           do_mul();
-
+        }
         return;
       }
+
     } else if (funct3 == F3_DIVU) {
       if (funct7 == F7_DIVU) {
-        if (debug) {
-          if (symbolic) {
-            do_divu();
-            if (sase_symbolic)
-              sase_divu();
-            else
-              constrain_divu();
-          }
-        } else
+        if (symbolic == MSIIAD) {
+          do_divu(); constrain_divu();
+        } else if (symbolic == SASE) {
+          do_divu(); sase_divu();
+        } else {
           do_divu();
-
+        }
         return;
       }
+
     } else if (funct3 == F3_REMU) {
       if (funct7 == F7_REMU) {
-        if (debug) {
-          if (symbolic) {
-            do_remu();
-            if (sase_symbolic)
-              sase_remu();
-            else
-              constrain_remu();
-          }
-        } else
+        if (symbolic == MSIIAD) {
+          do_remu(); constrain_remu();
+        } else if (symbolic == SASE) {
+          do_remu(); sase_remu();
+        } else {
           do_remu();
-
+        }
         return;
       }
+
     } else if (funct3 == F3_SLTU) {
       if (funct7 == F7_SLTU) {
-        if (debug) {
-          if (symbolic) {
-            if (sase_symbolic)
-              sase_sltu();
-            else
-              constrain_sltu();
-          } else if (backtrack)
-            backtrack_sltu();
-        } else
+        if (symbolic == MSIIAD) {
+          if (backtrack) backtrack_sltu();
+          else constrain_sltu();
+        } else if (symbolic == SASE) {
+          sase_sltu();
+        } else {
           do_sltu();
-
+        }
         return;
       }
+
     } else if (funct3 == F3_XOR) {
       if (funct7 == F7_XOR) {
-        if (debug) {
-          if (symbolic) {
-            if (sase_symbolic) {
-              sase_xor();
-            } else
-              constrain_xor();
-          } else if (backtrack)
-            backtrack_sltu();
-        } else
+        if (symbolic == MSIIAD) {
+          if (backtrack) backtrack_sltu();
+          else constrain_xor();
+        } else if (symbolic == SASE) {
+          sase_xor();
+        } else {
           do_xor();
-
+        }
         return;
       }
     }
+
   } else if (opcode == OP_BRANCH) {
     decode_b_format();
-
     if (funct3 == F3_BEQ) {
-      if (debug) {
-        if (symbolic)
-          do_beq();
-      } else
-        do_beq();
-
+      do_beq();
       return;
     }
+
   } else if (opcode == OP_JAL) {
     decode_j_format();
-
-    if (debug) {
-      if (symbolic) {
-        do_jal();
-        if (sase_symbolic)
-          sase_jal_jalr();
-        else
-          constrain_jal_jalr();
-      }
-    } else
+    if (symbolic == MSIIAD) {
+      do_jal(); constrain_jal_jalr();
+    } else if (symbolic == SASE) {
+      do_jal(); sase_jal_jalr();
+    } else {
       do_jal();
-
+    }
     return;
+
   } else if (opcode == OP_JALR) {
     decode_i_format();
-
     if (funct3 == F3_JALR) {
-      if (debug) {
-        if (symbolic) {
-          do_jalr();
-          if (sase_symbolic)
-            sase_jal_jalr();
-          else
-            constrain_jal_jalr();
-        }
-      } else
+      if (symbolic == MSIIAD) {
+        do_jalr(); constrain_jal_jalr();
+      } else if (symbolic == SASE) {
+        do_jalr(); sase_jal_jalr();
+      } else {
         do_jalr();
-
+      }
       return;
     }
+
   } else if (opcode == OP_LUI) {
     decode_u_format();
-
-    if (debug) {
-      if (symbolic) {
-        do_lui();
-        if (sase_symbolic)
-          sase_lui();
-        else
-          constrain_lui();
-      }
-    } else
+    if (symbolic == MSIIAD) {
+      do_lui(); constrain_lui();
+    } else if (symbolic == SASE) {
+      do_lui(); sase_lui();
+    } else {
       do_lui();
-
+    }
     return;
+
   } else if (opcode == OP_SYSTEM) {
     decode_i_format();
-
     if (funct3 == F3_ECALL) {
-      if (debug) {
-        if (symbolic)
-          do_ecall();
-        else if (backtrack)
-          backtrack_ecall();
-      } else
+      if (symbolic == MSIIAD) {
+        if (backtrack) backtrack_ecall();
+        else do_ecall();
+      } else if (symbolic == SASE) {
         do_ecall();
-
+      } else {
+        do_ecall();
+      }
       return;
     }
   }
@@ -4162,7 +4110,7 @@ void map_and_store(uint64_t* context, uint64_t vaddr, uint64_t data) {
     map_page(context, get_page_of_virtual_address(vaddr), (uint64_t) palloc());
 
   if (symbolic) {
-    if (sase_symbolic == 0) {
+    if (symbolic == MSIIAD) {
       if (is_trace_space_available()) {
         // always track initialized memory by using tc as most recent branch
         val_ptr_1[0] = data;
@@ -4197,6 +4145,7 @@ void up_load_binary(uint64_t* context) {
 
   if (symbolic) {
     // code is never constrained...
+    uint64_t saved_symbolic = symbolic;
     symbolic = 0;
 
     while (baddr < code_length) {
@@ -4206,7 +4155,7 @@ void up_load_binary(uint64_t* context) {
     }
 
     // ... but data is
-    symbolic = 1;
+    symbolic = saved_symbolic;
   }
 
   while (baddr < binary_length) {
@@ -4306,7 +4255,7 @@ void up_load_arguments(uint64_t* context, uint64_t argc, uint64_t* argv) {
 
   // set bounds to register value for symbolic execution
   if (symbolic) {
-    if (sase_symbolic) {
+    if (symbolic == SASE) {
       sase_regs[REG_SP] = (SP < two_to_the_power_of_32) ? boolector_unsigned_int(btor, SP, bv_sort) : boolector_unsigned_int_64(SP);
       sase_regs_typ[REG_SP] = CONCRETE_T;
     } else {
@@ -4436,10 +4385,6 @@ uint64_t handle_exception(uint64_t* context) {
 }
 
 uint64_t engine(uint64_t* to_context) {
-  uint64_t f;
-
-  f = 1;
-
   registers = get_regs(to_context);
   pt        = get_pt(to_context);
 
@@ -4454,9 +4399,9 @@ uint64_t engine(uint64_t* to_context) {
 
     if (handle_exception(current_context) == EXIT) {
 
-      if (sase_symbolic) {
+      if (symbolic == SASE) {
         if (sase_tc == 0 || pc == 0) {
-          printf("backtracking: %llu\n", ++b);
+          printf("\nbacktracking: %llu\n", ++b);
           return EXITCODE_NOERROR;
         } else {
           b++;
@@ -4465,7 +4410,7 @@ uint64_t engine(uint64_t* to_context) {
           set_pc(current_context, pc);
 
           if (pc == 0) {
-            printf("backtracking: %llu\n", b);
+            printf("\nbacktracking: %llu\n", b);
             return EXITCODE_NOERROR;
           }
         }
@@ -4484,14 +4429,14 @@ uint64_t engine(uint64_t* to_context) {
 
         backtrack_trace(current_context);
 
-        // if (b == 0)
-        //   printf1((uint64_t*) "%s: backtracking \n", exe_name);
-        // else
-        //   unprint_integer(b);
+        if (b == 0)
+          printf1((uint64_t*) "%s: backtracking \n", exe_name);
+        else
+          unprint_integer(b);
 
         b = b + 1;
 
-        // print_integer(b);
+        print_integer(b);
 
         if (pc == 0) {
           println();
@@ -4518,15 +4463,12 @@ uint64_t selfie_run(uint64_t machine) {
   }
 
   if (machine == SASE) {
-    debug    = 1;
-    symbolic = 1;
-    sase_symbolic = 1;
+    symbolic = SASE;
 
     init_sase();
     init_memory(round_up(4 * sase_trace_size * SIZEOFUINT64, MEGABYTE) / MEGABYTE + 1);
   } else if (machine == MSIIAD) {
-    debug    = 1;
-    symbolic = 1;
+    symbolic = MSIIAD;
 
     init_symbolic_engine();
     init_memory(round_up(40 * MAX_TRACE_LENGTH * SIZEOFUINT64, MEGABYTE) / MEGABYTE + 1);
@@ -4565,7 +4507,6 @@ uint64_t selfie_run(uint64_t machine) {
   symbolic    = 0;
   record      = 0;
   disassemble = 0;
-  debug       = 0;
 
   fuzz = 0;
 

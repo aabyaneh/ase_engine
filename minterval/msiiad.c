@@ -5,7 +5,7 @@ typedef unsigned __int128 uint128_t;
 // ------------------------ GLOBAL VARIABLES -----------------------
 
 uint64_t MSIIAD               = 9;
-uint64_t MAX_TRACE_LENGTH     = 1000000;
+uint64_t MAX_TRACE_LENGTH     = 10000000;
 uint64_t MAX_SD_TO_NUM        = 2001;
 uint64_t MAX_NUM_OF_INTERVALS = 2001;
 uint64_t MAX_NUM_OF_OP_VADDRS = 100;
@@ -2754,8 +2754,6 @@ void backtrack_trace(uint64_t* context) {
     printf("OUTPUT: backtracking from exit code \n");
   }
 
-  symbolic = 0;
-
   backtrack = 1;
 
   while (backtrack) {
@@ -2775,8 +2773,6 @@ void backtrack_trace(uint64_t* context) {
         backtrack = 0;
     }
   }
-
-  symbolic = 1;
 
   set_pc(context, pc);
 }

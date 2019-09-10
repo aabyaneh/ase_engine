@@ -84,7 +84,6 @@ void     set_pc(uint64_t* context, uint64_t pc);
 extern uint64_t MSIIAD;
 extern uint64_t MAX_TRACE_LENGTH;
 extern uint64_t debug_symbolic;
-extern uint64_t symbolic;
 extern uint64_t backtrack;
 extern bool     is_only_one_branch_reachable;
 extern bool     assert_zone;

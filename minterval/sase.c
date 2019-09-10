@@ -25,7 +25,6 @@ BoolectorNode* eight_bv;
 BoolectorNode* meight_bv;
 BoolectorNode* twelve_bv;
 
-uint64_t       sase_symbolic = 0; // flag for symbolically executing code
 uint64_t       b             = 0; // counting total number of backtracking
 uint64_t       SASE          = 8; // Solver Aided Symbolic Execution
 uint8_t        CONCRETE_T    = 0; // concrete value type
