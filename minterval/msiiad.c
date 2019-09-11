@@ -141,6 +141,47 @@ std::vector<uint64_t> input_table;
 bool IS_TEST_MODE = false;
 std::ofstream output_results;
 
+// ---------------------------------------------
+// --------------- pse (probabilistic symbolic execution)
+// ---------------------------------------------
+
+struct node {
+  uint8_t  type;
+  uint64_t left_node;
+  uint64_t right_node;
+};
+
+bool         PSE = false, PER_PATH = false;
+uint8_t      CONST = 0, VAR = 1, ADDI = 2, ADD = 3, SUB = 4, MUL = 5, DIVU = 6, REMU = 7, ILT = 8, IGTE = 9, IEQ = 10, INEQ = 11;
+uint64_t     MAX_NODE_TRACE_LENGTH = 2 * MAX_TRACE_LENGTH;
+uint64_t     tree_tc = 0;
+struct node* pse_ast_nodes;
+uint64_t*    pse_asts;
+uint64_t*    reg_pse_ast;
+uint64_t     zero_node;
+uint64_t     one_node;
+std::vector<std::string> pse_variables_per_path;
+std::vector<std::string> pse_variables_per_multi_path;
+std::vector<uint64_t>    path_condition;
+std::vector<uint64_t>    false_branches;
+std::vector<std::string> traversed_path_condition_elements;
+std::string              path_condition_string;
+
+uint64_t pse_operation(uint8_t typ, uint64_t left_node, uint64_t right_node) {
+  tree_tc++;
+
+  if (tree_tc > MAX_NODE_TRACE_LENGTH) {
+    printf("OUTPUT: MAX_NODE_TRACE_LENGTH reached %x\n", pc - entry_point);
+    exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
+  }
+
+  pse_ast_nodes[tree_tc].type       = typ;
+  pse_ast_nodes[tree_tc].left_node  = left_node;
+  pse_ast_nodes[tree_tc].right_node = right_node;
+
+  return tree_tc;
+}
+
 // ------------------------- INITIALIZATION ------------------------
 
 void init_symbolic_engine() {
@@ -171,6 +212,19 @@ void init_symbolic_engine() {
   reg_corr_validity    = (uint64_t*) zalloc(NUMBEROFREGISTERS * sizeof(uint64_t));
   reg_vaddrs_cnts      = (uint32_t*) zalloc(NUMBEROFREGISTERS * sizeof(uint32_t));
   reg_mintervals_cnts  = (uint32_t*) malloc(NUMBEROFREGISTERS * sizeof(uint32_t));
+
+  if (PSE) {
+    pse_ast_nodes        = (struct node*) malloc(MAX_NODE_TRACE_LENGTH  * sizeof(struct node*));
+    pse_asts             = (uint64_t*)    malloc(MAX_TRACE_LENGTH       * sizeof(uint64_t));
+    reg_pse_ast          = (uint64_t*)    malloc(NUMBEROFREGISTERS      * sizeof(uint64_t));
+    zero_node            = pse_operation(CONST, 0, 0);
+    one_node             = pse_operation(CONST, 0, 1);
+    reg_pse_ast[REG_ZR]  = zero_node;
+    reg_pse_ast[REG_FP]  = zero_node;
+    pse_asts[0]          = zero_node;
+    false_branches.reserve(MAX_TRACE_LENGTH);
+    path_condition.reserve(MAX_TRACE_LENGTH);
+  }
 
   for (size_t i = 0; i < NUMBEROFREGISTERS; i++) {
     reg_steps[i]           = 1;
@@ -335,6 +389,8 @@ void constrain_lui() {
 
     // rd has no constraint
     set_correction(rd, 0, 0, 0, 0, 0);
+
+    if (PSE) reg_pse_ast[rd] = pse_operation(CONST, 0, imm << 12);
   }
 }
 
@@ -382,6 +438,8 @@ void constrain_addi() {
     reg_steps[rd]             = 1;
     reg_vaddrs_cnts[rd]       = 0;
   }
+
+  if (PSE) reg_pse_ast[rd] = pse_operation(ADDI, reg_pse_ast[rs1] , pse_operation(CONST, 0, imm));
 }
 
 bool constrain_add_pointer() {
@@ -512,6 +570,8 @@ void constrain_add() {
       reg_steps[rd]             = 1;
       reg_vaddrs_cnts[rd]       = 0;
     }
+
+    if (PSE) reg_pse_ast[rd] = pse_operation(ADD, reg_pse_ast[rs1] , reg_pse_ast[rs2]);
   }
 }
 
@@ -659,6 +719,8 @@ void constrain_sub() {
       reg_steps[rd]             = 1;
       reg_vaddrs_cnts[rd]       = 0;
     }
+
+    if (PSE) reg_pse_ast[rd] = pse_operation(SUB, reg_pse_ast[rs1] , reg_pse_ast[rs2]);
   }
 }
 
@@ -792,6 +854,8 @@ void constrain_mul() {
       reg_mintervals_cnts[rd]   = 1;
       reg_vaddrs_cnts[rd]       = 0;
     }
+
+    if (PSE) reg_pse_ast[rd] = pse_operation(MUL, reg_pse_ast[rs1] , reg_pse_ast[rs2]);
   }
 }
 
@@ -884,6 +948,8 @@ void constrain_divu() {
           reg_steps[rd]             = 1;
           reg_vaddrs_cnts[rd]       = 0;
         }
+
+        if (PSE) reg_pse_ast[rd] = pse_operation(DIVU, reg_pse_ast[rs1] , reg_pse_ast[rs2]);
       }
     } else
       throw_exception(EXCEPTION_DIVISIONBYZERO, 0);
@@ -985,6 +1051,8 @@ void constrain_remu() {
     reg_steps[rd]             = 1;
     reg_vaddrs_cnts[rd]       = 0;
   }
+
+  if (PSE) reg_pse_ast[rd] = pse_operation(REMU, reg_pse_ast[rs1] , reg_pse_ast[rs2]);
 }
 
 void constrain_sltu() {
@@ -1004,9 +1072,11 @@ void constrain_sltu() {
 
       set_correction(rd, 0, 0, 0, 0, 0);
 
-      pc = pc + INSTRUCTIONSIZE;
+      if (PSE) reg_pse_ast[rd] = (registers[rd] == 0) ? zero_node : one_node;
 
+      pc = pc + INSTRUCTIONSIZE;
       ic_sltu = ic_sltu + 1;
+
       return;
     }
 
@@ -1050,6 +1120,8 @@ void constrain_xor() {
 
     is_only_one_branch_reachable = true;
     set_correction(rd, 0, 0, 0, 0, 0);
+
+    if (PSE) reg_pse_ast[rd] = (registers[rd] == 0) ? zero_node : one_node;
 
     pc = pc + INSTRUCTIONSIZE;
     ic_xor = ic_xor + 1;
@@ -1129,6 +1201,8 @@ uint64_t constrain_ld() {
         }
       }
 
+      if (PSE) reg_pse_ast[rd] = pse_asts[mrvc];
+
       // keep track of instruction address for profiling loads
       a = (pc - entry_point) / INSTRUCTIONSIZE;
 
@@ -1167,10 +1241,12 @@ uint64_t constrain_sd() {
       // interval semantics of sd
       retrieve_ld_from_tcs(reg_vaddrs[rs2], reg_vaddrs_cnts[rs2]);
 
+      uint64_t pse_ast = (PSE) ? reg_pse_ast[rs2] : 0;
+
       if (reg_symb_type[rs2] == SYMBOLIC && reg_vaddrs_cnts[rs2] == 0) { // means it is an x = input();
-        store_symbolic_memory(pt, vaddr, registers[rs2], reg_data_type[rs2], reg_mintervals_los[rs2], reg_mintervals_ups[rs2], reg_mintervals_cnts[rs2], reg_steps[rs2], reg_vaddrs[rs2], reg_vaddrs_cnts[rs2], reg_hasmn[rs2], reg_addsub_corr[rs2], reg_muldivrem_corr[rs2], reg_corr_validity[rs2], mrcc, 0, symbolic_input_cnt-1); // doesn't matter symbolic_input_cnt-1 or anything greater than 0
+        store_symbolic_memory(pt, vaddr, registers[rs2], reg_data_type[rs2], reg_mintervals_los[rs2], reg_mintervals_ups[rs2], reg_mintervals_cnts[rs2], reg_steps[rs2], reg_vaddrs[rs2], reg_vaddrs_cnts[rs2], reg_hasmn[rs2], reg_addsub_corr[rs2], reg_muldivrem_corr[rs2], reg_corr_validity[rs2], mrcc, 0, symbolic_input_cnt-1, pse_ast); // doesn't matter symbolic_input_cnt-1 or anything greater than 0
       } else
-        store_symbolic_memory(pt, vaddr, registers[rs2], reg_data_type[rs2], reg_mintervals_los[rs2], reg_mintervals_ups[rs2], reg_mintervals_cnts[rs2], reg_steps[rs2], reg_vaddrs[rs2], reg_vaddrs_cnts[rs2], reg_hasmn[rs2], reg_addsub_corr[rs2], reg_muldivrem_corr[rs2], reg_corr_validity[rs2], mrcc, 0, 0);
+        store_symbolic_memory(pt, vaddr, registers[rs2], reg_data_type[rs2], reg_mintervals_los[rs2], reg_mintervals_ups[rs2], reg_mintervals_cnts[rs2], reg_steps[rs2], reg_vaddrs[rs2], reg_vaddrs_cnts[rs2], reg_hasmn[rs2], reg_addsub_corr[rs2], reg_muldivrem_corr[rs2], reg_corr_validity[rs2], mrcc, 0, 0, pse_ast);
 
       // keep track of instruction address for profiling stores
       a = (pc - entry_point) / INSTRUCTIONSIZE;
@@ -1280,7 +1356,7 @@ bool is_pure_concrete_value(uint32_t data_type, uint32_t mints_num, uint64_t lo,
   return false;
 }
 
-void store_symbolic_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, uint32_t data_type, std::vector<uint64_t>& lo, std::vector<uint64_t>& up, uint32_t mints_num, uint64_t step, std::vector<uint64_t>& ld_from_tc, uint32_t ld_from_num, bool hasmn, uint64_t addsub_corr, uint64_t muldivrem_corr, uint64_t corr_validity, uint64_t trb, uint64_t to_tc, uint64_t is_input) {
+void store_symbolic_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, uint32_t data_type, std::vector<uint64_t>& lo, std::vector<uint64_t>& up, uint32_t mints_num, uint64_t step, std::vector<uint64_t>& ld_from_tc, uint32_t ld_from_num, bool hasmn, uint64_t addsub_corr, uint64_t muldivrem_corr, uint64_t corr_validity, uint64_t trb, uint64_t to_tc, uint64_t is_input, uint64_t pse_ast_ptr) {
   uint64_t mrvc;
   uint64_t idx;
 
@@ -1294,10 +1370,10 @@ void store_symbolic_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, uint32_
     // assert: vaddr is valid and mapped
     mrvc = load_symbolic_memory(pt, vaddr);
 
-    bool is_this_value_symbolic = is_pure_concrete_value(data_type, mints_num, lo[0], up[0], ld_from_num, is_input);
-    bool is_prev_value_symbolic = is_pure_concrete_value(data_types[mrvc], mintervals_los[mrvc].size(), mintervals_los[mrvc][0], mintervals_ups[mrvc][0], ld_from_tcs[mrvc].size(), is_inputs[mrvc]);
+    bool is_this_value_concrete = is_pure_concrete_value(data_type, mints_num, lo[0], up[0], ld_from_num, is_input);
+    bool is_prev_value_concrete = is_pure_concrete_value(data_types[mrvc], mintervals_los[mrvc].size(), mintervals_los[mrvc][0], mintervals_ups[mrvc][0], ld_from_tcs[mrvc].size(), is_inputs[mrvc]);
 
-    if (is_this_value_symbolic && is_prev_value_symbolic && trb < mrvc) {
+    if (is_this_value_concrete && is_prev_value_concrete && trb < mrvc) {
       // overwrite
       if (mints_num > MAX_NUM_OF_INTERVALS) {
         printf("OUTPUT: maximum number of possible intervals is reached at %x\n", pc - entry_point);
@@ -1314,6 +1390,8 @@ void store_symbolic_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, uint32_
         mintervals_los[mrvc].push_back(lo[i]);
         mintervals_ups[mrvc].push_back(up[i]);
       }
+
+      if (PSE) pse_asts[mrvc] = pse_ast_ptr;
 
       return;
     }
@@ -1377,10 +1455,12 @@ void store_symbolic_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, uint32_
         }
       }
       forward_propagated_to_tcs[tc].clear();
-      mr_sds[tc] = tc;
+      mr_sds[tc]            = tc;
+      if (PSE) pse_asts[tc] = pse_ast_ptr;
     } else {
-      forward_propagated_to_tcs[tc]      = forward_propagated_to_tcs[to_tc];
-      mr_sds[tc]                         = mr_sds[mrvc];
+      forward_propagated_to_tcs[tc] = forward_propagated_to_tcs[to_tc];
+      mr_sds[tc]                    = mr_sds[mrvc];
+      if (PSE) pse_asts[tc]         = pse_asts[mrvc];
 
       // copying relations with other memory locations
       ld_from_tcs[tc].clear();
@@ -1450,6 +1530,8 @@ void store_temp_constrained_memory(uint64_t* pt, uint64_t vaddr, uint64_t value,
       ld_from_tcs[tc].push_back(ld_from_tcs[to_tc][i]);
     }
 
+    if (PSE) pse_asts[tc] = 0;
+
     // no trace update
     efree();
 
@@ -1503,6 +1585,8 @@ void store_input_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, uint32_t d
       ld_from_tcs[tc].push_back(ld_from_tcs[to_tc][i]);
     }
 
+    if (PSE) pse_asts[tc] = 0;
+
     // no memory update
 
   } else
@@ -1513,12 +1597,12 @@ void store_constrained_memory(uint64_t vaddr, std::vector<uint64_t>& lo, std::ve
   uint64_t mrvc;
 
   // always track constrained memory by using tc as most recent branch
-  store_symbolic_memory(pt, vaddr, lo[0], VALUE_T, lo, up, mints_num, step, ld_from_tc, ld_from_num, hasmn, addsub_corr, muldivrem_corr, corr_validity, tc, to_tc, is_input);
+  store_symbolic_memory(pt, vaddr, lo[0], VALUE_T, lo, up, mints_num, step, ld_from_tc, ld_from_num, hasmn, addsub_corr, muldivrem_corr, corr_validity, tc, to_tc, is_input, 0);
 }
 
 void store_register_memory(uint64_t reg, std::vector<uint64_t>& value) {
   // always track register memory by using tc as most recent branch
-  store_symbolic_memory(pt, reg, value[0], VALUE_T, value, value, 1, 1, zero_v, 0, 0, 0, 0, 0, tc, 0, 0);
+  store_symbolic_memory(pt, reg, value[0], VALUE_T, value, value, 1, 1, zero_v, 0, 0, 0, 0, 0, tc, 0, 0, 0);
 }
 
 uint64_t reverse_division_up(uint64_t ups_mrvc, uint64_t up, uint64_t codiv) {
@@ -1846,6 +1930,8 @@ void take_branch(uint64_t b, uint64_t how_many_more) {
     reg_vaddrs_cnts[rd]       = 0;
 
     set_correction(rd, 0, 0, 0, 0, 0);
+
+    if (PSE) reg_pse_ast[rd] = (b == 0) ? zero_node : one_node;
   }
 }
 
@@ -2081,6 +2167,10 @@ void create_mconstraints(std::vector<uint64_t>& lo1_p, std::vector<uint64_t>& up
   if (true_reachable) {
     if (false_reachable) {
       if (check_conditional_type_lte_or_gte() == LGTE) {
+        if (PSE) {
+          false_branches.push_back(pse_operation(ILT , reg_pse_ast[rs1], reg_pse_ast[rs2]));
+          path_condition.push_back(pse_operation(IGTE, reg_pse_ast[rs1], reg_pse_ast[rs2]));
+        }
         constrain_memory(rs1, true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, true_branch_rs1_minterval_cnt, trb, false);
         constrain_memory(rs2, true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, true_branch_rs2_minterval_cnt, trb, false);
         take_branch(1, 1);
@@ -2088,6 +2178,10 @@ void create_mconstraints(std::vector<uint64_t>& lo1_p, std::vector<uint64_t>& up
         constrain_memory(rs2, false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups,false_branch_rs2_minterval_cnt, trb, false);
         take_branch(0, 0);
       } else {
+        if (PSE) {
+          false_branches.push_back(pse_operation(IGTE, reg_pse_ast[rs1], reg_pse_ast[rs2]));
+          path_condition.push_back(pse_operation(ILT , reg_pse_ast[rs1], reg_pse_ast[rs2]));
+        }
         constrain_memory(rs1, false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups,false_branch_rs1_minterval_cnt, trb, false);
         constrain_memory(rs2, false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups,false_branch_rs2_minterval_cnt, trb, false);
         take_branch(0, 1);
@@ -2139,6 +2233,10 @@ void create_mconstraints_lptr(uint64_t lo1, uint64_t up1, std::vector<uint64_t>&
   if (true_reachable) {
     if (false_reachable) {
       if (check_conditional_type_lte_or_gte() == LGTE) {
+        if (PSE) {
+          false_branches.push_back(pse_operation(ILT , reg_pse_ast[rs1], reg_pse_ast[rs2]));
+          path_condition.push_back(pse_operation(IGTE, reg_pse_ast[rs1], reg_pse_ast[rs2]));
+        }
         constrain_memory(rs1, true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, true_branch_rs1_minterval_cnt, trb, false);
         constrain_memory(rs2, true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, true_branch_rs2_minterval_cnt, trb, false);
         take_branch(1, 1);
@@ -2146,6 +2244,10 @@ void create_mconstraints_lptr(uint64_t lo1, uint64_t up1, std::vector<uint64_t>&
         constrain_memory(rs2, false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups,false_branch_rs2_minterval_cnt, trb, false);
         take_branch(0, 0);
       } else {
+        if (PSE) {
+          false_branches.push_back(pse_operation(IGTE, reg_pse_ast[rs1], reg_pse_ast[rs2]));
+          path_condition.push_back(pse_operation(ILT , reg_pse_ast[rs1], reg_pse_ast[rs2]));
+        }
         constrain_memory(rs1, false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups,false_branch_rs1_minterval_cnt, trb, false);
         constrain_memory(rs2, false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups,false_branch_rs2_minterval_cnt, trb, false);
         take_branch(0, 1);
@@ -2196,6 +2298,10 @@ void create_mconstraints_rptr(std::vector<uint64_t>& lo1_p, std::vector<uint64_t
   if (true_reachable) {
     if (false_reachable) {
       if (check_conditional_type_lte_or_gte() == LGTE) {
+        if (PSE) {
+          false_branches.push_back(pse_operation(ILT , reg_pse_ast[rs1], reg_pse_ast[rs2]));
+          path_condition.push_back(pse_operation(IGTE, reg_pse_ast[rs1], reg_pse_ast[rs2]));
+        }
         constrain_memory(rs1, true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, true_branch_rs1_minterval_cnt, trb, false);
         constrain_memory(rs2, true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, true_branch_rs2_minterval_cnt, trb, false);
         take_branch(1, 1);
@@ -2203,6 +2309,10 @@ void create_mconstraints_rptr(std::vector<uint64_t>& lo1_p, std::vector<uint64_t
         constrain_memory(rs2, false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups,false_branch_rs2_minterval_cnt, trb, false);
         take_branch(0, 0);
       } else {
+        if (PSE) {
+          false_branches.push_back(pse_operation(IGTE, reg_pse_ast[rs1], reg_pse_ast[rs2]));
+          path_condition.push_back(pse_operation(ILT , reg_pse_ast[rs1], reg_pse_ast[rs2]));
+        }
         constrain_memory(rs1, false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups,false_branch_rs1_minterval_cnt, trb, false);
         constrain_memory(rs2, false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups,false_branch_rs2_minterval_cnt, trb, false);
         take_branch(0, 1);
@@ -2445,6 +2555,10 @@ void create_xor_mconstraints(std::vector<uint64_t>& lo1_p, std::vector<uint64_t>
     if (true_reachable) {
       if (false_reachable) {
         if (check_conditional_type_equality_or_disequality() == EQ) {
+          if (PSE) {
+            false_branches.push_back(pse_operation(INEQ, reg_pse_ast[rs1], reg_pse_ast[rs2]));
+            path_condition.push_back(pse_operation(IEQ , reg_pse_ast[rs1], reg_pse_ast[rs2]));
+          }
           constrain_memory(rs1, true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, true_branch_rs1_minterval_cnt, trb, false);
           constrain_memory(rs2, true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, true_branch_rs2_minterval_cnt, trb, false);
           take_branch(1, 1);
@@ -2452,6 +2566,10 @@ void create_xor_mconstraints(std::vector<uint64_t>& lo1_p, std::vector<uint64_t>
           constrain_memory(rs2, false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups,false_branch_rs2_minterval_cnt, trb, false);
           take_branch(0, 0);
         } else {
+          if (PSE) {
+            false_branches.push_back(pse_operation(IEQ , reg_pse_ast[rs1], reg_pse_ast[rs2]));
+            path_condition.push_back(pse_operation(INEQ, reg_pse_ast[rs1], reg_pse_ast[rs2]));
+          }
           constrain_memory(rs1, false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups,false_branch_rs1_minterval_cnt, trb, false);
           constrain_memory(rs2, false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups,false_branch_rs2_minterval_cnt, trb, false);
           take_branch(0, 1);
@@ -2528,6 +2646,10 @@ void create_xor_mconstraints_lptr(uint64_t lo1, uint64_t up1, std::vector<uint64
     if (true_reachable) {
       if (false_reachable) {
         if (check_conditional_type_equality_or_disequality() == EQ) {
+          if (PSE) {
+            false_branches.push_back(pse_operation(INEQ, reg_pse_ast[rs1], reg_pse_ast[rs2]));
+            path_condition.push_back(pse_operation(IEQ , reg_pse_ast[rs1], reg_pse_ast[rs2]));
+          }
           constrain_memory(rs1, true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, true_branch_rs1_minterval_cnt, trb, false);
           constrain_memory(rs2, true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, true_branch_rs2_minterval_cnt, trb, false);
           take_branch(1, 1);
@@ -2535,6 +2657,10 @@ void create_xor_mconstraints_lptr(uint64_t lo1, uint64_t up1, std::vector<uint64
           constrain_memory(rs2, false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups,false_branch_rs2_minterval_cnt, trb, false);
           take_branch(0, 0);
         } else {
+          if (PSE) {
+            false_branches.push_back(pse_operation(IEQ , reg_pse_ast[rs1], reg_pse_ast[rs2]));
+            path_condition.push_back(pse_operation(INEQ, reg_pse_ast[rs1], reg_pse_ast[rs2]));
+          }
           constrain_memory(rs1, false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups,false_branch_rs1_minterval_cnt, trb, false);
           constrain_memory(rs2, false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups,false_branch_rs2_minterval_cnt, trb, false);
           take_branch(0, 1);
@@ -2611,6 +2737,10 @@ void create_xor_mconstraints_rptr(std::vector<uint64_t>& lo1_p, std::vector<uint
     if (true_reachable) {
       if (false_reachable) {
         if (check_conditional_type_equality_or_disequality() == EQ) {
+          if (PSE) {
+            false_branches.push_back(pse_operation(INEQ, reg_pse_ast[rs1], reg_pse_ast[rs2]));
+            path_condition.push_back(pse_operation(IEQ , reg_pse_ast[rs1], reg_pse_ast[rs2]));
+          }
           constrain_memory(rs1, true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, true_branch_rs1_minterval_cnt, trb, false);
           constrain_memory(rs2, true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, true_branch_rs2_minterval_cnt, trb, false);
           take_branch(1, 1);
@@ -2618,6 +2748,10 @@ void create_xor_mconstraints_rptr(std::vector<uint64_t>& lo1_p, std::vector<uint
           constrain_memory(rs2, false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups,false_branch_rs2_minterval_cnt, trb, false);
           take_branch(0, 0);
         } else {
+          if (PSE) {
+            false_branches.push_back(pse_operation(IEQ , reg_pse_ast[rs1], reg_pse_ast[rs2]));
+            path_condition.push_back(pse_operation(INEQ, reg_pse_ast[rs1], reg_pse_ast[rs2]));
+          }
           constrain_memory(rs1, false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups,false_branch_rs1_minterval_cnt, trb, false);
           constrain_memory(rs2, false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups,false_branch_rs2_minterval_cnt, trb, false);
           take_branch(0, 1);
@@ -2674,8 +2808,20 @@ void backtrack_sltu() {
         if (vaddr != REG_SP) {
           // stop backtracking and try next case
           pc = pc + INSTRUCTIONSIZE;
-
           ic_sltu = ic_sltu + 1;
+
+          if (PSE) {
+            reg_pse_ast[vaddr] = (registers[vaddr] == 0) ? zero_node : one_node;
+            while (false_branches.back() < path_condition.back()) {
+              path_condition.pop_back();
+              // traversed_path_condition_element.pop_back();
+            }
+            tree_tc = false_branches.back();
+            path_condition.push_back(false_branches.back());
+            // traversed_path_condition_element.push_back("");
+            false_branches.pop_back();
+          }
+
         }
     }
   } else {
@@ -2705,6 +2851,8 @@ void backtrack_sd() {
   if (is_inputs[tc]) {
     symbolic_input_cnt = input_table.size();
     input_table.pop_back();
+
+    if (PSE) pse_variables_per_path.pop_back();
   }
 
   uint64_t idx;
@@ -2712,6 +2860,8 @@ void backtrack_sd() {
     idx = ld_from_tcs[tc][i];
     forward_propagated_to_tcs[idx].pop_back();
   }
+
+  if (PSE && pse_asts[tc] && tree_tc > pse_asts[tc]) tree_tc = pse_asts[tc];
 
   store_virtual_memory(pt, vaddrs[tc], tcs[tc]);
 
@@ -2958,4 +3108,82 @@ uint64_t check_conditional_type_lte_or_gte() {
 
   pc = saved_pc;
   return LT;
+}
+
+// ------------------------------ path condition -------------------------------
+
+void decode_operation(uint64_t node_tc) {
+  switch (pse_ast_nodes[node_tc].type) {
+    case 2:
+      path_condition_string += "ADD(";
+      break;
+    case 3:
+      path_condition_string += "ADD(";
+      break;
+    case 4:
+      path_condition_string += "SUB(";
+      break;
+    case 5:
+      path_condition_string += "MUL(";
+      break;
+    case 6:
+      path_condition_string += "DIV(";
+      break;
+    case 7:
+      path_condition_string += "REM(";
+      break;
+    case 8:
+      path_condition_string += "ILT(";
+      break;
+    case 9:
+      path_condition_string += "IGE(";
+      break;
+    case 10:
+      path_condition_string += "IEQ(";
+      break;
+    case 11:
+      path_condition_string += "INE(";
+      break;
+  }
+}
+
+void decode_var(uint64_t node_tc) {
+  path_condition_string = (PER_PATH) ? path_condition_string + "IVAR(ID_" + std::to_string(pse_ast_nodes[node_tc].right_node) + ")"
+                                     : path_condition_string + "IVAR(ID_" + std::to_string(pse_ast_nodes[node_tc].left_node ) + ")";
+}
+
+void decode_const(uint64_t node_tc) {
+  path_condition_string = path_condition_string + "ICONST(" + std::to_string(pse_ast_nodes[node_tc].right_node) + ")";
+}
+
+bool node_decoder(uint64_t node_tc) {
+  switch (pse_ast_nodes[node_tc].type) {
+    case 0:
+      decode_const(node_tc);
+      return true;
+    case 1:
+      decode_var(node_tc);
+      return true;
+    default:
+      decode_operation(node_tc);
+      return false;
+  }
+}
+
+void path_condition_traverse(uint64_t node_tc) {
+  if (node_decoder(node_tc))
+    return;
+
+  path_condition_traverse(pse_ast_nodes[node_tc].left_node);
+  path_condition_string += ",";
+  path_condition_traverse(pse_ast_nodes[node_tc].right_node);
+  path_condition_string += ")";
+}
+
+void generate_path_condition() {
+  path_condition_string.clear();
+  for (size_t i = 0; i < path_condition.size(); i++) {
+    path_condition_traverse(path_condition[i]); // node_tc
+    path_condition_string += ";";
+  }
 }

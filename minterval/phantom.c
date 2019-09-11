@@ -525,6 +525,7 @@ uint64_t SYSCALL_ASSERT          = 45;
 uint64_t SYSCALL_ASSERT_ZONE_END = 46;
 
 uint64_t symbolic_input_cnt = 1;
+uint64_t symbolic_input_cnt_per_multi_path = 1;
 bool     assert_zone = false;
 
 // *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~
@@ -2333,9 +2334,9 @@ void implement_read(uint64_t* context) {
               val_ptr_2[0] = up;
               if (mrcc == 0)
                 // no branching yet, we may overwrite symbolic memory
-                store_symbolic_memory(get_pt(context), vbuffer, value, 0, val_ptr_1, val_ptr_2, 1, 1, zero_v, 0, 0, 0, 0, 0, 0, 0, 0);
+                store_symbolic_memory(get_pt(context), vbuffer, value, 0, val_ptr_1, val_ptr_2, 1, 1, zero_v, 0, 0, 0, 0, 0, 0, 0, 0, 0);
               else
-                store_symbolic_memory(get_pt(context), vbuffer, value, 0, val_ptr_1, val_ptr_2, 1, 1, zero_v, 0, 0, 0, 0, 0, tc, 0, 0);
+                store_symbolic_memory(get_pt(context), vbuffer, value, 0, val_ptr_1, val_ptr_2, 1, 1, zero_v, 0, 0, 0, 0, 0, tc, 0, 0, 0);
             } else {
               actually_read = 0;
 
@@ -2555,6 +2556,13 @@ void implement_symbolic_input(uint64_t* context) {
       reg_addsub_corr[REG_A0]       = 0;
       reg_muldivrem_corr[REG_A0]    = 0;
       reg_corr_validity[REG_A0]     = 0;
+
+      if (PSE) {
+        reg_pse_ast[REG_A0] = pse_operation(1, symbolic_input_cnt_per_multi_path, symbolic_input_cnt);
+        pse_variables_per_path.push_back(std::to_string(symbolic_input_cnt) + " UNIFORM_INT " + std::to_string(lo) + " " + std::to_string(up));
+        pse_variables_per_multi_path.push_back(std::to_string(symbolic_input_cnt_per_multi_path) + " UNIFORM_INT " + std::to_string(lo) + " " + std::to_string(up));
+        symbolic_input_cnt_per_multi_path++;
+      }
 
       printf("symbolic input: lo: %llu, up: %llu, step: %llu, cnt: %llu\n", reg_mintervals_los[REG_A0][0], reg_mintervals_ups[REG_A0][0], step, symbolic_input_cnt++);
     }
@@ -2886,7 +2894,7 @@ void implement_brk(uint64_t* context) {
             // since there has been branching record brk using vaddr == 0
             val_ptr_1[0] = previous_program_break;
             val_ptr_2[0] = size;
-            store_symbolic_memory(get_pt(context), 0, previous_program_break, 1, val_ptr_1, val_ptr_2, 1, 1, zero_v, 0, 0, 0, 0, 0, tc, 0, 0);
+            store_symbolic_memory(get_pt(context), 0, previous_program_break, 1, val_ptr_1, val_ptr_2, 1, 1, zero_v, 0, 0, 0, 0, 0, tc, 0, 0, 0);
           } else {
             throw_exception(EXCEPTION_MAXTRACE, 0);
 
@@ -4114,7 +4122,7 @@ void map_and_store(uint64_t* context, uint64_t vaddr, uint64_t data) {
       if (is_trace_space_available()) {
         // always track initialized memory by using tc as most recent branch
         val_ptr_1[0] = data;
-        store_symbolic_memory(get_pt(context), vaddr, data, 0, val_ptr_1, val_ptr_1, 1, 1, zero_v, 0, 0, 0, 0, 0, tc, 0, 0);
+        store_symbolic_memory(get_pt(context), vaddr, data, 0, val_ptr_1, val_ptr_1, 1, 1, zero_v, 0, 0, 0, 0, 0, tc, 0, 0, 0);
       } else {
         printf1((uint64_t*) "%s: ealloc out of memory\n", exe_name);
 
@@ -4385,6 +4393,10 @@ uint64_t handle_exception(uint64_t* context) {
 }
 
 uint64_t engine(uint64_t* to_context) {
+  std::ofstream output_queries;
+  std::vector<std::string> queries;
+  if (PSE) queries.reserve(128);
+
   registers = get_regs(to_context);
   pt        = get_pt(to_context);
 
@@ -4420,11 +4432,16 @@ uint64_t engine(uint64_t* to_context) {
         if (IS_TEST_MODE) {
           for (size_t j = 0; j < input_table.size(); j++) {
             for (uint32_t i = 0; i < mintervals_los[input_table[j]].size(); i++) {
-              // output_results << std::left << "--INPUT :=) id: " << std::setw(5) << j+1 << "; mints:" << std::setw(5) << i+1 << "; lo:" << std::setw(20) << mintervals_los[input_table[j]][i] << "; up:" << std::setw(20) << mintervals_ups[input_table[j]][i] << "; step:" << std::setw(20) << steps[input_table[j]] << std::endl;
               output_results << std::left << "I=" << j+1 << ";" << i+1 << ";" << mintervals_los[input_table[j]][i] << ";" << mintervals_ups[input_table[j]][i] << ";" << steps[input_table[j]] << std::endl;
             }
           }
           output_results << "B=" << b+1 << "\n";
+        }
+
+        if (PSE) {
+          generate_path_condition();
+          path_condition_string.pop_back();
+          queries.push_back(path_condition_string);
         }
 
         backtrack_trace(current_context);
@@ -4444,6 +4461,25 @@ uint64_t engine(uint64_t* to_context) {
           printf1((uint64_t*) "%s: backtracking ", exe_name);
           print_integer(b);
           println();
+
+          if (PSE) {
+            output_queries.open("queries.txt", std::ofstream::trunc);
+            output_queries << ":Variables:\n\n";
+            if (PER_PATH) {
+              for (size_t i = 0; i < pse_variables_per_path.size(); i++) {
+                output_queries << pse_variables_per_path[i] << "\n";
+              }
+            } else {
+              for (size_t i = 0; i < pse_variables_per_multi_path.size(); i++) {
+                output_queries << pse_variables_per_multi_path[i] << "\n";
+              }
+            }
+            output_queries << "\n:Constraints:\n\n";
+            for (size_t i = 0; i < queries.size(); i++) {
+              output_queries << queries[i] << "\n";
+            }
+            output_queries.close();
+          }
 
           return EXITCODE_NOERROR;
         }

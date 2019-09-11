@@ -128,6 +128,15 @@ extern std::vector<uint64_t> input_table;
 extern bool IS_TEST_MODE;
 extern std::ofstream output_results;
 
+extern bool PSE;
+extern bool PER_PATH;
+extern uint64_t* reg_pse_ast;
+extern std::vector<std::string> pse_variables_per_path;
+extern std::vector<std::string> pse_variables_per_multi_path;
+extern std::string path_condition_string;
+uint64_t pse_operation(uint8_t typ, uint64_t left_node, uint64_t right_node);
+void     generate_path_condition();
+
 // ------------------------ INSTRUCTIONS -----------------------
 
 void constrain_lui();
@@ -158,7 +167,7 @@ uint64_t is_trace_space_available();
 void ealloc();
 void efree();
 
-void store_symbolic_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, uint32_t data_type, std::vector<uint64_t>& lo, std::vector<uint64_t>& up, uint32_t mints_num, uint64_t step, std::vector<uint64_t>& ld_from, uint32_t ld_from_num, bool hasmn, uint64_t addsub_corr, uint64_t muldivrem_corr, uint64_t corr_validity, uint64_t trb, uint64_t to_tc, uint64_t is_input);
+void store_symbolic_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, uint32_t data_type, std::vector<uint64_t>& lo, std::vector<uint64_t>& up, uint32_t mints_num, uint64_t step, std::vector<uint64_t>& ld_from, uint32_t ld_from_num, bool hasmn, uint64_t addsub_corr, uint64_t muldivrem_corr, uint64_t corr_validity, uint64_t trb, uint64_t to_tc, uint64_t is_input, uint64_t pse_ast_ptr);
 void store_constrained_memory(uint64_t vaddr, std::vector<uint64_t>& lo, std::vector<uint64_t>& up, uint32_t mints_num, uint64_t step, std::vector<uint64_t>& ld_from, uint32_t ld_from_num, bool hasmn, uint64_t addsub_corr, uint64_t muldivrem_corr, uint64_t corr_validity, uint64_t to_tc, uint64_t is_input);
 void store_register_memory(uint64_t reg, std::vector<uint64_t>& value);
 
