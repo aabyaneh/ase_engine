@@ -88,6 +88,7 @@ uint64_t* reg_corr_validity   = (uint64_t*) 0; // correction
 uint64_t  MUL_T               = 3;             // correction
 uint64_t  DIVU_T              = 4;             // correction
 uint64_t  REMU_T              = 5;             // correction
+uint64_t  MUL_T_FALSE         = 11;            // correction
 
 std::vector<std::vector<uint64_t> > reg_vaddrs(NUMBEROFREGISTERS); // virtual addresses of expression operands
 uint32_t* reg_vaddrs_cnts     = (uint32_t*) 0;
@@ -224,6 +225,7 @@ void init_symbolic_engine() {
     pse_asts[0]          = zero_node;
     false_branches.reserve(MAX_TRACE_LENGTH);
     path_condition.reserve(MAX_TRACE_LENGTH);
+    path_condition_string.reserve(MAX_TRACE_LENGTH);
   }
 
   for (size_t i = 0; i < NUMBEROFREGISTERS; i++) {
@@ -284,12 +286,11 @@ uint128_t gcd_128(uint128_t n1, uint128_t n2) {
   if (n1 == 0)
     return n2;
 
-  return gcd(n2 % n1, n1);
+  return gcd_128(n2 % n1, n1);
 }
 
 uint128_t lcm_128(uint128_t n1, uint128_t n2) {
-  // assert 0 <= n1, n2 <= 2^64-1
-  return (n1 * n2) / gcd(n1, n2);
+  return (n1 / gcd_128(n1, n2)) * n2;
 }
 
 bool is_power_of_two(uint64_t v) {
@@ -299,18 +300,24 @@ bool is_power_of_two(uint64_t v) {
 bool check_incompleteness(uint64_t gcd_steps) {
   uint64_t i_max;
 
-  if (reg_steps[rs1] < reg_steps[rs2]) {
+  if (reg_steps[rs1] == reg_steps[rs2])
+    return 0;
+  else if (reg_steps[rs1] < reg_steps[rs2]) {
     if (reg_steps[rs1] == gcd_steps) {
-      i_max = (reg_mintervals_ups[rs1][0] - reg_mintervals_los[rs1][0]) / reg_steps[rs1];
-      if (i_max < reg_steps[rs2]/gcd_steps - 1)
-        return 1;
+      for (size_t i = 0; i < reg_mintervals_cnts[rs1]; i++) {
+        i_max = (reg_mintervals_ups[rs1][i] - reg_mintervals_los[rs1][i]) / reg_steps[rs1];
+        if (i_max < reg_steps[rs2]/gcd_steps - 1)
+          return 1;
+      }
     } else
       return 1;
-  } else if (reg_steps[rs1] > reg_steps[rs2]) {
+  } else {
     if (reg_steps[rs2] == gcd_steps) {
-      i_max = (reg_mintervals_ups[rs2][0] - reg_mintervals_los[rs2][0]) / reg_steps[rs2];
-      if (i_max < reg_steps[rs1]/gcd_steps - 1)
-        return 1;
+      for (size_t i = 0; i < reg_mintervals_cnts[rs2]; i++) {
+        i_max = (reg_mintervals_ups[rs2][i] - reg_mintervals_los[rs2][i]) / reg_steps[rs2];
+        if (i_max < reg_steps[rs1]/gcd_steps - 1)
+          return 1;
+      }
     } else
       return 1;
   }
@@ -498,11 +505,6 @@ void constrain_add() {
         set_vaddrs(rd, reg_vaddrs[rs1], 0, reg_vaddrs_cnts[rs1]);
         set_vaddrs(rd, reg_vaddrs[rs2], reg_vaddrs_cnts[rs1], rd_addr_idx);
 
-        if (reg_mintervals_cnts[rs1] > 1 || reg_mintervals_cnts[rs2] > 1) {
-          printf("OUTPUT: unsupported minterval 1 %x \n", pc - entry_point);
-          exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
-        }
-
         // interval semantics of add
         uint64_t gcd_steps = gcd(reg_steps[rs1], reg_steps[rs2]);
         if (check_incompleteness(gcd_steps) == true) {
@@ -510,30 +512,35 @@ void constrain_add() {
           exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
         }
 
-        bool cnd = add_sub_condition(reg_mintervals_los[rs1][0], reg_mintervals_ups[rs1][0], reg_mintervals_los[rs2][0], reg_mintervals_ups[rs2][0]);
-        if (cnd == false) {
-          uint128_t rhs = (uint128_t) lcm_128(TWO_TO_THE_POWER_OF_64, (uint128_t) gcd_steps) - gcd_steps;
-          uint128_t lhs = (uint128_t) (reg_mintervals_ups[rs1][0] - reg_mintervals_los[rs1][0]) + (reg_mintervals_ups[rs2][0] - reg_mintervals_los[rs2][0]);
-          if (lhs >= rhs) {
-            // assert: gcd_steps <= UINT64_MAX_T
-            uint64_t gcd_step_k = gcd_128( (uint128_t) gcd_steps, TWO_TO_THE_POWER_OF_64);
-            uint64_t lo = (reg_mintervals_los[rs1][0] + reg_mintervals_los[rs2][0]);
-            add_lo    = lo - (lo / gcd_step_k) * gcd_step_k;
-            add_up    = compute_upper_bound(add_lo, gcd_step_k, UINT64_MAX_T);
-            gcd_steps = gcd_step_k;
-          } else {
-            printf("OUTPUT: cannot reason about overflowed add %x\n", pc - entry_point);
-            exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
+        bool cnd;
+        std::vector<uint64_t> mul_lo_rd;
+        std::vector<uint64_t> mul_up_rd;
+        for (size_t i = 0; i < reg_mintervals_cnts[rs1]; i++) {
+          for (size_t j = 0; j < reg_mintervals_cnts[rs2]; j++) {
+            cnd = add_sub_condition(reg_mintervals_los[rs1][i], reg_mintervals_ups[rs1][i], reg_mintervals_los[rs2][j], reg_mintervals_ups[rs2][j]);
+            if (cnd == false) {
+              handle_add_cnd_failure(mul_lo_rd, mul_up_rd, i, j);
+            } else {
+              mul_lo_rd.push_back(reg_mintervals_los[rs1][i] + reg_mintervals_los[rs2][j]);
+              mul_up_rd.push_back(reg_mintervals_ups[rs1][i] + reg_mintervals_ups[rs2][j]);
+            }
           }
-        } else {
-          add_lo = reg_mintervals_los[rs1][0] + reg_mintervals_los[rs2][0];
-          add_up = reg_mintervals_ups[rs1][0] + reg_mintervals_ups[rs2][0];
         }
 
-        reg_mintervals_los[rd][0] = add_lo;
-        reg_mintervals_ups[rd][0] = add_up;
-        reg_mintervals_cnts[rd]   = 1;
-        reg_steps[rd]             = gcd_steps;
+        if (mul_lo_rd.size() > 1)
+          merge_intervals(mul_lo_rd, mul_up_rd, mul_lo_rd.size(), gcd_steps);
+
+        if (mul_lo_rd.size() > MAX_NUM_OF_INTERVALS) {
+          printf("OUTPUT: MAX_NUM_OF_INTERVALS in addition of two symbolics at %x\n", pc - entry_point);
+          exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
+        }
+
+        for (size_t i = 0; i < mul_lo_rd.size(); i++) {
+          reg_mintervals_los[rd][i] = mul_lo_rd[i];
+          reg_mintervals_ups[rd][i] = mul_up_rd[i];
+        }
+        reg_mintervals_cnts[rd] = mul_lo_rd.size();
+        reg_steps[rd]           = gcd_steps;
 
       } else {
         // rd inherits rs1 constraint since rs2 has none
@@ -750,46 +757,27 @@ void constrain_mul() {
         set_correction(rd, reg_symb_type[rs1], 0, reg_addsub_corr[rs1], reg_mintervals_los[rs2][0], reg_corr_validity[rs1] + MUL_T);
         set_vaddrs(rd, reg_vaddrs[rs1], 0, reg_vaddrs_cnts[rs1]);
 
-        if (reg_mintervals_cnts[rs1] == 1) {
-          cnd = mul_condition(reg_mintervals_los[rs1][0], reg_mintervals_ups[rs1][0], reg_mintervals_los[rs2][0]);
+        bool cnd;
+        std::vector<uint64_t> mul_lo_rd;
+        std::vector<uint64_t> mul_up_rd;
+        for (size_t i = 0; i < reg_mintervals_cnts[rs1]; i++) {
+          cnd = mul_condition(reg_mintervals_los[rs1][i], reg_mintervals_ups[rs1][i], reg_mintervals_los[rs2][0]);
           if (cnd == true) {
-            reg_steps[rd]             = reg_steps[rs1]             * reg_mintervals_los[rs2][0];
-            reg_mintervals_los[rd][0] = reg_mintervals_los[rs1][0] * reg_mintervals_los[rs2][0];
-            reg_mintervals_ups[rd][0] = reg_mintervals_ups[rs1][0] * reg_mintervals_ups[rs2][0];
-            reg_mintervals_cnts[rd]   = 1;
+            mul_lo_rd.push_back(reg_mintervals_los[rs1][i] * reg_mintervals_los[rs2][0]);
+            mul_up_rd.push_back(reg_mintervals_ups[rs1][i] * reg_mintervals_ups[rs2][0]);
           } else {
-            // potential of overflow
-            // assert: reg_mintervals_los[rs2][0] * reg_steps[rs1] <= UINT64_MAX_T
-            uint128_t lcm_ = lcm_128(TWO_TO_THE_POWER_OF_64, (uint128_t) reg_mintervals_los[rs2][0] * reg_steps[rs1]);
-            uint128_t rhs = (uint128_t) (lcm_ - (uint128_t) reg_mintervals_los[rs2][0] * reg_steps[rs1]) / reg_mintervals_los[rs2][0];
-            uint128_t lhs = (reg_mintervals_ups[rs1][0] - reg_mintervals_los[rs1][0]);
-            if (lhs >= rhs) {
-              uint64_t gcd_step_k = gcd_128( (uint128_t) reg_mintervals_los[rs2][0] * reg_steps[rs1], TWO_TO_THE_POWER_OF_64);
-              uint64_t lo          = (reg_mintervals_los[rs1][0] * reg_mintervals_los[rs2][0]);
-              reg_mintervals_los[rd][0] = lo - (lo / gcd_step_k) * gcd_step_k;
-              reg_mintervals_ups[rd][0] = compute_upper_bound(reg_mintervals_los[rd][0], gcd_step_k, UINT64_MAX_T);
-              reg_mintervals_cnts[rd]    = 1;
-              reg_steps[rd] = gcd_step_k;
-              reg_corr_validity[rs1] += REMU_T;
-            } else {
-              printf("OUTPUT: cannot reason about overflowed mul at %x\n", pc - entry_point);
-              exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
-            }
-          }
-        } else {
-          reg_steps[rd] = reg_steps[rs1] * reg_mintervals_los[rs2][0]; // correct when on (cnd == false) we do exit
-          for (uint32_t i = 0; i < reg_mintervals_cnts[rs1]; i++) {
-            cnd = mul_condition(reg_mintervals_los[rs1][i], reg_mintervals_ups[rs1][i], reg_mintervals_los[rs2][0]);
-            if (cnd == true) {
-              reg_mintervals_los[rd][i] = reg_mintervals_los[rs1][i] * reg_mintervals_los[rs2][0];
-              reg_mintervals_ups[rd][i] = reg_mintervals_ups[rs1][i] * reg_mintervals_ups[rs2][0];
-              reg_mintervals_cnts[rd]   = reg_mintervals_cnts[rs1];
-            } else {
-              printf("OUTPUT: cannot reason about overflowed mul at %x\n", pc - entry_point);
-              exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
-            }
+            handle_mul_cnd_failure(mul_lo_rd, mul_up_rd, reg_mintervals_los[rs1][i], reg_mintervals_ups[rs1][i], reg_steps[rs1], reg_mintervals_los[rs2][0]);
+            reg_corr_validity[rd] = MUL_T_FALSE;
           }
         }
+
+        reg_steps[rd] = reg_steps[rs1] * reg_mintervals_los[rs2][0];
+        for (size_t i = 0; i < mul_lo_rd.size(); i++) {
+          reg_mintervals_los[rd][i] = mul_lo_rd[i];
+          reg_mintervals_ups[rd][i] = mul_up_rd[i];
+        }
+        reg_mintervals_cnts[rd] = mul_lo_rd.size();
+
       }
     } else if (reg_symb_type[rs2] == SYMBOLIC) {
       if (reg_hasmn[rs2]) {
@@ -803,46 +791,27 @@ void constrain_mul() {
         set_correction(rd, reg_symb_type[rs2], 0, reg_addsub_corr[rs2], reg_mintervals_los[rs1][0], reg_corr_validity[rs2] + MUL_T);
         set_vaddrs(rd, reg_vaddrs[rs2], 0, reg_vaddrs_cnts[rs2]);
 
-        if (reg_mintervals_cnts[rs2] == 1) {
-          cnd = mul_condition(reg_mintervals_los[rs2][0], reg_mintervals_ups[rs2][0], reg_mintervals_los[rs1][0]);
+        bool cnd;
+        std::vector<uint64_t> mul_lo_rd;
+        std::vector<uint64_t> mul_up_rd;
+        for (size_t i = 0; i < reg_mintervals_cnts[rs2]; i++) {
+          cnd = mul_condition(reg_mintervals_los[rs2][i], reg_mintervals_ups[rs2][i], reg_mintervals_los[rs1][0]);
           if (cnd == true) {
-            reg_steps[rd]             = reg_steps[rs2]             * reg_mintervals_los[rs1][0];
-            reg_mintervals_los[rd][0] = reg_mintervals_los[rs1][0] * reg_mintervals_los[rs2][0];
-            reg_mintervals_ups[rd][0] = reg_mintervals_ups[rs1][0] * reg_mintervals_ups[rs2][0];
-            reg_mintervals_cnts[rd]   = 1;
+            mul_lo_rd.push_back(reg_mintervals_los[rs2][i] * reg_mintervals_los[rs1][0]);
+            mul_up_rd.push_back(reg_mintervals_ups[rs2][i] * reg_mintervals_ups[rs1][0]);
           } else {
-            // potential of overflow
-            // assert: reg_mintervals_los[rs2][0] * reg_steps[rs1] <= UINT64_MAX_T
-            uint128_t lcm_ = lcm_128(TWO_TO_THE_POWER_OF_64, (uint128_t) reg_mintervals_los[rs1][0] * reg_steps[rs2]);
-            uint128_t rhs = (uint128_t) (lcm_ - (uint128_t) reg_mintervals_los[rs1][0] * reg_steps[rs2]) / reg_mintervals_los[rs1][0];
-            uint128_t lhs = (reg_mintervals_ups[rs2][0] - reg_mintervals_los[rs2][0]);
-            if (lhs >= rhs) {
-              uint64_t gcd_step_k = gcd_128( (uint128_t) reg_mintervals_los[rs1][0] * reg_steps[rs2], TWO_TO_THE_POWER_OF_64);
-              uint64_t lo         = (reg_mintervals_los[rs1][0] * reg_mintervals_los[rs2][0]);
-              reg_mintervals_los[rd][0] = lo - (lo / gcd_step_k) * gcd_step_k;
-              reg_mintervals_ups[rd][0] = compute_upper_bound(reg_mintervals_los[rd][0], gcd_step_k, UINT64_MAX_T);
-              reg_mintervals_cnts[rd]   = 1;
-              reg_steps[rd]             = gcd_step_k;
-              reg_corr_validity[rs2]   += REMU_T;
-            } else {
-              printf("OUTPUT: cannot reason about overflowed mul at %x\n", pc - entry_point);
-              exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
-            }
-          }
-        } else {
-          reg_steps[rd] = reg_steps[rs2] * reg_mintervals_los[rs1][0]; // correct when on (cnd == false) we do exit
-          for (uint32_t i = 0; i < reg_mintervals_cnts[rs2]; i++) {
-            cnd = mul_condition(reg_mintervals_los[rs2][i], reg_mintervals_ups[rs2][i], reg_mintervals_los[rs1][0]);
-            if (cnd == true) {
-              reg_mintervals_los[rd][i] = reg_mintervals_los[rs2][i] * reg_mintervals_los[rs1][0];
-              reg_mintervals_ups[rd][i] = reg_mintervals_ups[rs2][i] * reg_mintervals_ups[rs1][0];
-              reg_mintervals_cnts[rd]   = reg_mintervals_cnts[rs2];
-            } else {
-              printf("OUTPUT: cannot reason about overflowed mul at %x\n", pc - entry_point);
-              exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
-            }
+            handle_mul_cnd_failure(mul_lo_rd, mul_up_rd, reg_mintervals_los[rs2][i], reg_mintervals_ups[rs2][i], reg_steps[rs2], reg_mintervals_los[rs1][0]);
+            reg_corr_validity[rd] = MUL_T_FALSE;
           }
         }
+
+        reg_steps[rd] = reg_steps[rs2] * reg_mintervals_los[rs1][0];
+        for (size_t i = 0; i < mul_lo_rd.size(); i++) {
+          reg_mintervals_los[rd][i] = mul_lo_rd[i];
+          reg_mintervals_ups[rd][i] = mul_up_rd[i];
+        }
+        reg_mintervals_cnts[rd] = mul_lo_rd.size();
+
       }
     } else {
       // rd has no constraint if both rs1 and rs2 have no constraints
@@ -1826,6 +1795,9 @@ void propagate_backwards_rhs(std::vector<uint64_t>& lo, std::vector<uint64_t>& u
     } else if (corr_validitys[stored_to_tc] == REMU_T) {
       // remu
       propagate_remu(steps[mrvc], muldivrem_corrs[stored_to_tc]);
+    } else if (corr_validitys[stored_to_tc] > REMU_T) {
+      printf("OUTPUT: unsupported backward propagation %llu at %x\n", corr_validitys[stored_to_tc], pc - entry_point);
+      exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
     }
 
     if (hasmns[stored_to_tc]) {
@@ -2927,31 +2899,175 @@ void backtrack_trace(uint64_t* context) {
   set_pc(context, pc);
 }
 
+// -------------------------- auxiliary functions ------------------------------
+// auxiliary functions to deal with addition and
+// multiplication when the conditions are failed
+// -----------------------------------------------------------------------------
+
+struct interval {
+  uint64_t lo;
+  uint64_t up;
+};
+
+bool compare_interval(interval i1, interval i2) {
+  return (i1.lo > i2.lo);
+}
+
+bool are_step_intervals_overlapped(uint64_t lo1, uint64_t lo2, uint64_t step) {
+  return ((lo1 - lo2) % step == 0) ? true : false;
+}
+
+void merge_intervals(std::vector<uint64_t>& lo, std::vector<uint64_t>& up, uint64_t size, uint64_t step) {
+  struct interval mint[size];
+
+  for (size_t i = 0; i < size; i++) {
+    mint[i].lo = lo[i];
+    mint[i].up = up[i];
+  }
+
+  std::sort(mint, mint + size, compare_interval);
+
+  size_t index = 1;
+  bool is_overlapped;
+  for (size_t i = 1; i < size; i++) {
+    is_overlapped = false;
+    for (size_t j = 0; j < index; j++) {
+      if (mint[j].lo <= mint[i].up && are_step_intervals_overlapped(mint[j].lo, mint[i].lo, step)) {
+        mint[j].lo = mint[i].lo;
+        mint[j].up = std::max(mint[j].up, mint[i].up);
+        is_overlapped = true;
+      }
+    }
+
+    if (is_overlapped == false) {
+      mint[index++] = mint[i];
+    }
+  }
+
+  lo.clear();
+  up.clear();
+  for (size_t i = 0; i < index; i++) {
+    lo.push_back(mint[i].lo);
+    up.push_back(mint[i].up);
+  }
+}
+
+void add_cnd_failure_rinterval(std::vector<uint64_t>& lo_res, std::vector<uint64_t>& up_res, uint128_t lo_1, uint128_t up_1, uint128_t lo_2, uint128_t up_2) {
+  uint128_t lo = lo_1 + lo_2;
+  uint128_t up = up_1 + up_2;
+  uint64_t  gcd_steps = gcd(reg_steps[rs1], reg_steps[rs2]);
+  if (lo <= UINT64_MAX_T) {
+    // interval 1
+    lo_res.push_back((uint64_t) lo);
+    if (up <= UINT64_MAX_T) {
+      // interval 1
+      up_res.push_back((uint64_t) up);
+    } else {
+      uint64_t max = compute_upper_bound(lo, gcd_steps, UINT64_MAX_T); // safe cast
+      if (lo - (max + gcd_steps) % gcd_steps == 0) {
+        // mean both sub-interval can be represented as one wrapped.
+        up_res.push_back((uint64_t) up % TWO_TO_THE_POWER_OF_64);
+      } else {
+        // interval 1
+        up_res.push_back(max);
+        // interval 2
+        lo_res.push_back(max + gcd_steps);
+        up_res.push_back((uint64_t) up % TWO_TO_THE_POWER_OF_64);
+      }
+    }
+  } else {
+    // one interval
+    lo_res.push_back((uint64_t) lo % TWO_TO_THE_POWER_OF_64);
+    up_res.push_back((uint64_t) up % TWO_TO_THE_POWER_OF_64);
+  }
+}
+
+void handle_add_cnd_failure(std::vector<uint64_t>& mul_lo_rd, std::vector<uint64_t>& mul_up_rd, uint64_t i, uint64_t j) {
+  uint64_t max_rs1;
+  uint64_t max_rs2;
+  if (reg_mintervals_los[rs1][i] > reg_mintervals_ups[rs1][i]) {
+    // wrapped
+    max_rs1 = compute_upper_bound(reg_mintervals_los[rs1][i], reg_steps[rs1], UINT64_MAX_T);
+    if (reg_mintervals_los[rs2][j] > reg_mintervals_ups[rs2][j]) {
+      // wrapped
+      max_rs2 = compute_upper_bound(reg_mintervals_los[rs2][j], reg_steps[rs2], UINT64_MAX_T);
+      add_cnd_failure_rinterval(mul_lo_rd, mul_up_rd, reg_mintervals_los[rs1][i], max_rs1, reg_mintervals_los[rs2][j], max_rs2);
+      add_cnd_failure_rinterval(mul_lo_rd, mul_up_rd, reg_mintervals_los[rs1][i], max_rs1, max_rs2 + reg_steps[rs2], reg_mintervals_ups[rs2][j]);
+      add_cnd_failure_rinterval(mul_lo_rd, mul_up_rd, max_rs1 + reg_steps[rs1], reg_mintervals_ups[rs1][i], reg_mintervals_los[rs2][j], max_rs2);
+      add_cnd_failure_rinterval(mul_lo_rd, mul_up_rd, max_rs1 + reg_steps[rs1], reg_mintervals_ups[rs1][i], max_rs2 + reg_steps[rs2], reg_mintervals_ups[rs2][j]);
+    } else {
+      add_cnd_failure_rinterval(mul_lo_rd, mul_up_rd, reg_mintervals_los[rs1][i], max_rs1, reg_mintervals_los[rs2][j], reg_mintervals_ups[rs2][j]);
+      printf("--\n");
+      add_cnd_failure_rinterval(mul_lo_rd, mul_up_rd, max_rs1 + reg_steps[rs1], reg_mintervals_ups[rs1][i], reg_mintervals_los[rs2][j], reg_mintervals_ups[rs2][j]);
+    }
+  } else {
+    if (reg_mintervals_los[rs2][j] > reg_mintervals_ups[rs2][j]) {
+      // wrapped
+      max_rs2 = compute_upper_bound(reg_mintervals_los[rs2][j], reg_steps[rs2], UINT64_MAX_T);
+      add_cnd_failure_rinterval(mul_lo_rd, mul_up_rd, reg_mintervals_los[rs1][i], reg_mintervals_ups[rs1][i], reg_mintervals_los[rs2][j], max_rs2);
+      add_cnd_failure_rinterval(mul_lo_rd, mul_up_rd, reg_mintervals_los[rs1][i], reg_mintervals_ups[rs1][i], max_rs2 + reg_steps[rs2], reg_mintervals_ups[rs2][j]);
+    } else {
+      add_cnd_failure_rinterval(mul_lo_rd, mul_up_rd, reg_mintervals_los[rs1][i], reg_mintervals_ups[rs1][i], reg_mintervals_los[rs2][j], reg_mintervals_ups[rs2][j]);
+    }
+  }
+}
+
+void mul_cnd_failure_rinterval(std::vector<uint64_t>& lo_res, std::vector<uint64_t>& up_res, uint128_t lo_1, uint128_t up_1, uint128_t k, uint64_t step) {
+  uint128_t lo = lo_1 * k;
+  uint128_t up = up_1 * k;
+  step         = step * k;
+  if (lo <= UINT64_MAX_T) {
+    // interval 1
+    lo_res.push_back((uint64_t) lo);
+    if (up <= UINT64_MAX_T) {
+      // interval 1
+      up_res.push_back((uint64_t) up);
+    } else {
+      uint64_t max = compute_upper_bound(lo, step, UINT64_MAX_T); // safe cast
+      if (lo - (max + step) % step == 0) {
+        // mean both sub-interval can be represented as one wrapped.
+        up_res.push_back((uint64_t) up % TWO_TO_THE_POWER_OF_64);
+      } else {
+        // interval 1
+        up_res.push_back(max); // cast is safe
+        // interval 2
+        lo_res.push_back(max + step);
+        up_res.push_back((uint64_t) up % TWO_TO_THE_POWER_OF_64);
+      }
+    }
+  } else {
+    // one interval
+    lo_res.push_back((uint64_t) lo % TWO_TO_THE_POWER_OF_64);
+    up_res.push_back((uint64_t) up % TWO_TO_THE_POWER_OF_64);
+  }
+}
+
+void handle_mul_cnd_failure(std::vector<uint64_t>& mul_lo_rd, std::vector<uint64_t>& mul_up_rd, uint64_t lo, uint64_t up, uint64_t step, uint64_t k) {
+  uint64_t max_reg;
+  if (lo > up) {
+    // wrapped
+    max_reg = compute_upper_bound(lo, step, UINT64_MAX_T);
+    mul_cnd_failure_rinterval(mul_lo_rd, mul_up_rd, lo, max_reg, k, step);
+    mul_cnd_failure_rinterval(mul_lo_rd, mul_up_rd, max_reg + step, up, k, step);
+  } else {
+    mul_cnd_failure_rinterval(mul_lo_rd, mul_up_rd, lo, up, k, step);
+  }
+}
 
 // -------------------------------- propagation --------------------------------
 
 void propagate_mul(uint64_t step, uint64_t k) {
+  // important assert:
+  // corr_validity > REMU_T never reach here e.g. when MUL_T_FALSE
   bool cnd;
-  for (uint32_t i = 0; i < propagated_minterval_cnt; i++) {
+  for (size_t i = 0; i < propagated_minterval_cnt; i++) {
     cnd = mul_condition(propagated_minterval_lo[i], propagated_minterval_up[i], k);
     if (cnd == true) {
       propagated_minterval_lo[i] = propagated_minterval_lo[i] * k;
       propagated_minterval_up[i] = propagated_minterval_up[i] * k;
     } else {
-      // potential of overflow
-      // assert: reg_mintervals_los[rs2][0] * reg_steps[rs1] <= UINT64_MAX_T
-      uint128_t lcm_ = lcm_128(TWO_TO_THE_POWER_OF_64, (uint128_t) k * step);
-      uint128_t rhs  = (uint128_t) (lcm_ - (uint128_t) k * step) / k;
-      uint128_t lhs  = (propagated_minterval_up[i] - propagated_minterval_lo[i]);
-      if (lhs >= rhs) {
-        uint64_t gcd_step_k = gcd_128( (uint128_t) k * step, TWO_TO_THE_POWER_OF_64);
-        uint64_t lo_p       = (propagated_minterval_lo[i] * k);
-        propagated_minterval_lo[i]          = lo_p - (lo_p / gcd_step_k) * gcd_step_k;
-        propagated_minterval_up[i]          = compute_upper_bound(propagated_minterval_lo[i], gcd_step_k, UINT64_MAX_T);
-      } else {
-        printf("OUTPUT: cannot reason about overflowed mul at %x\n", pc - entry_point);
-        exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
-      }
+      printf("OUTPUT: cannot reason about overflowed mul at %x\n", pc - entry_point);
+      exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
     }
   }
 }

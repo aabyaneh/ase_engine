@@ -6,6 +6,7 @@
 #include <string>
 #include <fstream>
 #include <iomanip>
+#include <algorithm>
 
 // ------ shared variables and procedures between source files -----
 
@@ -190,5 +191,9 @@ void create_xor_mconstraints_rptr(std::vector<uint64_t>& lo1_p, std::vector<uint
 void create_xor_mconstraints_lptr(uint64_t lo1, uint64_t up1, std::vector<uint64_t>& lo2_p, std::vector<uint64_t>& up2_p, uint64_t trb);
 uint64_t check_conditional_type_equality_or_disequality();
 uint64_t check_conditional_type_lte_or_gte();
+
+void merge_intervals(std::vector<uint64_t>& lo, std::vector<uint64_t>& up, uint64_t size, uint64_t step);
+void handle_add_cnd_failure(std::vector<uint64_t>& mul_lo_rd, std::vector<uint64_t>& mul_up_rd, uint64_t i, uint64_t j);
+void handle_mul_cnd_failure(std::vector<uint64_t>& mul_lo_rd, std::vector<uint64_t>& mul_up_rd, uint64_t lo, uint64_t up, uint64_t step, uint64_t k);
 
 uint64_t compute_upper_bound(uint64_t lo, uint64_t step, uint64_t value);
