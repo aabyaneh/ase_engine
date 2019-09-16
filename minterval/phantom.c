@@ -4395,7 +4395,7 @@ uint64_t handle_exception(uint64_t* context) {
 uint64_t engine(uint64_t* to_context) {
   std::ofstream output_queries;
   std::vector<std::string> queries;
-  if (PSE) queries.reserve(128);
+  if (PSE) queries.reserve(256);
 
   registers = get_regs(to_context);
   pt        = get_pt(to_context);
@@ -4438,13 +4438,14 @@ uint64_t engine(uint64_t* to_context) {
           output_results << "B=" << b+1 << "\n";
         }
 
-        if (PSE) {
+        if (PSE && PSE_WRITE) {
           generate_path_condition();
           path_condition_string.pop_back();
           queries.push_back(path_condition_string);
         }
 
         backtrack_trace(current_context);
+        if (MODE == 2 && tc_before_changing_mode <= get_current_tc()) downgrade_mode();
 
         if (b == 0)
           printf1((uint64_t*) "%s: backtracking \n", exe_name);
@@ -4462,7 +4463,7 @@ uint64_t engine(uint64_t* to_context) {
           print_integer(b);
           println();
 
-          if (PSE) {
+          if (PSE && PSE_WRITE) {
             output_queries.open("queries.txt", std::ofstream::trunc);
             output_queries << ":Variables:\n\n";
             if (PER_PATH) {

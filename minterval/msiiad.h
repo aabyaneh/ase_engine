@@ -131,6 +131,7 @@ extern std::ofstream output_results;
 
 extern bool PSE;
 extern bool PER_PATH;
+extern bool PSE_WRITE;
 extern uint64_t* reg_pse_ast;
 extern std::vector<std::string> pse_variables_per_path;
 extern std::vector<std::string> pse_variables_per_multi_path;
@@ -167,6 +168,7 @@ uint64_t is_trace_space_available();
 
 void ealloc();
 void efree();
+uint64_t get_current_tc();
 
 void store_symbolic_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, uint32_t data_type, std::vector<uint64_t>& lo, std::vector<uint64_t>& up, uint32_t mints_num, uint64_t step, std::vector<uint64_t>& ld_from, uint32_t ld_from_num, bool hasmn, uint64_t addsub_corr, uint64_t muldivrem_corr, uint64_t corr_validity, uint64_t trb, uint64_t to_tc, uint64_t is_input, uint64_t pse_ast_ptr);
 void store_constrained_memory(uint64_t vaddr, std::vector<uint64_t>& lo, std::vector<uint64_t>& up, uint32_t mints_num, uint64_t step, std::vector<uint64_t>& ld_from, uint32_t ld_from_num, bool hasmn, uint64_t addsub_corr, uint64_t muldivrem_corr, uint64_t corr_validity, uint64_t to_tc, uint64_t is_input);
@@ -197,3 +199,7 @@ void handle_add_cnd_failure(std::vector<uint64_t>& mul_lo_rd, std::vector<uint64
 void handle_mul_cnd_failure(std::vector<uint64_t>& mul_lo_rd, std::vector<uint64_t>& mul_up_rd, uint64_t lo, uint64_t up, uint64_t step, uint64_t k);
 
 uint64_t compute_upper_bound(uint64_t lo, uint64_t step, uint64_t value);
+
+extern uint8_t  MODE;
+extern uint64_t tc_before_changing_mode;
+void downgrade_mode();

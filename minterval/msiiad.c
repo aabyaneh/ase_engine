@@ -152,7 +152,6 @@ struct node {
   uint64_t right_node;
 };
 
-bool         PSE = false, PER_PATH = false;
 uint8_t      CONST = 0, VAR = 1, ADDI = 2, ADD = 3, SUB = 4, MUL = 5, DIVU = 6, REMU = 7, ILT = 8, IGTE = 9, IEQ = 10, INEQ = 11;
 uint64_t     MAX_NODE_TRACE_LENGTH = 2 * MAX_TRACE_LENGTH;
 uint64_t     tree_tc = 0;
@@ -181,6 +180,32 @@ uint64_t pse_operation(uint8_t typ, uint64_t left_node, uint64_t right_node) {
   pse_ast_nodes[tree_tc].right_node = right_node;
 
   return tree_tc;
+}
+
+// -------- engine parameters
+// PSE = true means probabilistic symbolic execution is enabled
+bool PSE = true;
+// PSE_WRITE = true means write the queries in output
+bool PSE_WRITE = false;
+// PER_PATH = false means generate pse variables targeting disjunction of all paths
+// PER_PATH = true  means generate pse variables targeting one under analysis path
+bool PER_PATH = false;
+// -------- modes management
+// mode == 1 means complete theory of intervals
+// mode != 1 means approximated theory of intervals + pse
+uint8_t  MODE = 1;
+uint64_t tc_before_changing_mode = 0;
+
+void upgrade_mode(std::string message) {
+  if (MODE == 1) {
+    printf("OUTPUT: %s at %x\n", pc - entry_point);
+    tc_before_changing_mode = tc;
+    MODE = 2;
+  }
+}
+
+void downgrade_mode() {
+  MODE = 1;
 }
 
 // ------------------------- INITIALIZATION ------------------------
@@ -1306,6 +1331,10 @@ uint64_t is_trace_space_available() {
   return tc + 1 < MAX_TRACE_LENGTH;
 }
 
+uint64_t get_current_tc() {
+  return tc;
+}
+
 void ealloc() {
   tc = tc + 1;
 }
@@ -1907,7 +1936,9 @@ void take_branch(uint64_t b, uint64_t how_many_more) {
   }
 }
 
-void create_true_false_constraints(uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t up2) {
+bool create_true_false_constraints(uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t up2) {
+  bool cannot_handle = false;
+
   if (lo1 <= up1) {
     // rs1 interval is not wrapped around
     if (lo2 <= up2) {
@@ -1958,8 +1989,7 @@ void create_true_false_constraints(uint64_t lo1, uint64_t up1, uint64_t lo2, uin
       } else {
         // be careful about case [10, 20] < [20, 30] where needs a relation
         // we cannot handle non-singleton interval intersections in comparison
-        printf("OUTPUT: detected non-singleton interval intersection at %x \n", pc - entry_point);
-        exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
+        cannot_handle = true;
       }
     } else {
       // rs1 interval is not wrapped around but rs2 is
@@ -2025,8 +2055,7 @@ void create_true_false_constraints(uint64_t lo1, uint64_t up1, uint64_t lo2, uin
 
       } else {
         // we cannot handle non-singleton interval intersections in comparison
-        printf("OUTPUT: detected non-singleton interval intersection at %x \n", pc - entry_point);
-        exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
+        cannot_handle = true;
       }
     }
   } else if (lo2 <= up2) {
@@ -2095,8 +2124,7 @@ void create_true_false_constraints(uint64_t lo1, uint64_t up1, uint64_t lo2, uin
 
     } else {
       // we cannot handle non-singleton interval intersections in comparison
-      printf("OUTPUT: detected non-singleton interval intersection at %x \n", pc - entry_point);
-      exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
+      cannot_handle = true;
     }
 
   } else {
@@ -2104,9 +2132,10 @@ void create_true_false_constraints(uint64_t lo1, uint64_t up1, uint64_t lo2, uin
     printf("OUTPUT: < of two non-wrapped intervals are not supported for now at %x \n", pc - entry_point);
     exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
   }
+
+  return cannot_handle;
 }
 
-// multi intervals are managed
 void create_mconstraints(std::vector<uint64_t>& lo1_p, std::vector<uint64_t>& up1_p, std::vector<uint64_t>& lo2_p, std::vector<uint64_t>& up2_p, uint64_t trb) {
   bool cannot_handle   = false;
   bool true_reachable  = false;
@@ -2127,8 +2156,26 @@ void create_mconstraints(std::vector<uint64_t>& lo1_p, std::vector<uint64_t>& up
     for (uint32_t j = 0; j < reg_mintervals_cnts[rs2]; j++) {
       lo2 = lo2_p[j];
       up2 = up2_p[j];
-      create_true_false_constraints(lo1, up1, lo2, up2);
+      cannot_handle = create_true_false_constraints(lo1, up1, lo2, up2);
     }
+  }
+
+  if (cannot_handle) {
+    // detected non-singleton interval intersection
+    upgrade_mode("detected non-singleton interval intersection");
+
+    if (check_conditional_type_lte_or_gte() == LGTE) {
+      false_branches.push_back(pse_operation(ILT , reg_pse_ast[rs1], reg_pse_ast[rs2]));
+      path_condition.push_back(pse_operation(IGTE, reg_pse_ast[rs1], reg_pse_ast[rs2]));
+      take_branch(1, 1);
+      take_branch(0, 0);
+    } else {
+      false_branches.push_back(pse_operation(IGTE, reg_pse_ast[rs1], reg_pse_ast[rs2]));
+      path_condition.push_back(pse_operation(ILT , reg_pse_ast[rs1], reg_pse_ast[rs2]));
+      take_branch(0, 1);
+      take_branch(1, 0);
+    }
+    return;
   }
 
   if (true_branch_rs1_minterval_cnt > 0 && true_branch_rs2_minterval_cnt > 0)
@@ -2194,7 +2241,25 @@ void create_mconstraints_lptr(uint64_t lo1, uint64_t up1, std::vector<uint64_t>&
   for (uint32_t j = 0; j < reg_mintervals_cnts[rs2]; j++) {
     lo2 = lo2_p[j];
     up2 = up2_p[j];
-    create_true_false_constraints(lo1, up1, lo2, up2);
+    cannot_handle = create_true_false_constraints(lo1, up1, lo2, up2);
+  }
+
+  if (cannot_handle) {
+    // detected non-singleton interval intersection
+    upgrade_mode("detected non-singleton interval intersection");
+
+    if (check_conditional_type_lte_or_gte() == LGTE) {
+      false_branches.push_back(pse_operation(ILT , reg_pse_ast[rs1], reg_pse_ast[rs2]));
+      path_condition.push_back(pse_operation(IGTE, reg_pse_ast[rs1], reg_pse_ast[rs2]));
+      take_branch(1, 1);
+      take_branch(0, 0);
+    } else {
+      false_branches.push_back(pse_operation(IGTE, reg_pse_ast[rs1], reg_pse_ast[rs2]));
+      path_condition.push_back(pse_operation(ILT , reg_pse_ast[rs1], reg_pse_ast[rs2]));
+      take_branch(0, 1);
+      take_branch(1, 0);
+    }
+    return;
   }
 
   if (true_branch_rs1_minterval_cnt > 0 && true_branch_rs2_minterval_cnt > 0)
@@ -2259,7 +2324,25 @@ void create_mconstraints_rptr(std::vector<uint64_t>& lo1_p, std::vector<uint64_t
   for (uint32_t i = 0; i < reg_mintervals_cnts[rs1]; i++) {
     lo1 = lo1_p[i];
     up1 = up1_p[i];
-    create_true_false_constraints(lo1, up1, lo2, up2);
+    cannot_handle = create_true_false_constraints(lo1, up1, lo2, up2);
+  }
+
+  if (cannot_handle) {
+    // detected non-singleton interval intersection
+    upgrade_mode("detected non-singleton interval intersection");
+
+    if (check_conditional_type_lte_or_gte() == LGTE) {
+      false_branches.push_back(pse_operation(ILT , reg_pse_ast[rs1], reg_pse_ast[rs2]));
+      path_condition.push_back(pse_operation(IGTE, reg_pse_ast[rs1], reg_pse_ast[rs2]));
+      take_branch(1, 1);
+      take_branch(0, 0);
+    } else {
+      false_branches.push_back(pse_operation(IGTE, reg_pse_ast[rs1], reg_pse_ast[rs2]));
+      path_condition.push_back(pse_operation(ILT , reg_pse_ast[rs1], reg_pse_ast[rs2]));
+      take_branch(0, 1);
+      take_branch(1, 0);
+    }
+    return;
   }
 
   if (true_branch_rs1_minterval_cnt > 0 && true_branch_rs2_minterval_cnt > 0)
@@ -2514,8 +2597,21 @@ void create_xor_mconstraints(std::vector<uint64_t>& lo1_p, std::vector<uint64_t>
     }
 
     if (cannot_handle) {
-      printf("OUTPUT: detected non-singleton interval intersection %x\n", pc - entry_point);
-      exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
+      // detected non-singleton interval intersection
+      upgrade_mode("detected non-singleton interval intersection");
+
+      if (check_conditional_type_equality_or_disequality() == EQ) {
+        false_branches.push_back(pse_operation(INEQ, reg_pse_ast[rs1], reg_pse_ast[rs2]));
+        path_condition.push_back(pse_operation(IEQ , reg_pse_ast[rs1], reg_pse_ast[rs2]));
+        take_branch(1, 1);
+        take_branch(0, 0);
+      } else {
+        false_branches.push_back(pse_operation(IEQ , reg_pse_ast[rs1], reg_pse_ast[rs2]));
+        path_condition.push_back(pse_operation(INEQ, reg_pse_ast[rs1], reg_pse_ast[rs2]));
+        take_branch(0, 1);
+        take_branch(1, 0);
+      }
+      return;
     }
 
   } else {
@@ -2605,8 +2701,21 @@ void create_xor_mconstraints_lptr(uint64_t lo1, uint64_t up1, std::vector<uint64
     }
 
     if (cannot_handle) {
-      printf("OUTPUT: detected non-singleton interval intersection %x\n", pc - entry_point);
-      exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
+      // detected non-singleton interval intersection
+      upgrade_mode("detected non-singleton interval intersection");
+
+      if (check_conditional_type_equality_or_disequality() == EQ) {
+        false_branches.push_back(pse_operation(INEQ, reg_pse_ast[rs1], reg_pse_ast[rs2]));
+        path_condition.push_back(pse_operation(IEQ , reg_pse_ast[rs1], reg_pse_ast[rs2]));
+        take_branch(1, 1);
+        take_branch(0, 0);
+      } else {
+        false_branches.push_back(pse_operation(IEQ , reg_pse_ast[rs1], reg_pse_ast[rs2]));
+        path_condition.push_back(pse_operation(INEQ, reg_pse_ast[rs1], reg_pse_ast[rs2]));
+        take_branch(0, 1);
+        take_branch(1, 0);
+      }
+      return;
     }
 
   } else {
@@ -2696,8 +2805,21 @@ void create_xor_mconstraints_rptr(std::vector<uint64_t>& lo1_p, std::vector<uint
     }
 
     if (cannot_handle) {
-      printf("OUTPUT: detected non-singleton interval intersection %x\n", pc - entry_point);
-      exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
+      // detected non-singleton interval intersection
+      upgrade_mode("detected non-singleton interval intersection");
+
+      if (check_conditional_type_equality_or_disequality() == EQ) {
+        false_branches.push_back(pse_operation(INEQ, reg_pse_ast[rs1], reg_pse_ast[rs2]));
+        path_condition.push_back(pse_operation(IEQ , reg_pse_ast[rs1], reg_pse_ast[rs2]));
+        take_branch(1, 1);
+        take_branch(0, 0);
+      } else {
+        false_branches.push_back(pse_operation(IEQ , reg_pse_ast[rs1], reg_pse_ast[rs2]));
+        path_condition.push_back(pse_operation(INEQ, reg_pse_ast[rs1], reg_pse_ast[rs2]));
+        take_branch(0, 1);
+        take_branch(1, 0);
+      }
+      return;
     }
 
   } else {
