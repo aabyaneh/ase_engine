@@ -451,17 +451,19 @@ void constrain_addi() {
 
   // interval semantics of addi
   if (reg_symb_type[rs1] == SYMBOLIC) {
-      // rd inherits rs1 constraint
-      set_correction(rd, reg_symb_type[rs1], 0, reg_addsub_corr[rs1] + imm, reg_muldivrem_corr[rs1],
-        (reg_corr_validity[rs1] == 0) ? MUL_T : reg_corr_validity[rs1]);
-      set_vaddrs(rd, reg_vaddrs[rs1], 0, reg_vaddrs_cnts[rs1]);
+    // rd inherits rs1 constraint
+    set_correction(rd, reg_symb_type[rs1], 0, reg_addsub_corr[rs1] + imm, reg_muldivrem_corr[rs1],
+      (reg_corr_validity[rs1] == 0) ? MUL_T : reg_corr_validity[rs1]);
+    set_vaddrs(rd, reg_vaddrs[rs1], 0, reg_vaddrs_cnts[rs1]);
 
-      reg_steps[rd] = reg_steps[rs1];
-      for (uint32_t i = 0; i < reg_mintervals_cnts[rs1]; i++) {
-        reg_mintervals_los[rd][i] = reg_mintervals_los[rs1][i] + imm;
-        reg_mintervals_ups[rd][i] = reg_mintervals_ups[rs1][i] + imm;
-      }
-      reg_mintervals_cnts[rd] = reg_mintervals_cnts[rs1];
+    reg_steps[rd] = reg_steps[rs1];
+    for (uint32_t i = 0; i < reg_mintervals_cnts[rs1]; i++) {
+      reg_mintervals_los[rd][i] = reg_mintervals_los[rs1][i] + imm;
+      reg_mintervals_ups[rd][i] = reg_mintervals_ups[rs1][i] + imm;
+    }
+    reg_mintervals_cnts[rd] = reg_mintervals_cnts[rs1];
+
+    if (PSE) reg_pse_ast[rd] = pse_operation(ADDI, reg_pse_ast[rs1] , pse_operation(CONST, 0, imm));
 
   } else {
     // rd has no constraint if rs1 has none
@@ -472,9 +474,9 @@ void constrain_addi() {
     reg_mintervals_cnts[rd]   = 1;
     reg_steps[rd]             = 1;
     reg_vaddrs_cnts[rd]       = 0;
-  }
 
-  if (PSE) reg_pse_ast[rd] = pse_operation(ADDI, reg_pse_ast[rs1] , pse_operation(CONST, 0, imm));
+    if (PSE) reg_pse_ast[rd] = pse_operation(CONST, 0, reg_mintervals_los[rd][0]);
+  }
 }
 
 bool constrain_add_pointer() {
@@ -583,6 +585,9 @@ void constrain_add() {
         }
         reg_mintervals_cnts[rd] = reg_mintervals_cnts[rs1];
       }
+
+      if (PSE) reg_pse_ast[rd] = pse_operation(ADD, reg_pse_ast[rs1] , reg_pse_ast[rs2]);
+
     } else if (reg_symb_type[rs2] == SYMBOLIC) {
       // rd inherits rs2 constraint since rs1 has none
       set_correction(rd, reg_symb_type[rs2], 0, reg_addsub_corr[rs2] + reg_mintervals_los[rs1][0], reg_muldivrem_corr[rs2],
@@ -595,6 +600,9 @@ void constrain_add() {
         reg_mintervals_ups[rd][i] = reg_mintervals_ups[rs1][0] + reg_mintervals_ups[rs2][i];
       }
       reg_mintervals_cnts[rd] = reg_mintervals_cnts[rs2];
+
+      if (PSE) reg_pse_ast[rd] = pse_operation(ADD, reg_pse_ast[rs1] , reg_pse_ast[rs2]);
+
     } else {
       // rd has no constraint if both rs1 and rs2 have no constraints
       set_correction(rd, 0, 0, 0, 0, 0);
@@ -604,9 +612,9 @@ void constrain_add() {
       reg_mintervals_cnts[rd]   = 1;
       reg_steps[rd]             = 1;
       reg_vaddrs_cnts[rd]       = 0;
-    }
 
-    if (PSE) reg_pse_ast[rd] = pse_operation(ADD, reg_pse_ast[rs1] , reg_pse_ast[rs2]);
+      if (PSE) reg_pse_ast[rd] = pse_operation(CONST, 0, reg_mintervals_los[rd][0]);
+    }
   }
 }
 
@@ -722,6 +730,9 @@ void constrain_sub() {
         }
         reg_mintervals_cnts[rd] = reg_mintervals_cnts[rs1];
       }
+
+      if (PSE) reg_pse_ast[rd] = pse_operation(SUB, reg_pse_ast[rs1] , reg_pse_ast[rs2]);
+
     } else if (reg_symb_type[rs2] == SYMBOLIC) {
       if (reg_hasmn[rs2]) {
         // rs2 constraint has already minuend and can have another minuend
@@ -744,6 +755,9 @@ void constrain_sub() {
         reg_mintervals_los[rd][i] = sub_tmp;
       }
       reg_mintervals_cnts[rd] = reg_mintervals_cnts[rs2];
+
+      if (PSE) reg_pse_ast[rd] = pse_operation(SUB, reg_pse_ast[rs1] , reg_pse_ast[rs2]);
+
     } else {
       // rd has no constraint if both rs1 and rs2 have no constraints
       set_correction(rd, 0, 0, 0, 0, 0);
@@ -753,9 +767,9 @@ void constrain_sub() {
       reg_mintervals_cnts[rd]   = 1;
       reg_steps[rd]             = 1;
       reg_vaddrs_cnts[rd]       = 0;
-    }
 
-    if (PSE) reg_pse_ast[rd] = pse_operation(SUB, reg_pse_ast[rs1] , reg_pse_ast[rs2]);
+      if (PSE) reg_pse_ast[rd] = pse_operation(CONST, 0, reg_mintervals_los[rd][0]);
+    }
   }
 }
 
@@ -807,6 +821,9 @@ void constrain_mul() {
         reg_mintervals_cnts[rd] = mul_lo_rd.size();
 
       }
+
+      if (PSE) reg_pse_ast[rd] = pse_operation(MUL, reg_pse_ast[rs1] , reg_pse_ast[rs2]);
+
     } else if (reg_symb_type[rs2] == SYMBOLIC) {
       if (reg_hasmn[rs2]) {
         // correction does not work anymore
@@ -841,6 +858,9 @@ void constrain_mul() {
         reg_mintervals_cnts[rd] = mul_lo_rd.size();
 
       }
+
+      if (PSE) reg_pse_ast[rd] = pse_operation(MUL, reg_pse_ast[rs1] , reg_pse_ast[rs2]);
+
     } else {
       // rd has no constraint if both rs1 and rs2 have no constraints
       set_correction(rd, 0, 0, 0, 0, 0);
@@ -850,9 +870,9 @@ void constrain_mul() {
       reg_mintervals_ups[rd][0] = reg_mintervals_ups[rs1][0] * reg_mintervals_ups[rs2][0];
       reg_mintervals_cnts[rd]   = 1;
       reg_vaddrs_cnts[rd]       = 0;
-    }
 
-    if (PSE) reg_pse_ast[rd] = pse_operation(MUL, reg_pse_ast[rs1] , reg_pse_ast[rs2]);
+      if (PSE) reg_pse_ast[rd] = pse_operation(CONST, 0, reg_mintervals_los[rd][0]);
+    }
   }
 }
 
@@ -931,9 +951,14 @@ void constrain_divu() {
             reg_mintervals_cnts[rd] = 1;
 
           }
+
+          if (PSE) reg_pse_ast[rd] = pse_operation(DIVU, reg_pse_ast[rs1] , reg_pse_ast[rs2]);
+
         } else if (reg_symb_type[rs2] == SYMBOLIC) {
           printf("OUTPUT: detected division of constant by interval at %x\n", pc - entry_point);
           exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
+
+          if (PSE) reg_pse_ast[rd] = pse_operation(DIVU, reg_pse_ast[rs1] , reg_pse_ast[rs2]);
 
         } else {
           // rd has no constraint if both rs1 and rs2 have no constraints
@@ -944,9 +969,9 @@ void constrain_divu() {
           reg_mintervals_cnts[rd]   = 1;
           reg_steps[rd]             = 1;
           reg_vaddrs_cnts[rd]       = 0;
-        }
 
-        if (PSE) reg_pse_ast[rd] = pse_operation(DIVU, reg_pse_ast[rs1] , reg_pse_ast[rs2]);
+          if (PSE) reg_pse_ast[rd] = pse_operation(CONST, 0, reg_mintervals_los[rd][0]);
+        }
       }
     } else
       throw_exception(EXCEPTION_DIVISIONBYZERO, 0);
@@ -1038,6 +1063,9 @@ void constrain_remu() {
     reg_mintervals_los[rd][0] = rem_lo;
     reg_mintervals_ups[rd][0] = rem_up;
     reg_mintervals_cnts[rd]   = 1;
+
+    if (PSE) reg_pse_ast[rd] = pse_operation(REMU, reg_pse_ast[rs1] , reg_pse_ast[rs2]);
+
   } else {
     // rd has no constraint if both rs1 and rs2 have no constraints
     set_correction(rd, 0, 0, 0, 0, 0);
@@ -1047,9 +1075,9 @@ void constrain_remu() {
     reg_mintervals_cnts[rd]   = 1;
     reg_steps[rd]             = 1;
     reg_vaddrs_cnts[rd]       = 0;
-  }
 
-  if (PSE) reg_pse_ast[rd] = pse_operation(REMU, reg_pse_ast[rs1] , reg_pse_ast[rs2]);
+    if (PSE) reg_pse_ast[rd] = pse_operation(CONST, 0, reg_mintervals_los[rd][0]);
+  }
 }
 
 void constrain_sltu() {
@@ -3423,6 +3451,7 @@ void path_condition_traverse(uint64_t node_tc) {
 void generate_path_condition() {
   path_condition_string.clear();
   for (size_t i = 0; i < path_condition.size(); i++) {
+    // printf("%d\n", i);
     if (traversed_path_condition_elements.size() <= i) {
       // not yet traversed
       size_t end = path_condition_string.size();
