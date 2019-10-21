@@ -7,6 +7,7 @@
 #include <fstream>
 #include <iomanip>
 #include <algorithm>
+#include<iterator>
 
 // ------ shared variables and procedures between source files -----
 

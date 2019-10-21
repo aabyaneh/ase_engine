@@ -186,7 +186,7 @@ uint64_t pse_operation(uint8_t typ, uint64_t left_node, uint64_t right_node) {
 // PSE = true means probabilistic symbolic execution is enabled
 bool PSE = true;
 // PSE_WRITE = true means write the queries in output
-bool PSE_WRITE = false;
+bool PSE_WRITE = true;
 // PER_PATH = false means generate pse variables targeting disjunction of all paths
 // PER_PATH = true  means generate pse variables targeting one under analysis path
 bool PER_PATH = false;
@@ -250,7 +250,10 @@ void init_symbolic_engine() {
     pse_asts[0]          = zero_node;
     false_branches.reserve(MAX_TRACE_LENGTH);
     path_condition.reserve(MAX_TRACE_LENGTH);
-    path_condition_string.reserve(MAX_TRACE_LENGTH);
+    if (PSE_WRITE) {
+      path_condition_string.reserve(MAX_TRACE_LENGTH);
+      traversed_path_condition_elements.reserve(MAX_TRACE_LENGTH);
+    }
   }
 
   for (size_t i = 0; i < NUMBEROFREGISTERS; i++) {
@@ -2908,11 +2911,10 @@ void backtrack_sltu() {
             reg_pse_ast[vaddr] = (registers[vaddr] == 0) ? zero_node : one_node;
             while (false_branches.back() < path_condition.back()) {
               path_condition.pop_back();
-              // traversed_path_condition_element.pop_back();
+              if(PSE_WRITE) traversed_path_condition_elements.pop_back();
             }
             tree_tc = false_branches.back();
             path_condition.push_back(false_branches.back());
-            // traversed_path_condition_element.push_back("");
             false_branches.pop_back();
           }
 
@@ -3421,7 +3423,18 @@ void path_condition_traverse(uint64_t node_tc) {
 void generate_path_condition() {
   path_condition_string.clear();
   for (size_t i = 0; i < path_condition.size(); i++) {
-    path_condition_traverse(path_condition[i]); // node_tc
-    path_condition_string += ";";
+    if (traversed_path_condition_elements.size() <= i) {
+      // not yet traversed
+      size_t end = path_condition_string.size();
+
+      path_condition_traverse(path_condition[i]); // node_tc
+      path_condition_string += ";";
+
+      traversed_path_condition_elements.push_back("");
+      traversed_path_condition_elements[i].append(path_condition_string, end, path_condition_string.size() - end);
+    } else {
+      // already traversed
+      path_condition_string += traversed_path_condition_elements[i];
+    }
   }
 }

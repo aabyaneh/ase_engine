@@ -4395,7 +4395,7 @@ uint64_t handle_exception(uint64_t* context) {
 uint64_t engine(uint64_t* to_context) {
   std::ofstream output_queries;
   std::vector<std::string> queries;
-  if (PSE) queries.reserve(256);
+  if (PSE && PSE_WRITE) queries.reserve(1000);
 
   registers = get_regs(to_context);
   pt        = get_pt(to_context);
