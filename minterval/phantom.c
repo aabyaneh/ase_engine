@@ -4445,7 +4445,6 @@ uint64_t engine(uint64_t* to_context) {
         }
 
         backtrack_trace(current_context);
-        if (MODE == 2 && tc_before_changing_mode <= get_current_tc()) downgrade_mode();
 
         if (b == 0)
           printf1((uint64_t*) "%s: backtracking \n", exe_name);

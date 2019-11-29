@@ -184,29 +184,12 @@ uint64_t pse_operation(uint8_t typ, uint64_t left_node, uint64_t right_node) {
 
 // -------- engine parameters
 // PSE = true means probabilistic symbolic execution is enabled
-bool PSE = true;
+bool PSE = false;
 // PSE_WRITE = true means write the queries in output
-bool PSE_WRITE = true;
+bool PSE_WRITE = false;
 // PER_PATH = false means generate pse variables targeting disjunction of all paths
 // PER_PATH = true  means generate pse variables targeting one under analysis path
 bool PER_PATH = false;
-// -------- modes management
-// mode == 1 means complete theory of intervals
-// mode != 1 means approximated theory of intervals + pse
-uint8_t  MODE = 1;
-uint64_t tc_before_changing_mode = 0;
-
-void upgrade_mode(std::string message) {
-  if (MODE == 1) {
-    printf("OUTPUT: %s at %x\n", pc - entry_point);
-    tc_before_changing_mode = tc;
-    MODE = 2;
-  }
-}
-
-void downgrade_mode() {
-  MODE = 1;
-}
 
 // ------------------------- INITIALIZATION ------------------------
 
@@ -1313,7 +1296,7 @@ void print_symbolic_memory(uint64_t svc) {
 }
 
 bool is_symbolic_value(uint64_t type, uint32_t mints_num, uint64_t lo, uint64_t up) {
-  if (type)
+  if (type == POINTER_T)
     // memory range
     return 0;
   else if (mints_num > 1)
@@ -2193,20 +2176,8 @@ void create_mconstraints(std::vector<uint64_t>& lo1_p, std::vector<uint64_t>& up
 
   if (cannot_handle) {
     // detected non-singleton interval intersection
-    upgrade_mode("detected non-singleton interval intersection");
-
-    if (check_conditional_type_lte_or_gte() == LGTE) {
-      false_branches.push_back(pse_operation(ILT , reg_pse_ast[rs1], reg_pse_ast[rs2]));
-      path_condition.push_back(pse_operation(IGTE, reg_pse_ast[rs1], reg_pse_ast[rs2]));
-      take_branch(1, 1);
-      take_branch(0, 0);
-    } else {
-      false_branches.push_back(pse_operation(IGTE, reg_pse_ast[rs1], reg_pse_ast[rs2]));
-      path_condition.push_back(pse_operation(ILT , reg_pse_ast[rs1], reg_pse_ast[rs2]));
-      take_branch(0, 1);
-      take_branch(1, 0);
-    }
-    return;
+    printf("detected non-singleton interval intersection at %x \n", pc - entry_point);
+    exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
   }
 
   if (true_branch_rs1_minterval_cnt > 0 && true_branch_rs2_minterval_cnt > 0)
@@ -2277,20 +2248,8 @@ void create_mconstraints_lptr(uint64_t lo1, uint64_t up1, std::vector<uint64_t>&
 
   if (cannot_handle) {
     // detected non-singleton interval intersection
-    upgrade_mode("detected non-singleton interval intersection");
-
-    if (check_conditional_type_lte_or_gte() == LGTE) {
-      false_branches.push_back(pse_operation(ILT , reg_pse_ast[rs1], reg_pse_ast[rs2]));
-      path_condition.push_back(pse_operation(IGTE, reg_pse_ast[rs1], reg_pse_ast[rs2]));
-      take_branch(1, 1);
-      take_branch(0, 0);
-    } else {
-      false_branches.push_back(pse_operation(IGTE, reg_pse_ast[rs1], reg_pse_ast[rs2]));
-      path_condition.push_back(pse_operation(ILT , reg_pse_ast[rs1], reg_pse_ast[rs2]));
-      take_branch(0, 1);
-      take_branch(1, 0);
-    }
-    return;
+    printf("detected non-singleton interval intersection at %x \n", pc - entry_point);
+    exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
   }
 
   if (true_branch_rs1_minterval_cnt > 0 && true_branch_rs2_minterval_cnt > 0)
@@ -2360,20 +2319,8 @@ void create_mconstraints_rptr(std::vector<uint64_t>& lo1_p, std::vector<uint64_t
 
   if (cannot_handle) {
     // detected non-singleton interval intersection
-    upgrade_mode("detected non-singleton interval intersection");
-
-    if (check_conditional_type_lte_or_gte() == LGTE) {
-      false_branches.push_back(pse_operation(ILT , reg_pse_ast[rs1], reg_pse_ast[rs2]));
-      path_condition.push_back(pse_operation(IGTE, reg_pse_ast[rs1], reg_pse_ast[rs2]));
-      take_branch(1, 1);
-      take_branch(0, 0);
-    } else {
-      false_branches.push_back(pse_operation(IGTE, reg_pse_ast[rs1], reg_pse_ast[rs2]));
-      path_condition.push_back(pse_operation(ILT , reg_pse_ast[rs1], reg_pse_ast[rs2]));
-      take_branch(0, 1);
-      take_branch(1, 0);
-    }
-    return;
+    printf("detected non-singleton interval intersection at %x \n", pc - entry_point);
+    exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
   }
 
   if (true_branch_rs1_minterval_cnt > 0 && true_branch_rs2_minterval_cnt > 0)
@@ -2629,20 +2576,8 @@ void create_xor_mconstraints(std::vector<uint64_t>& lo1_p, std::vector<uint64_t>
 
     if (cannot_handle) {
       // detected non-singleton interval intersection
-      upgrade_mode("detected non-singleton interval intersection");
-
-      if (check_conditional_type_equality_or_disequality() == EQ) {
-        false_branches.push_back(pse_operation(INEQ, reg_pse_ast[rs1], reg_pse_ast[rs2]));
-        path_condition.push_back(pse_operation(IEQ , reg_pse_ast[rs1], reg_pse_ast[rs2]));
-        take_branch(1, 1);
-        take_branch(0, 0);
-      } else {
-        false_branches.push_back(pse_operation(IEQ , reg_pse_ast[rs1], reg_pse_ast[rs2]));
-        path_condition.push_back(pse_operation(INEQ, reg_pse_ast[rs1], reg_pse_ast[rs2]));
-        take_branch(0, 1);
-        take_branch(1, 0);
-      }
-      return;
+      printf("detected non-singleton interval intersection at %x \n", pc - entry_point);
+      exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
     }
 
   } else {
@@ -2733,20 +2668,8 @@ void create_xor_mconstraints_lptr(uint64_t lo1, uint64_t up1, std::vector<uint64
 
     if (cannot_handle) {
       // detected non-singleton interval intersection
-      upgrade_mode("detected non-singleton interval intersection");
-
-      if (check_conditional_type_equality_or_disequality() == EQ) {
-        false_branches.push_back(pse_operation(INEQ, reg_pse_ast[rs1], reg_pse_ast[rs2]));
-        path_condition.push_back(pse_operation(IEQ , reg_pse_ast[rs1], reg_pse_ast[rs2]));
-        take_branch(1, 1);
-        take_branch(0, 0);
-      } else {
-        false_branches.push_back(pse_operation(IEQ , reg_pse_ast[rs1], reg_pse_ast[rs2]));
-        path_condition.push_back(pse_operation(INEQ, reg_pse_ast[rs1], reg_pse_ast[rs2]));
-        take_branch(0, 1);
-        take_branch(1, 0);
-      }
-      return;
+      printf("detected non-singleton interval intersection at %x \n", pc - entry_point);
+      exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
     }
 
   } else {
@@ -2837,20 +2760,8 @@ void create_xor_mconstraints_rptr(std::vector<uint64_t>& lo1_p, std::vector<uint
 
     if (cannot_handle) {
       // detected non-singleton interval intersection
-      upgrade_mode("detected non-singleton interval intersection");
-
-      if (check_conditional_type_equality_or_disequality() == EQ) {
-        false_branches.push_back(pse_operation(INEQ, reg_pse_ast[rs1], reg_pse_ast[rs2]));
-        path_condition.push_back(pse_operation(IEQ , reg_pse_ast[rs1], reg_pse_ast[rs2]));
-        take_branch(1, 1);
-        take_branch(0, 0);
-      } else {
-        false_branches.push_back(pse_operation(IEQ , reg_pse_ast[rs1], reg_pse_ast[rs2]));
-        path_condition.push_back(pse_operation(INEQ, reg_pse_ast[rs1], reg_pse_ast[rs2]));
-        take_branch(0, 1);
-        take_branch(1, 0);
-      }
-      return;
+      printf("detected non-singleton interval intersection at %x \n", pc - entry_point);
+      exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
     }
 
   } else {
@@ -2922,7 +2833,7 @@ void backtrack_sltu() {
       reg_mintervals_ups[vaddr][0] = mintervals_ups[tc][0];
       reg_mintervals_cnts[vaddr]   = 1;
       reg_steps[vaddr]             = 1;
-      reg_vaddrs_cnts[rd]          = 0;
+      reg_vaddrs_cnts[vaddr]       = 0;
 
       set_correction(vaddr, 0, 0, 0, 0, 0);
 
