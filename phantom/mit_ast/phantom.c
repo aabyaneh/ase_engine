@@ -2500,6 +2500,13 @@ void implement_symbolic_input(uint64_t* context) {
   step = *(get_regs(context) + REG_A3);
 
   if (symbolic) {
+    // it needs page fault to assign memory at addr
+    if (is_valid_virtual_address(addr)) {
+      if (is_virtual_address_mapped(get_pt(context), addr) == 0)
+        map_page(context, get_page_of_virtual_address(addr), (uint64_t) palloc());
+    } else
+      throw_exception(EXCEPTION_INVALIDADDRESS, addr);
+
     if (symbolic == SASE) {
       printf("symbolic input: lo: %llu, up: %llu, step: %llu, cnt: %llu\n", lo, up, step, input_cnt_current);
 
@@ -2518,7 +2525,8 @@ void implement_symbolic_input(uint64_t* context) {
         else
           boolector_assert(btor, boolector_ugte(btor, constrained_inputs[input_cnt_current], boolector_unsigned_int_64(lo)));
 
-        sase_regs[REG_A0] = constrained_inputs[input_cnt_current];
+        sase_store_memory(pt, addr, SYMBOLIC_T, lo, constrained_inputs[input_cnt_current]);
+
         input_cnt_current++;
 
       } else {
@@ -2540,13 +2548,11 @@ void implement_symbolic_input(uint64_t* context) {
         else
           boolector_assert(btor, boolector_ugte(btor, constrained_inputs[input_cnt], boolector_unsigned_int_64(lo)));
 
-        sase_regs[REG_A0] = constrained_inputs[input_cnt];
+        sase_store_memory(pt, addr, SYMBOLIC_T, lo, constrained_inputs[input_cnt]);
+
         input_cnt++;
         input_cnt_current++;
-
       }
-
-      sase_regs_typ[REG_A0] = SYMBOLIC_T;
 
     } else {
       // unnecessary
@@ -2563,12 +2569,12 @@ void implement_symbolic_input(uint64_t* context) {
       val_ptr_2[0] = compute_upper_bound(lo, step, up);
       ast_ptr = add_ast_node(VAR, 0, symbolic_input_cnt, 1, val_ptr_1, val_ptr_2, step, 0, zero_v);
 
-      // it needs page fault to assign memory
-      if (is_valid_virtual_address(addr)) {
-        if (is_virtual_address_mapped(get_pt(context), addr) == 0)
-          map_page(context, get_page_of_virtual_address(addr), (uint64_t) palloc());
-      } else
-        throw_exception(EXCEPTION_INVALIDADDRESS, addr);
+      // // it needs page fault to assign memory
+      // if (is_valid_virtual_address(addr)) {
+      //   if (is_virtual_address_mapped(get_pt(context), addr) == 0)
+      //     map_page(context, get_page_of_virtual_address(addr), (uint64_t) palloc());
+      // } else
+      //   throw_exception(EXCEPTION_INVALIDADDRESS, addr);
 
       store_symbolic_memory(pt, addr, lo, VALUE_T, ast_ptr, tc, 1);
 
@@ -4416,22 +4422,27 @@ uint64_t engine(uint64_t* to_context) {
     if (handle_exception(current_context) == EXIT) {
 
       if (symbolic == SASE) {
-        if (sase_tc == 0 || pc == 0) {
+        if (b == 0)
+          printf1((uint64_t*) "%s: backtracking \n", exe_name);
+        else
+          unprint_integer(b);
+
+        b++;
+
+        print_integer(b);
+
+        sase_backtrack_trace();
+        set_pc(current_context, pc);
+
+        if (pc == 0) {
           printf("\nnumber of queries: %llu\n", number_of_queries);
-          printf("\nbacktracking: %llu\n", ++b);
+          printf("\nbacktracking: %llu\n", b);
           return EXITCODE_NOERROR;
-        } else {
-          b++;
-
-          sase_backtrack_sltu(0);
-          set_pc(current_context, pc);
-
-          if (pc == 0) {
-            printf("\nnumber of queries: %llu\n", number_of_queries);
-            printf("\nbacktracking: %llu\n", b);
-            return EXITCODE_NOERROR;
-          }
         }
+
+        boolector_pop(btor, 1);
+        boolector_assert(btor, sase_false_branchs[sase_tc]);
+
       } else {
         // printf("%\nbacktracking %llu\n", b+1);
 

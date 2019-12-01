@@ -70,10 +70,9 @@ uint64_t        input_cnt_current = 0;
 uint64_t        number_of_queries = 0;
 
 // ********************** engine functions ************************
+uint64_t minus_eight = -8;
 
 void init_sase() {
-  uint64_t t  = -8;
-
   btor        = boolector_new();
   bv_sort     = boolector_bitvec_sort(btor, 64);
   bv_sort_32  = boolector_bitvec_sort(btor, 32);
@@ -81,7 +80,7 @@ void init_sase() {
   one_bv      = boolector_unsigned_int(btor, 1, bv_sort);
   twelve_bv   = boolector_unsigned_int(btor, 12, bv_sort);
   eight_bv    = boolector_unsigned_int(btor, 8, bv_sort);
-  meight_bv   = boolector_unsigned_int_64(t);
+  meight_bv   = boolector_unsigned_int_64(minus_eight);
 
   boolector_set_opt(btor, BTOR_OPT_INCREMENTAL, 1);
   boolector_set_opt(btor, BTOR_OPT_MODEL_GEN, 1);
@@ -94,7 +93,7 @@ void init_sase() {
     sase_regs_typ[i] = CONCRETE_T;
   }
   sase_regs[REG_ZR] = zero_bv;
-  sase_regs[REG_FP] = zero_bv;
+  // sase_regs[REG_FP] = zero_bv;
 
   sase_pcs              = (uint64_t*)       malloc(sizeof(uint64_t)       * sase_trace_size);
   sase_read_trace_ptrs  = (uint64_t*)       malloc(sizeof(uint64_t)       * sase_trace_size);
@@ -122,6 +121,14 @@ void init_sase() {
   *values          = 0;
   *is_symbolics    = CONCRETE_T;
   *symbolic_values = zero_bv;
+
+  *sase_pcs              = 0;
+  *sase_false_branchs    = (BoolectorNode*) 0;
+  *sase_read_trace_ptrs  = 0;
+  *sase_program_brks     = 0;
+  *sase_store_trace_ptrs = 0;
+  *sase_rds              = 0;
+  sase_tc++;
 }
 
 uint64_t sase_is_trace_space_available() {
@@ -133,126 +140,59 @@ BoolectorNode* boolector_unsigned_int_64(uint64_t value) {
   return boolector_constd(btor, bv_sort, const_buffer);
 }
 
-void store_registers_fp_sp_rd() {
-  if (tc + 2 >= sase_trace_size)
+bool check_branch_satisfiability(BoolectorNode* assert) {
+  bool result = false;
+  boolector_push(btor, 1);
+  boolector_assert(btor, assert);
+  number_of_queries++;
+  if (boolector_sat(btor) == BOOLECTOR_SAT) {
+    result = true;
+  }
+  boolector_pop(btor, 1);
+
+  return result;
+}
+
+void store_registers(uint64_t b) {
+  if (tc + 3 >= sase_trace_size)
     throw_exception(EXCEPTION_MAXTRACE, 0);
 
   tc++;
-  *(tcs             + tc) = 0;
-  *(is_symbolics    + tc) = 0;
-  *(values          + tc) = *(registers + REG_FP);
-  *(symbolic_values + tc) = sase_regs[REG_FP];
-  *(vaddrs + tc)          = rd;
+  tcs[tc]             = 0;
+  is_symbolics[tc]    = CONCRETE_T;
+  values[tc]          = b;
+  symbolic_values[tc] = (b == 0) ? zero_bv : one_bv;
+  vaddrs[tc]          = rd;
 
   tc++;
-  *(tcs             + tc) = 0;
-  *(is_symbolics    + tc) = 0;
-  *(values          + tc) = *(registers + REG_SP);
-  *(symbolic_values + tc) = sase_regs[REG_SP];
-  *(vaddrs + tc)          = rd;
+  tcs[tc]             = 0;
+  is_symbolics[tc]    = CONCRETE_T;
+  values[tc]          = registers[REG_FP];
+  symbolic_values[tc] = (BoolectorNode*) 0;
+  vaddrs[tc]          = REG_FP;
+
+  tc++;
+  tcs[tc]             = 0;
+  is_symbolics[tc]    = CONCRETE_T;
+  values[tc]          = registers[REG_SP];
+  symbolic_values[tc] = (BoolectorNode*) 0;
+  vaddrs[tc]          = REG_SP;
 }
 
-void restore_registers_fp_sp_rd(uint64_t tr_cnt, uint64_t rd_reg) {
-  registers[REG_SP]     = *(values + tr_cnt);
-  sase_regs[REG_SP]     = *(symbolic_values + tr_cnt);
+void restore_registers() {
+  registers[REG_SP]     = values[tc];
+  sase_regs[REG_SP]     = symbolic_values[tc];
   sase_regs_typ[REG_SP] = CONCRETE_T;
-  tr_cnt--;
+
   tc--;
-  registers[REG_FP]     = *(values + tr_cnt);
-  sase_regs[REG_FP]     = *(symbolic_values + tr_cnt);
+  registers[REG_FP]     = values[tc];
+  sase_regs[REG_FP]     = symbolic_values[tc];
   sase_regs_typ[REG_FP] = CONCRETE_T;
 
-  registers[rd_reg] = 0;
-  sase_regs[rd_reg] = zero_bv;
-  sase_regs_typ[rd_reg] = CONCRETE_T;
-}
-
-uint8_t check_next_1_instrs() {
-  uint64_t op;
-
-  pc = pc + INSTRUCTIONSIZE;
-  fetch();
-  pc = pc - INSTRUCTIONSIZE;
-  op = get_opcode(ir);
-  if (op == OP_BRANCH)
-    return 1;
-  else
-    return 0;
-}
-
-uint8_t match_sub(uint64_t prev_instr_rd) {
-  uint64_t rs1_;
-  uint64_t rs2_;
-  uint64_t rd_;
-  uint64_t funct3_;
-  uint64_t funct7_;
-
-  funct7_ = get_funct7(ir);
-  funct3_ = get_funct3(ir);
-  rs1_    = get_rs1(ir);
-  rs2_    = get_rs2(ir);
-  rd_     = get_rd(ir);
-
-  if (funct3_ == F3_ADD) {
-    if (funct7_ == F7_SUB)
-      if (rs1_ == prev_instr_rd)
-        if (rs2_ == rd)
-          if (rd_ == rs2_)
-            return 1;
-  }
-
-  return 0;
-}
-
-uint8_t match_addi() {
-  uint64_t rs1_;
-  uint64_t rd_;
-  uint64_t funct3_;
-  uint64_t imm_;
-
-  rs1_    = get_rs1(ir);
-  rd_     = get_rd(ir);
-  funct3_ = get_funct3(ir);
-  imm_    = get_immediate_i_format(ir);
-
-  if (funct3_ == F3_ADDI) {
-    if (imm_ == 1)
-      if (rs1_ == REG_ZR)
-        if (rd_ != rd)
-          return 1;
-  }
-
-  return 0;
-}
-
-uint8_t check_next_3_instrs() {
-  uint64_t rd_;
-  uint64_t opcode_;
-  uint64_t saved_pc;
-
-  saved_pc = pc;
-
-  pc = saved_pc + INSTRUCTIONSIZE;
-  fetch();
-  opcode_ = get_opcode(ir);
-  if (opcode_ == OP_IMM) {
-    if (match_addi()) {
-      rd_ = get_rd(ir);
-      pc = saved_pc + 2 * INSTRUCTIONSIZE;
-      fetch();
-      opcode_ = get_opcode(ir);
-      if (opcode_ == OP_OP) {
-        if (match_sub(rd_)) {
-          rd = get_rd(ir);
-          pc = saved_pc;
-          return 2;
-        }
-      }
-    }
-  }
-
-  pc = saved_pc;
-  return 1;
+  tc--;
+  registers[vaddrs[tc]]     = values[tc];
+  sase_regs[vaddrs[tc]]     = symbolic_values[tc];
+  sase_regs_typ[vaddrs[tc]] = CONCRETE_T;
 }
 
 uint64_t check_conditional_type_eq_or_deq() {
@@ -293,31 +233,39 @@ void sase_lui() {
 
 void sase_addi() {
   if (rd != REG_ZR) {
-    if (imm == 8) {
-      sase_regs[rd] = boolector_add(btor, sase_regs[rs1], eight_bv);
-    } else if (imm == 0) {
-      sase_regs[rd] = boolector_add(btor, sase_regs[rs1], zero_bv);
-    } else if (imm == -8) {
-      sase_regs[rd] = boolector_add(btor, sase_regs[rs1], meight_bv);
-    } else if (imm == 1) {
-      sase_regs[rd] = boolector_add(btor, sase_regs[rs1], one_bv);
+    sase_regs_typ[rd] = sase_regs_typ[rs1];
+
+    if (sase_regs_typ[rd] == CONCRETE_T && is_system_register(rs1)) {
+      sase_regs[rd] = (BoolectorNode*) 0;
     } else {
-      if (imm < two_to_the_power_of_32) {
-        sase_regs[rd] = boolector_add(btor, sase_regs[rs1], boolector_unsigned_int(btor, imm, bv_sort));
+      if (imm == 8) {
+        sase_regs[rd] = boolector_add(btor, sase_regs[rs1], eight_bv);
+      } else if (imm == 0) {
+        sase_regs[rd] = sase_regs[rs1];
+      } else if (imm == minus_eight) {
+        sase_regs[rd] = boolector_add(btor, sase_regs[rs1], meight_bv);
+      } else if (imm == 1) {
+        sase_regs[rd] = boolector_add(btor, sase_regs[rs1], one_bv);
       } else {
-        sase_regs[rd] = boolector_add(btor, sase_regs[rs1], boolector_unsigned_int_64(imm));
+        if (imm < two_to_the_power_of_32) {
+          sase_regs[rd] = boolector_add(btor, sase_regs[rs1], boolector_unsigned_int(btor, imm, bv_sort));
+        } else {
+          sase_regs[rd] = boolector_add(btor, sase_regs[rs1], boolector_unsigned_int_64(imm));
+        }
       }
     }
-
-    sase_regs_typ[rd] = sase_regs_typ[rs1];
   }
 }
 
 void sase_add() {
   if (rd != REG_ZR) {
-    sase_regs[rd] = boolector_add(btor, sase_regs[rs1], sase_regs[rs2]);
-
     sase_regs_typ[rd] = sase_regs_typ[rs1] | sase_regs_typ[rs2];
+
+    if (sase_regs_typ[rd] == CONCRETE_T && is_system_register(rs1)) {
+      sase_regs[rd] = (BoolectorNode*) 0;
+    } else {
+      sase_regs[rd] = boolector_add(btor, sase_regs[rs1], sase_regs[rs2]);
+    }
   }
 }
 
@@ -378,6 +326,10 @@ void sase_remu() {
 }
 
 void sase_xor() {
+  bool true_branch_reachable  = false;
+  bool false_branch_reachable = false;
+  BoolectorNode* true_branch_expr;
+
   ic_xor = ic_xor + 1;
 
   if (rd != REG_ZR) {
@@ -397,64 +349,108 @@ void sase_xor() {
     }
 
     if (check_conditional_type_eq_or_deq() == 1) {
-      sase_false_branchs[sase_tc]    = boolector_ne(btor, sase_regs[rs1], sase_regs[rs2]);
-      sase_pcs[sase_tc]              = pc  + 3 * INSTRUCTIONSIZE;
+      sase_false_branchs[sase_tc] = boolector_ne(btor, sase_regs[rs1], sase_regs[rs2]);
+      false_branch_reachable      = check_branch_satisfiability(sase_false_branchs[sase_tc]);
 
-      boolector_push(btor, 1);
-      boolector_assert(btor, boolector_eq(btor, sase_regs[rs1], sase_regs[rs2]));
+      true_branch_expr            = boolector_eq(btor, sase_regs[rs1], sase_regs[rs2]);
+      true_branch_reachable       = check_branch_satisfiability(true_branch_expr);
 
-      pc = pc + 3 * INSTRUCTIONSIZE;
-      ic_addi = ic_addi + 1;
-      ic_sltu = ic_sltu + 1;
+      if (true_branch_reachable) {
+        if (false_branch_reachable) {
+          // save state on trace for later false evaluation
+          sase_pcs[sase_tc]              = pc  + INSTRUCTIONSIZE;
+          sase_program_brks[sase_tc]     = get_program_break(current_context);
+          sase_read_trace_ptrs[sase_tc]  = read_tc_current;
+          sase_input_trace_ptrs[sase_tc] = input_cnt_current;
+          sase_store_trace_ptrs[sase_tc] = mrif;
+          mrif = tc;
+          store_registers(1); // after mrif =
+          sase_tc++;
+
+          // continue with true branch
+          boolector_push(btor, 1);
+          boolector_assert(btor, true_branch_expr);
+          registers[rd]     = 0;
+          sase_regs[rd]     = zero_bv;
+          sase_regs_typ[rd] = CONCRETE_T;
+        } else {
+          // continue with true branch
+          registers[rd]     = 0;
+          sase_regs[rd]     = zero_bv;
+          sase_regs_typ[rd] = CONCRETE_T;
+        }
+      } else if (false_branch_reachable) {
+        // continue with false branch
+        registers[rd]     = 1;
+        sase_regs[rd]     = one_bv;
+        sase_regs_typ[rd] = CONCRETE_T;
+      } else {
+        printf("%s\n", "unreachable branch both true and false!");
+        exit(EXITCODE_SYMBOLICEXECUTIONERROR);
+      }
+
     } else {
-      sase_false_branchs[sase_tc]    = boolector_eq(btor, sase_regs[rs1], sase_regs[rs2]);
-      sase_pcs[sase_tc]              = pc  + 2 * INSTRUCTIONSIZE;
+      sase_false_branchs[sase_tc] = boolector_eq(btor, sase_regs[rs1], sase_regs[rs2]);
+      false_branch_reachable      = check_branch_satisfiability(sase_false_branchs[sase_tc]);
 
-      boolector_push(btor, 1);
-      boolector_assert(btor, boolector_ne(btor, sase_regs[rs1], sase_regs[rs2]));
+      true_branch_expr            = boolector_ne(btor, sase_regs[rs1], sase_regs[rs2]);
+      true_branch_reachable       = check_branch_satisfiability(true_branch_expr);
 
-      pc = pc + 2 * INSTRUCTIONSIZE;
-      ic_sltu = ic_sltu + 1;
+      if (true_branch_reachable) {
+        if (false_branch_reachable) {
+          // save state on trace for later false evaluation
+          sase_pcs[sase_tc]              = pc  + INSTRUCTIONSIZE;
+          sase_program_brks[sase_tc]     = get_program_break(current_context);
+          sase_read_trace_ptrs[sase_tc]  = read_tc_current;
+          sase_input_trace_ptrs[sase_tc] = input_cnt_current;
+          sase_store_trace_ptrs[sase_tc] = mrif;
+          mrif = tc;
+          store_registers(0); // after mrif =
+          sase_tc++;
+
+          // continue with true branch
+          boolector_push(btor, 1);
+          boolector_assert(btor, true_branch_expr);
+          registers[rd]     = 1;
+          sase_regs[rd]     = one_bv;
+          sase_regs_typ[rd] = CONCRETE_T;
+        } else {
+          // continue with true branch
+          registers[rd]     = 1;
+          sase_regs[rd]     = one_bv;
+          sase_regs_typ[rd] = CONCRETE_T;
+        }
+      } else if (false_branch_reachable) {
+        // continue with false branch
+        registers[rd]     = 0;
+        sase_regs[rd]     = zero_bv;
+        sase_regs_typ[rd] = CONCRETE_T;
+      } else {
+        printf("%s\n", "unreachable branch both true and false!");
+        exit(EXITCODE_SYMBOLICEXECUTIONERROR);
+      }
     }
 
-    // symbolic semantics
-    sase_program_brks[sase_tc]     = get_program_break(current_context);
-    sase_read_trace_ptrs[sase_tc]  = read_tc_current;
-    sase_input_trace_ptrs[sase_tc] = input_cnt_current;
-    sase_store_trace_ptrs[sase_tc] = mrif;
-    mrif = tc;
-    store_registers_fp_sp_rd(); // after mrif =
-    sase_tc++;
-
-    number_of_queries++;
-    if (boolector_sat(btor) == BOOLECTOR_SAT) {
-      sase_regs[rd]     = one_bv;
-      sase_regs_typ[rd] = CONCRETE_T;
-      *(registers + rd) = 1;
-    } else {
-      // printf("%s\n", "unreachable branch true!");
-      sase_backtrack_sltu(1);
-    }
-
+    pc = pc + INSTRUCTIONSIZE;
   }
 }
 
 void sase_sltu() {
-  uint8_t  is_branch;
-  uint64_t op;
-  uint64_t saved_pc;
+  bool true_branch_reachable  = false;
+  bool false_branch_reachable = false;
+  BoolectorNode* true_branch_expr;
 
   ic_sltu = ic_sltu + 1;
 
   if (rd != REG_ZR) {
     // concrete semantics
     if (sase_regs_typ[rs1] == CONCRETE_T && sase_regs_typ[rs2] == CONCRETE_T) {
-      if (*(registers + rs1) < *(registers + rs2)) {
-        *(registers + rd) = 1;
-        sase_regs[rd]     = one_bv;
+      if (registers[rs1] < registers[rs2]) {
+        registers[rd] = 1;
+        sase_regs[rd] = one_bv;
       } else {
-        *(registers + rd) = 0;
-        sase_regs[rd]     = zero_bv;
+        registers[rd] = 0;
+        sase_regs[rd] = zero_bv;
       }
 
       sase_regs_typ[rd] = CONCRETE_T;
@@ -462,62 +458,94 @@ void sase_sltu() {
       return;
     }
 
-    is_branch = check_next_1_instrs();
-    if (is_branch == 0) {
-      is_branch = check_next_3_instrs();
+    if (check_conditional_type_lte_or_gte_() == 2) {
+      sase_false_branchs[sase_tc] = boolector_ult(btor, sase_regs[rs1], sase_regs[rs2]);
+      false_branch_reachable      = check_branch_satisfiability(sase_false_branchs[sase_tc]);
 
-      if (is_branch == 2) {
-        sase_false_branchs[sase_tc]    = boolector_ult(btor, sase_regs[rs1], sase_regs[rs2]);
-        sase_pcs[sase_tc]              = pc  + 3 * INSTRUCTIONSIZE;
+      true_branch_expr            = boolector_ugte(btor, sase_regs[rs1], sase_regs[rs2]);
+      true_branch_reachable       = check_branch_satisfiability(true_branch_expr);
 
-        boolector_push(btor, 1);
-        boolector_assert(btor, boolector_ugte(btor, sase_regs[rs1], sase_regs[rs2]));
+      if (true_branch_reachable) {
+        if (false_branch_reachable) {
+          // save state on trace for later false evaluation
+          sase_pcs[sase_tc]              = pc  + INSTRUCTIONSIZE;
+          sase_program_brks[sase_tc]     = get_program_break(current_context);
+          sase_read_trace_ptrs[sase_tc]  = read_tc_current;
+          sase_input_trace_ptrs[sase_tc] = input_cnt_current;
+          sase_store_trace_ptrs[sase_tc] = mrif;
+          mrif = tc;
+          store_registers(1); // after mrif =
+          sase_tc++;
 
-        // skip execution of next two instructions
-        pc = pc + 3 * INSTRUCTIONSIZE;
-        ic_addi = ic_addi + 1;
-        ic_sub  = ic_sub  + 1;
+          // continue with true branch
+          boolector_push(btor, 1);
+          boolector_assert(btor, true_branch_expr);
+          registers[rd]     = 0;
+          sase_regs[rd]     = zero_bv;
+          sase_regs_typ[rd] = CONCRETE_T;
+        } else {
+          // continue with true branch
+          registers[rd]     = 0;
+          sase_regs[rd]     = zero_bv;
+          sase_regs_typ[rd] = CONCRETE_T;
+        }
+      } else if (false_branch_reachable) {
+        // continue with false branch
+        registers[rd]     = 1;
+        sase_regs[rd]     = one_bv;
+        sase_regs_typ[rd] = CONCRETE_T;
+      } else {
+        printf("%s\n", "unreachable branch both true and false!");
+        exit(EXITCODE_SYMBOLICEXECUTIONERROR);
+      }
+
+    } else {
+      sase_false_branchs[sase_tc] = boolector_ugte(btor, sase_regs[rs1], sase_regs[rs2]);
+      false_branch_reachable      = check_branch_satisfiability(sase_false_branchs[sase_tc]);
+
+      true_branch_expr            = boolector_ult(btor, sase_regs[rs1], sase_regs[rs2]);
+      true_branch_reachable       = check_branch_satisfiability(true_branch_expr);
+
+      if (true_branch_reachable) {
+        if (false_branch_reachable) {
+          // save state on trace for later false evaluation
+          sase_pcs[sase_tc]              = pc  + INSTRUCTIONSIZE;
+          sase_program_brks[sase_tc]     = get_program_break(current_context);
+          sase_read_trace_ptrs[sase_tc]  = read_tc_current;
+          sase_input_trace_ptrs[sase_tc] = input_cnt_current;
+          sase_store_trace_ptrs[sase_tc] = mrif;
+          mrif = tc;
+          store_registers(0); // after mrif =
+          sase_tc++;
+
+          // continue with true branch
+          boolector_push(btor, 1);
+          boolector_assert(btor, true_branch_expr);
+          registers[rd]     = 1;
+          sase_regs[rd]     = one_bv;
+          sase_regs_typ[rd] = CONCRETE_T;
+        } else {
+          // continue with true branch
+          registers[rd]     = 1;
+          sase_regs[rd]     = one_bv;
+          sase_regs_typ[rd] = CONCRETE_T;
+        }
+      } else if (false_branch_reachable) {
+        // continue with false branch
+        registers[rd]     = 0;
+        sase_regs[rd]     = zero_bv;
+        sase_regs_typ[rd] = CONCRETE_T;
+      } else {
+        printf("%s\n", "unreachable branch both true and false!");
+        exit(EXITCODE_SYMBOLICEXECUTIONERROR);
       }
     }
 
-    if (is_branch == 1) {
-      sase_false_branchs[sase_tc]    = boolector_ugte(btor, sase_regs[rs1], sase_regs[rs2]);
-      sase_pcs[sase_tc]              = pc  + INSTRUCTIONSIZE;
-
-      boolector_push(btor, 1);
-      boolector_assert(btor, boolector_ult(btor, sase_regs[rs1], sase_regs[rs2]));
-      pc = pc + INSTRUCTIONSIZE;
-    }
-
-    // symbolic semantics
-    sase_program_brks[sase_tc]     = get_program_break(current_context);
-    sase_read_trace_ptrs[sase_tc]  = read_tc_current;
-    sase_input_trace_ptrs[sase_tc] = input_cnt_current;
-    sase_store_trace_ptrs[sase_tc] = mrif;
-    mrif = tc;
-    store_registers_fp_sp_rd(); // after mrif =
-    sase_tc++;
-
-    number_of_queries++;
-    if (boolector_sat(btor) == BOOLECTOR_SAT) {
-      sase_regs[rd]     = one_bv;
-      sase_regs_typ[rd] = CONCRETE_T;
-      *(registers + rd) = 1;
-    } else {
-      // printf("%s\n", "unreachable branch true!");
-      sase_backtrack_sltu(1);
-    }
-
+    pc = pc + INSTRUCTIONSIZE;
   }
 }
 
-void sase_backtrack_sltu(int is_true_branch_unreachable) {
-  if (sase_tc == 0) {
-    // printf("pc: %llx, read_tc: %llu, arg: %d\n", pc - entry_point, read_tc, is_true_branch_unreachable);
-    pc = 0;
-    return;
-  }
-
+void sase_backtrack_trace() {
   sase_tc--;
   pc                = sase_pcs[sase_tc];
   read_tc_current   = sase_read_trace_ptrs[sase_tc];
@@ -526,22 +554,9 @@ void sase_backtrack_sltu(int is_true_branch_unreachable) {
   backtrack_branch_stores(); // before mrif =
   mrif = sase_store_trace_ptrs[sase_tc];
 
-  boolector_pop(btor, 1);
-  boolector_assert(btor, sase_false_branchs[sase_tc]);
-  number_of_queries++;
-  if (boolector_sat(btor) != BOOLECTOR_SAT) {
-    if (is_true_branch_unreachable) {
-      printf("%s\n", "unreachable branch both true and false!");
-      exit(EXITCODE_SYMBOLICEXECUTIONERROR);
-    } else {
-      // printf("%s %llu\n", "unreachable branch false!", pc);
-      sase_backtrack_sltu(0);
-    }
-  } else {
-    sase_regs[rd]     = zero_bv;
-    sase_regs_typ[rd] = CONCRETE_T;
-    *(registers + rd) = 0;
-  }
+  // moved to phantom
+  // boolector_pop(btor, 1);
+  // boolector_assert(btor, sase_false_branchs[sase_tc]);
 }
 
 void sase_ld() {
@@ -588,7 +603,7 @@ void sase_sd() {
 void sase_jal_jalr() {
   if (rd != REG_ZR) {
     // assert: *(registers + rd) < 2^32
-    sase_regs[rd] = (registers[rd] < two_to_the_power_of_32) ? boolector_unsigned_int(btor, registers[rd], bv_sort) : boolector_unsigned_int_64(registers[rd]);
+    sase_regs[rd] = (BoolectorNode*) 0; // (registers[rd] < two_to_the_power_of_32) ? boolector_unsigned_int(btor, registers[rd], bv_sort) : boolector_unsigned_int_64(registers[rd]);
 
     sase_regs_typ[rd] = CONCRETE_T;
   }
@@ -625,11 +640,77 @@ void sase_store_memory(uint64_t* pt, uint64_t vaddr, uint8_t is_symbolic, uint64
 
 void backtrack_branch_stores() {
   while (mrif < tc) {
-    if (*(vaddrs + tc) < NUMBEROFREGISTERS) {
-      restore_registers_fp_sp_rd(tc, *(vaddrs + tc));
+    if (vaddrs[tc] < NUMBEROFREGISTERS) {
+      restore_registers();
     } else {
-      store_virtual_memory(pt, *(vaddrs + tc), *(tcs + tc));
+      store_virtual_memory(pt, vaddrs[tc], tcs[tc]);
     }
     tc--;
   }
+}
+
+// --------------------------- conditional expression --------------------------
+
+bool match_addi_instruction_() {
+  uint64_t rs1_;
+  uint64_t rd_;
+  uint64_t funct3_;
+  uint64_t imm_;
+
+  rs1_    = get_rs1(ir);
+  rd_     = get_rd(ir);
+  funct3_ = get_funct3(ir);
+  imm_    = get_immediate_i_format(ir);
+
+  if (funct3_ == F3_ADDI) {
+    if (imm_ == 1)
+      if (rs1_ == REG_ZR)
+        if (rd_ != rd)
+          return true;
+  }
+
+  return false;
+}
+
+bool match_sub_instruction_(uint64_t prev_instr_rd) {
+  uint64_t rs1_;
+  uint64_t rs2_;
+  uint64_t rd_;
+  uint64_t funct3_;
+  uint64_t funct7_;
+
+  funct7_ = get_funct7(ir);
+  funct3_ = get_funct3(ir);
+  rs1_    = get_rs1(ir);
+  rs2_    = get_rs2(ir);
+  rd_     = get_rd(ir);
+
+  if (funct3_ == F3_ADD) {
+    if (funct7_ == F7_SUB)
+      if (rs1_ == prev_instr_rd)
+        if (rs2_ == rd)
+          if (rd_ == rs2_)
+            return true;
+  }
+
+  return false;
+}
+
+uint8_t check_conditional_type_lte_or_gte_() {
+  uint64_t saved_pc = pc;
+
+  pc = saved_pc + INSTRUCTIONSIZE;
+  fetch();
+  if (get_opcode(ir) == OP_IMM && match_addi_instruction_()) {
+    uint64_t rd_ = get_rd(ir);
+    pc = saved_pc + 2 * INSTRUCTIONSIZE;
+    fetch();
+    if (get_opcode(ir) == OP_OP && match_sub_instruction_(rd_)) {
+      pc = saved_pc;
+      return 2;
+    }
+  }
+
+  pc = saved_pc;
+  return 1;
 }
