@@ -2675,32 +2675,33 @@ void create_xor_mconstraints(std::vector<uint64_t>& lo1_p, std::vector<uint64_t>
   }
 
   if (cannot_handle) {
-    false_reachable = check_sat_false_branch_bvt(boolector_ne(btor, sase_regs[rs1], sase_regs[rs2]));
-    true_reachable  = check_sat_true_branch_bvt (boolector_eq(btor, sase_regs[rs1], sase_regs[rs2]));
+    // xor result:
+    false_reachable = check_sat_false_branch_bvt(boolector_eq(btor, sase_regs[rs1], sase_regs[rs2]));
+    true_reachable  = check_sat_true_branch_bvt (boolector_ne(btor, sase_regs[rs1], sase_regs[rs2]));
 
     if (true_reachable) {
       if (false_reachable) {
         if (check_conditional_type_equality_or_disequality() == EQ) {
           // false
-          create_input_variable_constraints_false_branch_bvt();
+          create_input_variable_constraints_true_branch_bvt();
           take_branch(1, 1);
           sase_false_branchs[tc-2] = boolector_ne(btor, sase_regs[rs1], sase_regs[rs2]); // carefull
 
           // true
           boolector_push(btor, 1);
           boolector_assert(btor, boolector_eq(btor, sase_regs[rs1], sase_regs[rs2]));
-          create_input_variable_constraints_true_branch_bvt();
+          create_input_variable_constraints_false_branch_bvt();
           take_branch(0, 0);
         } else {
           // false
-          create_input_variable_constraints_true_branch_bvt();
+          create_input_variable_constraints_false_branch_bvt();
           take_branch(0, 1);
           sase_false_branchs[tc-2] = boolector_eq(btor, sase_regs[rs1], sase_regs[rs2]); // carefull
 
           // true
           boolector_push(btor, 1);
           boolector_assert(btor, boolector_ne(btor, sase_regs[rs1], sase_regs[rs2]));
-          create_input_variable_constraints_false_branch_bvt();
+          create_input_variable_constraints_true_branch_bvt();
           take_branch(1, 0);
         }
       } else {
@@ -2790,32 +2791,33 @@ void create_xor_mconstraints_lptr(uint64_t lo1, uint64_t up1, std::vector<uint64
   }
 
   if (cannot_handle) {
-    false_reachable = check_sat_false_branch_bvt(boolector_ne(btor, sase_regs[rs1], sase_regs[rs2]));
-    true_reachable  = check_sat_true_branch_bvt (boolector_eq(btor, sase_regs[rs1], sase_regs[rs2]));
+    // xor result:
+    false_reachable = check_sat_false_branch_bvt(boolector_eq(btor, sase_regs[rs1], sase_regs[rs2]));
+    true_reachable  = check_sat_true_branch_bvt (boolector_ne(btor, sase_regs[rs1], sase_regs[rs2]));
 
     if (true_reachable) {
       if (false_reachable) {
         if (check_conditional_type_equality_or_disequality() == EQ) {
           // false
-          create_input_variable_constraints_false_branch_bvt();
+          create_input_variable_constraints_true_branch_bvt();
           take_branch(1, 1);
           sase_false_branchs[tc-2] = boolector_ne(btor, sase_regs[rs1], sase_regs[rs2]); // carefull
 
           // true
           boolector_push(btor, 1);
           boolector_assert(btor, boolector_eq(btor, sase_regs[rs1], sase_regs[rs2]));
-          create_input_variable_constraints_true_branch_bvt();
+          create_input_variable_constraints_false_branch_bvt();
           take_branch(0, 0);
         } else {
           // false
-          create_input_variable_constraints_true_branch_bvt();
+          create_input_variable_constraints_false_branch_bvt();
           take_branch(0, 1);
           sase_false_branchs[tc-2] = boolector_eq(btor, sase_regs[rs1], sase_regs[rs2]); // carefull
 
           // true
           boolector_push(btor, 1);
           boolector_assert(btor, boolector_ne(btor, sase_regs[rs1], sase_regs[rs2]));
-          create_input_variable_constraints_false_branch_bvt();
+          create_input_variable_constraints_true_branch_bvt();
           take_branch(1, 0);
         }
       } else {
@@ -2905,32 +2907,33 @@ void create_xor_mconstraints_rptr(std::vector<uint64_t>& lo1_p, std::vector<uint
   }
 
   if (cannot_handle) {
-    false_reachable = check_sat_false_branch_bvt(boolector_ne(btor, sase_regs[rs1], sase_regs[rs2]));
-    true_reachable  = check_sat_true_branch_bvt (boolector_eq(btor, sase_regs[rs1], sase_regs[rs2]));
+    // xor result:
+    false_reachable = check_sat_false_branch_bvt(boolector_eq(btor, sase_regs[rs1], sase_regs[rs2]));
+    true_reachable  = check_sat_true_branch_bvt (boolector_ne(btor, sase_regs[rs1], sase_regs[rs2]));
 
     if (true_reachable) {
       if (false_reachable) {
         if (check_conditional_type_equality_or_disequality() == EQ) {
           // false
-          create_input_variable_constraints_false_branch_bvt();
+          create_input_variable_constraints_true_branch_bvt();
           take_branch(1, 1);
           sase_false_branchs[tc-2] = boolector_ne(btor, sase_regs[rs1], sase_regs[rs2]); // carefull
 
           // true
           boolector_push(btor, 1);
           boolector_assert(btor, boolector_eq(btor, sase_regs[rs1], sase_regs[rs2]));
-          create_input_variable_constraints_true_branch_bvt();
+          create_input_variable_constraints_false_branch_bvt();
           take_branch(0, 0);
         } else {
           // false
-          create_input_variable_constraints_true_branch_bvt();
+          create_input_variable_constraints_false_branch_bvt();
           take_branch(0, 1);
           sase_false_branchs[tc-2] = boolector_eq(btor, sase_regs[rs1], sase_regs[rs2]); // carefull
 
           // true
           boolector_push(btor, 1);
           boolector_assert(btor, boolector_ne(btor, sase_regs[rs1], sase_regs[rs2]));
-          create_input_variable_constraints_false_branch_bvt();
+          create_input_variable_constraints_true_branch_bvt();
           take_branch(1, 0);
         }
       } else {
