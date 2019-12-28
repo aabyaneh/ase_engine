@@ -6,7 +6,6 @@ typedef unsigned __int128 uint128_t;
 
 uint64_t MIT                  = 9;        // symbolic execution with modular interval theory as backend
 uint64_t MAX_TRACE_LENGTH     = 10000000;
-uint64_t MAX_SD_TO_NUM        = 2001;
 uint64_t MAX_NUM_OF_INTERVALS = 2001;
 uint64_t MAX_NUM_OF_OP_VADDRS = 100;
 uint64_t TWO_TO_THE_POWER_OF_32;
@@ -29,6 +28,7 @@ uint64_t* mr_sds          = (uint64_t*) 0; // the tc of most recent store to a m
 
 uint32_t  VALUE_T         = 0;
 uint32_t  POINTER_T       = 1;
+uint32_t  INPUT_T         = 2;
 
 // ---------------------------------------------
 // --------------- read trace
@@ -1050,10 +1050,10 @@ uint64_t check_whether_represents_most_recent_constraint(uint64_t mrvc) {
     most_recent_input = input_table[ast_nodes[input_ast_tc].right_node];
     if (most_recent_input > input_ast_tc) {
       is_updated = false;
-      if (ast_nodes[ast_tc].type == VAR) {
-        printf("OUTPUT: ------ num: %llu; %llu, %llu, %llu: %x\n", ast_nodes[input_ast_tc].right_node, most_recent_input, input_ast_tc, involved_sym_inputs_cnts[ast_tc], pc - entry_point);
-        exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
-      }
+      // if (ast_nodes[ast_tc].type == VAR) {
+      //   printf("OUTPUT: ------ num: %llu; %llu, %llu, %llu: %x\n", ast_nodes[input_ast_tc].right_node, most_recent_input, input_ast_tc, involved_sym_inputs_cnts[ast_tc], pc - entry_point);
+      //   exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
+      // }
       break;
     }
   }
@@ -1280,7 +1280,22 @@ void store_symbolic_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, uint32_
   else if (vaddr < NUMBEROFREGISTERS)
     // tracking a register value for sltu
     mrvc = mrcc;
-  else {
+  else if (vaddr == NUMBEROFREGISTERS) {
+    if (is_trace_space_available()) {
+      ealloc();
+
+      pcs[tc]        = pc;
+      tcs[tc]        = 0;
+      data_types[tc] = data_type;
+      values[tc]     = value;
+      vaddrs[tc]     = vaddr;
+      asts[tc]       = ast_ptr;
+      mr_sds[tc]     = tc;
+    } else {
+      throw_exception(EXCEPTION_MAXTRACE, 0);
+    }
+    return;
+  } else {
     // assert: vaddr is valid and mapped
     mrvc = load_symbolic_memory(pt, vaddr);
 
@@ -1413,6 +1428,10 @@ uint8_t detect_sym_operand(uint64_t ast_tc) {
   }
 }
 
+void store_input_record(uint64_t ast_ptr, uint64_t prev_input_record) {
+  store_symbolic_memory(pt, NUMBEROFREGISTERS, prev_input_record, INPUT_T, ast_ptr, tc, 0);
+}
+
 uint64_t stored_to_tc;
 uint64_t mr_stored_to_tc;
 uint64_t backward_analysis_ast(uint64_t ast_tc, std::vector<uint64_t>& lo, std::vector<uint64_t>& up, size_t mints_num) {
@@ -1422,6 +1441,7 @@ uint64_t backward_analysis_ast(uint64_t ast_tc, std::vector<uint64_t>& lo, std::
   uint8_t left_or_right_is_sym;
   uint64_t ast_ptr;
   bool is_assigned = false;
+  uint64_t prev_input;
 
   uint32_t j;
   // bool is_found;
@@ -1450,6 +1470,7 @@ uint64_t backward_analysis_ast(uint64_t ast_tc, std::vector<uint64_t>& lo, std::
   if (ast_nodes[ast_tc].type == VAR) {
     ast_ptr = add_ast_node(VAR, 0, ast_nodes[ast_tc].right_node, mints_num, propagated_minterval_lo, propagated_minterval_up, steps[ast_tc], 0, zero_v);
 
+    prev_input = input_table.at(ast_nodes[ast_tc].right_node);
     input_table.at(ast_nodes[ast_tc].right_node) = ast_ptr;
 
     for (size_t i = 0; i < store_trace_ptrs[ast_tc].size(); i++) {
@@ -1462,8 +1483,10 @@ uint64_t backward_analysis_ast(uint64_t ast_tc, std::vector<uint64_t>& lo, std::
       }
     }
     if (is_assigned == false) {
-      printf("OUTPUT: problem occured in backward_analysis_ast function at %x\n", pc - entry_point);
-      exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
+      // store an input record on the trace for two purposes:
+      // backtracking the input
+      // on demand updating of affecting variables (will be in load)
+      store_input_record(ast_ptr, prev_input);
     }
 
     return ast_ptr;
@@ -1604,8 +1627,10 @@ uint64_t backward_analysis_ast(uint64_t ast_tc, std::vector<uint64_t>& lo, std::
     stored_to_tc    = store_trace_ptrs[ast_tc][i];
     mr_stored_to_tc = load_symbolic_memory(pt, vaddrs[stored_to_tc]);
     mr_stored_to_tc = mr_sds[mr_stored_to_tc];
-    if (mr_stored_to_tc <= store_trace_ptrs[ast_tc][i])
+    if (mr_stored_to_tc <= store_trace_ptrs[ast_tc][i]) {
       store_symbolic_memory(pt, vaddrs[store_trace_ptrs[ast_tc][i]], saved_lo[0], VALUE_T, ast_ptr, tc, 0);
+      is_assigned = true;
+    }
   }
 
   return ast_ptr;
@@ -2436,6 +2461,8 @@ void backtrack_sltu() {
           reg_asts[vaddr] = (registers[vaddr] == 0) ? zero_node : one_node;
         }
     }
+  } else if (vaddr == NUMBEROFREGISTERS) {
+    input_table.at(ast_nodes[asts[tc]].right_node) = values[tc];
   } else {
     if (ast_nodes[asts[tc]].type == VAR) {
       if (store_trace_ptrs[asts[tc]].size() > 1) {
@@ -2444,8 +2471,10 @@ void backtrack_sltu() {
         input_table.at(ast_nodes[asts[tc]].right_node) = asts[tcs[tc]];
         store_trace_ptrs[asts[tc]].pop_back();
       } else {
-        printf("OUTPUT: sltu backtracking error at %x", pc - entry_point);
-        exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
+        // {
+          printf("OUTPUT: sltu backtracking error at %x", pc - entry_point);
+          exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
+        // }
       }
     } else {
       if (store_trace_ptrs[asts[tc]].size() > 1) {
@@ -2745,6 +2774,7 @@ void handle_mul_cnd_failure(std::vector<uint64_t>& mul_lo_rd, std::vector<uint64
 
 uint64_t compute_add(uint64_t left_operand_ast_tc, uint64_t right_operand_ast_tc, uint64_t old_ast_tc) {
   uint64_t addend;
+  bool is_assigned = false;
 
   if (detect_sym_operand(old_ast_tc) == LEFT) {
     crt_operand_ast_tc = right_operand_ast_tc;
@@ -2767,8 +2797,10 @@ uint64_t compute_add(uint64_t left_operand_ast_tc, uint64_t right_operand_ast_tc
     stored_to_tc    = store_trace_ptrs[old_ast_tc][i];
     mr_stored_to_tc = load_symbolic_memory(pt, vaddrs[stored_to_tc]);
     mr_stored_to_tc = mr_sds[mr_stored_to_tc];
-    if (mr_stored_to_tc <= store_trace_ptrs[old_ast_tc][i])
+    if (mr_stored_to_tc <= store_trace_ptrs[old_ast_tc][i]) {
       store_symbolic_memory(pt, vaddrs[store_trace_ptrs[old_ast_tc][i]], propagated_minterval_lo[0], VALUE_T, ast_ptr, tc, 0);
+      is_assigned = true;
+    }
   }
 
   return ast_ptr;
@@ -2778,6 +2810,7 @@ uint64_t compute_sub(uint64_t left_operand_ast_tc, uint64_t right_operand_ast_tc
   uint64_t sub_lo;
   uint64_t sub_up;
   uint64_t sub_tmp;
+  bool is_assigned = false;
 
   if (is_symbolic_value(VALUE_T, mintervals_los[left_operand_ast_tc].size(), mintervals_los[left_operand_ast_tc][0], mintervals_ups[left_operand_ast_tc][0])) {
     sub_lo = mintervals_los[right_operand_ast_tc][0];
@@ -2793,8 +2826,10 @@ uint64_t compute_sub(uint64_t left_operand_ast_tc, uint64_t right_operand_ast_tc
       stored_to_tc    = store_trace_ptrs[old_ast_tc][i];
       mr_stored_to_tc = load_symbolic_memory(pt, vaddrs[stored_to_tc]);
       mr_stored_to_tc = mr_sds[mr_stored_to_tc];
-      if (mr_stored_to_tc <= store_trace_ptrs[old_ast_tc][i])
+      if (mr_stored_to_tc <= store_trace_ptrs[old_ast_tc][i]) {
         store_symbolic_memory(pt, vaddrs[store_trace_ptrs[old_ast_tc][i]], propagated_minterval_lo[0], VALUE_T, ast_ptr, tc, 0);
+        is_assigned = true;
+      }
     }
 
     return ast_ptr;
@@ -2813,8 +2848,10 @@ uint64_t compute_sub(uint64_t left_operand_ast_tc, uint64_t right_operand_ast_tc
       stored_to_tc    = store_trace_ptrs[old_ast_tc][i];
       mr_stored_to_tc = load_symbolic_memory(pt, vaddrs[stored_to_tc]);
       mr_stored_to_tc = mr_sds[mr_stored_to_tc];
-      if (mr_stored_to_tc <= store_trace_ptrs[old_ast_tc][i])
+      if (mr_stored_to_tc <= store_trace_ptrs[old_ast_tc][i]) {
         store_symbolic_memory(pt, vaddrs[store_trace_ptrs[old_ast_tc][i]], propagated_minterval_lo[0], VALUE_T, ast_ptr, tc, 0);
+        is_assigned = true;
+      }
     }
 
     return ast_ptr;
@@ -2824,6 +2861,7 @@ uint64_t compute_sub(uint64_t left_operand_ast_tc, uint64_t right_operand_ast_tc
 uint64_t compute_mul(uint64_t left_operand_ast_tc, uint64_t right_operand_ast_tc, uint64_t old_ast_tc) {
   bool cnd;
   uint64_t multiplier;
+  bool is_assigned = false;
 
   if (detect_sym_operand(old_ast_tc) == LEFT) {
     crt_operand_ast_tc = right_operand_ast_tc;
@@ -2852,8 +2890,10 @@ uint64_t compute_mul(uint64_t left_operand_ast_tc, uint64_t right_operand_ast_tc
     stored_to_tc    = store_trace_ptrs[old_ast_tc][i];
     mr_stored_to_tc = load_symbolic_memory(pt, vaddrs[stored_to_tc]);
     mr_stored_to_tc = mr_sds[mr_stored_to_tc];
-    if (mr_stored_to_tc <= store_trace_ptrs[old_ast_tc][i])
+    if (mr_stored_to_tc <= store_trace_ptrs[old_ast_tc][i]) {
       store_symbolic_memory(pt, vaddrs[store_trace_ptrs[old_ast_tc][i]], propagated_minterval_lo[0], VALUE_T, ast_ptr, tc, 0);
+      is_assigned = true;
+    }
   }
 
   return ast_ptr;
@@ -2861,6 +2901,7 @@ uint64_t compute_mul(uint64_t left_operand_ast_tc, uint64_t right_operand_ast_tc
 
 uint64_t compute_divu(uint64_t left_operand_ast_tc, uint64_t right_operand_ast_tc, uint64_t old_ast_tc) {
   uint64_t divisor = mintervals_los[right_operand_ast_tc][0];
+  bool is_assigned = false;
 
   if (mintervals_los[left_operand_ast_tc].size() > 1) {
     printf("OUTPUT: unsupported minterval divu %x \n", pc - entry_point);
@@ -2893,8 +2934,10 @@ uint64_t compute_divu(uint64_t left_operand_ast_tc, uint64_t right_operand_ast_t
     stored_to_tc    = store_trace_ptrs[old_ast_tc][i];
     mr_stored_to_tc = load_symbolic_memory(pt, vaddrs[stored_to_tc]);
     mr_stored_to_tc = mr_sds[mr_stored_to_tc];
-    if (mr_stored_to_tc <= store_trace_ptrs[old_ast_tc][i])
+    if (mr_stored_to_tc <= store_trace_ptrs[old_ast_tc][i]) {
       store_symbolic_memory(pt, vaddrs[store_trace_ptrs[old_ast_tc][i]], propagated_minterval_lo[0], VALUE_T, ast_ptr, tc, 0);
+      is_assigned = true;
+    }
   }
 
   return ast_ptr;
@@ -2903,6 +2946,7 @@ uint64_t compute_divu(uint64_t left_operand_ast_tc, uint64_t right_operand_ast_t
 uint64_t compute_remu(uint64_t left_operand_ast_tc, uint64_t right_operand_ast_tc, uint64_t old_ast_tc) {
   uint64_t divisor;
   uint64_t step;
+  bool is_assigned = false;
 
   if (mintervals_los[left_operand_ast_tc].size() > 1) {
     printf("OUTPUT: unsupported minterval 5 %x\n", pc - entry_point);
@@ -2957,8 +3001,10 @@ uint64_t compute_remu(uint64_t left_operand_ast_tc, uint64_t right_operand_ast_t
     stored_to_tc    = store_trace_ptrs[old_ast_tc][i];
     mr_stored_to_tc = load_symbolic_memory(pt, vaddrs[stored_to_tc]);
     mr_stored_to_tc = mr_sds[mr_stored_to_tc];
-    if (mr_stored_to_tc <= store_trace_ptrs[old_ast_tc][i])
+    if (mr_stored_to_tc <= store_trace_ptrs[old_ast_tc][i]) {
       store_symbolic_memory(pt, vaddrs[store_trace_ptrs[old_ast_tc][i]], propagated_minterval_lo[0], VALUE_T, ast_ptr, tc, 0);
+      is_assigned = true;
+    }
   }
 
   return ast_ptr;
