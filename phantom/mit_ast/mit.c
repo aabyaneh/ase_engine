@@ -56,6 +56,12 @@ uint32_t  SYMBOLIC            = 2;
 std::vector<std::vector<uint64_t> > reg_vaddrs(NUMBEROFREGISTERS); // virtual addresses of expression operands
 uint32_t* reg_vaddrs_cnts     = (uint32_t*) 0;
 
+// optimization technique
+// corrections -- constant folding
+uint8_t*  reg_hasmn;
+uint64_t* reg_addsub_corr;
+uint8_t*  reg_corr_validity;
+
 // ---------------------------------------------
 // --------------- branch evaluation
 // ---------------------------------------------
@@ -81,6 +87,7 @@ uint64_t tc_before_branch_evaluation_rs1 = 0;
 uint64_t tc_before_branch_evaluation_rs2 = 0;
 
 uint64_t mrcc = 0;  // trace counter of most recent constraint
+uint64_t most_recent_if_on_ast_trace = 0;
 
 // ==, !=, <, <=, >= detection
 uint32_t  detected_conditional = 0;
@@ -205,6 +212,10 @@ void init_symbolic_engine() {
   }
 
   input_table.reserve(1000);
+
+  reg_hasmn            = (uint8_t*)  zalloc(NUMBEROFREGISTERS * sizeof(uint8_t));
+  reg_addsub_corr      = (uint64_t*) malloc(NUMBEROFREGISTERS * sizeof(uint64_t));
+  reg_corr_validity    = (uint8_t*)  zalloc(NUMBEROFREGISTERS * sizeof(uint8_t));
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -323,6 +334,31 @@ uint64_t compute_lower_bound(uint64_t lo, uint64_t step, uint64_t value) {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+//                                corrections
+////////////////////////////////////////////////////////////////////////////////
+
+void set_correction(uint64_t reg, uint8_t hasmn, uint64_t addsub_corr, uint8_t corr_validity) {
+  reg_hasmn[reg]          = hasmn;
+  reg_addsub_corr[reg]    = addsub_corr;
+  reg_corr_validity[reg]  = corr_validity;
+}
+
+void create_ast_node_entry_for_accumulated_corr(uint64_t sym_reg) {
+  value_v[0] = reg_addsub_corr[sym_reg];
+  uint64_t crt_ptr = add_ast_node(CONST, 0, 0, 1, value_v, value_v, 1, 0, zero_v);
+  if (reg_hasmn[sym_reg]) {
+    reg_asts[sym_reg] = add_ast_node(SUB, crt_ptr, reg_asts[sym_reg], reg_mintervals_cnts[sym_reg], reg_mintervals_los[sym_reg], reg_mintervals_ups[sym_reg], reg_steps[sym_reg], reg_vaddrs_cnts[sym_reg], reg_vaddrs[sym_reg]);
+  } else {
+    reg_asts[sym_reg] = add_ast_node(ADD, crt_ptr, reg_asts[sym_reg], reg_mintervals_cnts[sym_reg], reg_mintervals_los[sym_reg], reg_mintervals_ups[sym_reg], reg_steps[sym_reg], reg_vaddrs_cnts[sym_reg], reg_vaddrs[sym_reg]);
+  }
+}
+
+void create_crt_operand_ast_node_entry(uint64_t crt_reg) {
+  value_v[0]        = reg_mintervals_los[crt_reg][0];
+  reg_asts[crt_reg] = add_ast_node(CONST, 0, 0, 1, value_v, value_v, 1, 0, zero_v);
+}
+
+////////////////////////////////////////////////////////////////////////////////
 //                                operations
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -336,7 +372,9 @@ void constrain_lui() {
     reg_mintervals_cnts[rd]   = 1;
     reg_steps[rd]             = 1;
     reg_vaddrs_cnts[rd]       = 0;
-    reg_asts[rd]              = add_ast_node(CONST, 0, 0, 1, reg_mintervals_los[rd], reg_mintervals_ups[rd], 1, 0, zero_v);
+    reg_asts[rd]              = 0; // add_ast_node(CONST, 0, 0, 1, reg_mintervals_los[rd], reg_mintervals_ups[rd], 1, 0, zero_v);
+
+    set_correction(rd, 0, 0, 0);
   }
 }
 
@@ -356,6 +394,8 @@ void constrain_addi() {
     reg_vaddrs_cnts[rd]       = 0;
     reg_asts[rd]              = 0;
 
+    set_correction(rd, 0, 0, 0);
+
     return;
   }
 
@@ -364,6 +404,7 @@ void constrain_addi() {
   if (reg_symb_type[rs1] == SYMBOLIC) {
     // rd inherits rs1 constraint
     reg_symb_type[rd] = SYMBOLIC;
+
     for (uint32_t i = 0; i < reg_mintervals_cnts[rs1]; i++) {
       reg_mintervals_los[rd][i] = reg_mintervals_los[rs1][i] + imm;
       reg_mintervals_ups[rd][i] = reg_mintervals_ups[rs1][i] + imm;
@@ -372,8 +413,14 @@ void constrain_addi() {
     reg_steps[rd]           = reg_steps[rs1];
     set_vaddrs(rd, reg_vaddrs[rs1], 0, reg_vaddrs_cnts[rs1]);
 
-    value_v[0] = imm; crt_ptr = add_ast_node(CONST, 0, 0, 1, value_v, value_v, 1, 0, zero_v);
-    reg_asts[rd] = add_ast_node(ADD, reg_asts[rs1], crt_ptr, reg_mintervals_cnts[rd], reg_mintervals_los[rd], reg_mintervals_ups[rd], reg_steps[rd], reg_vaddrs_cnts[rd], reg_vaddrs[rd]);
+    if (reg_corr_validity[rs1] == 0) {
+      set_correction(rd, reg_hasmn[rs1], reg_addsub_corr[rs1] + imm, 0);
+      reg_asts[rd] = reg_asts[rs1];
+    } else {
+      set_correction(rd, 0, 0, 1);
+      value_v[0] = imm; crt_ptr = add_ast_node(CONST, 0, 0, 1, value_v, value_v, 1, 0, zero_v);
+      reg_asts[rd] = add_ast_node(ADD, reg_asts[rs1], crt_ptr, reg_mintervals_cnts[rd], reg_mintervals_los[rd], reg_mintervals_ups[rd], reg_steps[rd], reg_vaddrs_cnts[rd], reg_vaddrs[rd]);
+    }
 
   } else {
     reg_symb_type[rd]         = CONCRETE;
@@ -386,7 +433,9 @@ void constrain_addi() {
     if (is_system_register(rs1))
       reg_asts[rd]            = 0;
     else
-      reg_asts[rd]            = add_ast_node(CONST, 0, 0, 1, reg_mintervals_los[rd], reg_mintervals_los[rd], 1, 0, zero_v);
+      reg_asts[rd]            = 0; //add_ast_node(CONST, 0, 0, 1, reg_mintervals_los[rd], reg_mintervals_los[rd], 1, 0, zero_v);
+
+    set_correction(rd, 0, 0, 0);
   }
 }
 
@@ -407,6 +456,8 @@ bool constrain_add_pointer() {
     reg_vaddrs_cnts[rd]       = 0;
     reg_asts[rd]              = 0;
 
+    set_correction(rd, 0, 0, 0);
+
     return 1;
   } else if (reg_data_type[rs2] == POINTER_T) {
     reg_data_type[rd]         = reg_data_type[rs2];
@@ -417,6 +468,8 @@ bool constrain_add_pointer() {
     reg_steps[rd]             = 1;
     reg_vaddrs_cnts[rd]       = 0;
     reg_asts[rd]              = 0;
+
+    set_correction(rd, 0, 0, 0);
 
     return 1;
   }
@@ -441,6 +494,15 @@ void constrain_add() {
         uint32_t rd_addr_idx = reg_vaddrs_cnts[rs1] + reg_vaddrs_cnts[rs2];
         set_vaddrs(rd, reg_vaddrs[rs1], 0, reg_vaddrs_cnts[rs1]);
         set_vaddrs(rd, reg_vaddrs[rs2], reg_vaddrs_cnts[rs1], rd_addr_idx);
+
+        // means if the correction technique is employed
+        if (reg_addsub_corr[rs1] || reg_hasmn[rs1]) {
+          create_ast_node_entry_for_accumulated_corr(rs1);
+        }
+        if (reg_addsub_corr[rs2] || reg_hasmn[rs2]) {
+          create_ast_node_entry_for_accumulated_corr(rs2);
+        }
+        set_correction(rd, 0, 0, 1);
 
         // interval semantics of add
         uint64_t gcd_steps = gcd(reg_steps[rs1], reg_steps[rs2]);
@@ -483,6 +545,7 @@ void constrain_add() {
 
       } else {
         // rd inherits rs1 constraint since rs2 has none
+        uint64_t addend = reg_mintervals_los[rs2][0];
         reg_symb_type[rd] = SYMBOLIC;
         set_vaddrs(rd, reg_vaddrs[rs1], 0, reg_vaddrs_cnts[rs1]);
 
@@ -493,11 +556,18 @@ void constrain_add() {
         reg_mintervals_cnts[rd] = reg_mintervals_cnts[rs1];
         reg_steps[rd]           = reg_steps[rs1];
 
-        reg_asts[rd] = add_ast_node(ADD, reg_asts[rs1], reg_asts[rs2], reg_mintervals_cnts[rd], reg_mintervals_los[rd], reg_mintervals_ups[rd], reg_steps[rd], reg_vaddrs_cnts[rd], reg_vaddrs[rd]);
+        if (reg_corr_validity[rs1] == 0) {
+          set_correction(rd, reg_hasmn[rs1], reg_addsub_corr[rs1] + addend, 0);
+          reg_asts[rd] = reg_asts[rs1];
+        } else {
+          set_correction(rd, 0, 0, 1);
+          reg_asts[rd] = add_ast_node(ADD, reg_asts[rs1], reg_asts[rs2], reg_mintervals_cnts[rd], reg_mintervals_los[rd], reg_mintervals_ups[rd], reg_steps[rd], reg_vaddrs_cnts[rd], reg_vaddrs[rd]);
+        }
       }
 
     } else if (reg_symb_type[rs2] == SYMBOLIC) {
       // rd inherits rs2 constraint since rs1 has none
+      uint64_t addend = reg_mintervals_los[rs1][0];
       reg_symb_type[rd] = SYMBOLIC;
       set_vaddrs(rd, reg_vaddrs[rs2], 0, reg_vaddrs_cnts[rs2]);
 
@@ -508,7 +578,13 @@ void constrain_add() {
       reg_mintervals_cnts[rd] = reg_mintervals_cnts[rs2];
       reg_steps[rd]           = reg_steps[rs2];
 
-      reg_asts[rd] = add_ast_node(ADD, reg_asts[rs1], reg_asts[rs2], reg_mintervals_cnts[rd], reg_mintervals_los[rd], reg_mintervals_ups[rd], reg_steps[rd], reg_vaddrs_cnts[rd], reg_vaddrs[rd]);
+      if (reg_corr_validity[rs2] == 0) {
+        set_correction(rd, reg_hasmn[rs2], reg_addsub_corr[rs2] + addend, 0);
+        reg_asts[rd] = reg_asts[rs2];
+      } else {
+        set_correction(rd, 0, 0, 1);
+        reg_asts[rd] = add_ast_node(ADD, reg_asts[rs1], reg_asts[rs2], reg_mintervals_cnts[rd], reg_mintervals_los[rd], reg_mintervals_ups[rd], reg_steps[rd], reg_vaddrs_cnts[rd], reg_vaddrs[rd]);
+      }
 
     } else {
       // rd has no constraint if both rs1 and rs2 have no constraints
@@ -519,10 +595,12 @@ void constrain_add() {
       reg_steps[rd]             = 1;
       reg_vaddrs_cnts[rd]       = 0;
 
+      set_correction(rd, 0, 0, 0);
+
       if (is_system_register(rs1))
         reg_asts[rd]            = 0;
       else
-        reg_asts[rd]            = add_ast_node(CONST, 0, 0, 1, reg_mintervals_los[rd], reg_mintervals_los[rd], 1, 0, zero_v);
+        reg_asts[rd]            = 0; // add_ast_node(CONST, 0, 0, 1, reg_mintervals_los[rd], reg_mintervals_los[rd], 1, 0, zero_v);
     }
   }
 }
@@ -540,6 +618,8 @@ bool constrain_sub_pointer() {
           reg_steps[rd]             = 1;
           reg_vaddrs_cnts[rd]       = 0;
           reg_asts[rd]              = 0;
+
+          set_correction(rd, 0, 0, 0);
 
           return 1;
         }
@@ -559,6 +639,8 @@ bool constrain_sub_pointer() {
       reg_vaddrs_cnts[rd]       = 0;
       reg_asts[rd]              = 0;
 
+      set_correction(rd, 0, 0, 0);
+
       return 1;
     }
   } else if (reg_data_type[rs2] == POINTER_T) {
@@ -570,6 +652,8 @@ bool constrain_sub_pointer() {
     reg_steps[rd]             = 1;
     reg_vaddrs_cnts[rd]       = 0;
     reg_asts[rd]              = 0;
+
+    set_correction(rd, 0, 0, 0);
 
     return 1;
   }
@@ -595,6 +679,14 @@ void constrain_sub() {
         uint32_t rd_addr_idx = reg_vaddrs_cnts[rs1] + reg_vaddrs_cnts[rs2];
         set_vaddrs(rd, reg_vaddrs[rs1], 0, reg_vaddrs_cnts[rs1]);
         set_vaddrs(rd, reg_vaddrs[rs2], reg_vaddrs_cnts[rs1], rd_addr_idx);
+
+        if (reg_addsub_corr[rs1] || reg_hasmn[rs1]) {
+          create_ast_node_entry_for_accumulated_corr(rs1);
+        }
+        if (reg_addsub_corr[rs2] || reg_hasmn[rs2]) {
+          create_ast_node_entry_for_accumulated_corr(rs2);
+        }
+        set_correction(rd, 0, 0, 1);
 
         if (reg_mintervals_cnts[rs1] > 1 || reg_mintervals_cnts[rs2] > 1) {
           printf("OUTPUT: unsupported mintervals in sub at %x \n", pc - entry_point);
@@ -623,6 +715,7 @@ void constrain_sub() {
 
       } else {
         // rd inherits rs1 constraint since rs2 has none
+        uint64_t subend = reg_mintervals_los[rs2][0];
         reg_symb_type[rd] = SYMBOLIC;
         set_vaddrs(rd, reg_vaddrs[rs1], 0, reg_vaddrs_cnts[rs1]);
 
@@ -634,9 +727,17 @@ void constrain_sub() {
         }
         reg_mintervals_cnts[rd] = reg_mintervals_cnts[rs1];
         reg_steps[rd]           = reg_steps[rs1];
-        reg_asts[rd]            = add_ast_node(SUB, reg_asts[rs1], reg_asts[rs2], reg_mintervals_cnts[rd], reg_mintervals_los[rd], reg_mintervals_ups[rd], reg_steps[rd], reg_vaddrs_cnts[rd], reg_vaddrs[rd]);
+
+        if (reg_corr_validity[rs1] == 0) {
+          set_correction(rd, reg_hasmn[rs1], reg_addsub_corr[rs1] - subend, 0);
+          reg_asts[rd] = reg_asts[rs1];
+        } else {
+          set_correction(rd, 0, 0, 1);
+          reg_asts[rd] = add_ast_node(SUB, reg_asts[rs1], reg_asts[rs2], reg_mintervals_cnts[rd], reg_mintervals_los[rd], reg_mintervals_ups[rd], reg_steps[rd], reg_vaddrs_cnts[rd], reg_vaddrs[rd]);
+        }
       }
     } else if (reg_symb_type[rs2] == SYMBOLIC) {
+      uint64_t subend = reg_mintervals_los[rs1][0];
       reg_symb_type[rd] = SYMBOLIC;
       set_vaddrs(rd, reg_vaddrs[rs2], 0, reg_vaddrs_cnts[rs2]);
 
@@ -649,7 +750,20 @@ void constrain_sub() {
       }
       reg_mintervals_cnts[rd] = reg_mintervals_cnts[rs2];
       reg_steps[rd]           = reg_steps[rs2];
-      reg_asts[rd]            = add_ast_node(SUB, reg_asts[rs1], reg_asts[rs2], reg_mintervals_cnts[rd], reg_mintervals_los[rd], reg_mintervals_ups[rd], reg_steps[rd], reg_vaddrs_cnts[rd], reg_vaddrs[rd]);
+
+      if (reg_corr_validity[rs2] == 0) {
+        if (reg_hasmn[rs2]) {
+          // rs2 constraint has already minuend and can have another minuend
+          set_correction(rd, 0, subend - reg_addsub_corr[rs2], 0);
+        } else {
+          // rd inherits rs2 constraint since rs1 has none
+          set_correction(rd, 1, subend - reg_addsub_corr[rs2], 0);
+        }
+        reg_asts[rd] = reg_asts[rs2];
+      } else {
+        set_correction(rd, 0, 0, 1);
+        reg_asts[rd] = add_ast_node(SUB, reg_asts[rs1], reg_asts[rs2], reg_mintervals_cnts[rd], reg_mintervals_los[rd], reg_mintervals_ups[rd], reg_steps[rd], reg_vaddrs_cnts[rd], reg_vaddrs[rd]);
+      }
 
     } else {
       // rd has no constraint if both rs1 and rs2 have no constraints
@@ -659,7 +773,9 @@ void constrain_sub() {
       reg_mintervals_cnts[rd]   = 1;
       reg_steps[rd]             = 1;
       reg_vaddrs_cnts[rd]       = 0;
-      reg_asts[rd]              = add_ast_node(CONST, 0, 0, 1, reg_mintervals_los[rd], reg_mintervals_ups[rd], 1, 0, zero_v);
+      reg_asts[rd]              = 0; // add_ast_node(CONST, 0, 0, 1, reg_mintervals_los[rd], reg_mintervals_ups[rd], 1, 0, zero_v);
+
+      set_correction(rd, 0, 0, 0);
     }
   }
 }
@@ -683,6 +799,15 @@ void constrain_mul() {
       } else {
         // rd inherits rs1 constraint since rs2 has none
         // assert: rs2 interval is singleton
+        if (reg_addsub_corr[rs1] || reg_hasmn[rs1]) {
+          create_ast_node_entry_for_accumulated_corr(rs1);
+          // now reg_asts[rs1] is updated
+        }
+        if (reg_asts[rs2] == 0) {
+          create_crt_operand_ast_node_entry(rs2);
+        }
+        set_correction(rd, 0, 0, 1);
+
         reg_symb_type[rd] = SYMBOLIC;
         set_vaddrs(rd, reg_vaddrs[rs1], 0, reg_vaddrs_cnts[rs1]);
 
@@ -716,6 +841,18 @@ void constrain_mul() {
     } else if (reg_symb_type[rs2] == SYMBOLIC) {
       // rd inherits rs2 constraint since rs1 has none
       // assert: rs1 interval is singleton
+
+      // correction value should be dumped as ast_node
+      if (reg_addsub_corr[rs2] || reg_hasmn[rs2]) {
+        create_ast_node_entry_for_accumulated_corr(rs2);
+        // now reg_asts[rs2] is updated
+      }
+      // concrete value should be dumped as ast_node
+      if (reg_asts[rs1] == 0) {
+        create_crt_operand_ast_node_entry(rs1);
+      }
+      set_correction(rd, 0, 0, 1);
+
       reg_symb_type[rd] = SYMBOLIC;
       set_vaddrs(rd, reg_vaddrs[rs2], 0, reg_vaddrs_cnts[rs2]);
 
@@ -753,7 +890,9 @@ void constrain_mul() {
       reg_mintervals_cnts[rd]   = 1;
       reg_steps[rd]             = 1;
       reg_vaddrs_cnts[rd]       = 0;
-      reg_asts[rd]              = add_ast_node(CONST, 0, 0, 1, reg_mintervals_los[rd], reg_mintervals_ups[rd], 1, 0, zero_v);
+
+      set_correction(rd, 0, 0, 0);
+      reg_asts[rd]              = 0; // add_ast_node(CONST, 0, 0, 1, reg_mintervals_los[rd], reg_mintervals_ups[rd], 1, 0, zero_v);
     }
   }
 }
@@ -788,6 +927,16 @@ void constrain_divu() {
           } else {
             // rd inherits rs1 constraint since rs2 has none
             // assert: rs2 interval is singleton
+
+            if (reg_addsub_corr[rs1] || reg_hasmn[rs1]) {
+              create_ast_node_entry_for_accumulated_corr(rs1);
+              // now reg_asts[rs1] is updated
+            }
+            if (reg_asts[rs2] == 0) {
+              create_crt_operand_ast_node_entry(rs2);
+            }
+            set_correction(rd, 0, 0, 1);
+
             reg_symb_type[rd] = SYMBOLIC;
             set_vaddrs(rd, reg_vaddrs[rs1], 0, reg_vaddrs_cnts[rs1]);
 
@@ -844,6 +993,7 @@ void constrain_divu() {
           reg_vaddrs_cnts[rd]       = 0;
 
           reg_asts[rd] = add_ast_node(CONST, 0, 0, 1, reg_mintervals_los[rd], reg_mintervals_ups[rd], 1, 0, zero_v);
+          set_correction(rd, 0, 0, 0);
         }
       }
     } else
@@ -881,6 +1031,15 @@ void constrain_remu() {
     // interval semantics of remu
     divisor = reg_mintervals_los[rs2][0];
     step    = reg_steps[rs1];
+
+    if (reg_addsub_corr[rs1] || reg_hasmn[rs1]) {
+      create_ast_node_entry_for_accumulated_corr(rs1);
+      // now reg_asts[rs1] is updated
+    }
+    if (reg_asts[rs2] == 0) {
+      create_crt_operand_ast_node_entry(rs2);
+    }
+    set_correction(rd, 0, 0, 1);
 
     if (reg_mintervals_los[rs1][0] <= reg_mintervals_ups[rs1][0]) {
       // rs1 interval is not wrapped
@@ -943,6 +1102,7 @@ void constrain_remu() {
     reg_vaddrs_cnts[rd]       = 0;
 
     reg_asts[rd] = add_ast_node(CONST, 0, 0, 1, reg_mintervals_los[rd], reg_mintervals_ups[rd], 1, 0, zero_v);
+    set_correction(rd, 0, 0, 0);
   }
 }
 
@@ -970,6 +1130,21 @@ void constrain_sltu() {
     }
 
     is_only_one_branch_reachable = false;
+
+    if (reg_addsub_corr[rs1] || reg_hasmn[rs1]) {
+      create_ast_node_entry_for_accumulated_corr(rs1);
+      // now reg_asts[rs1] is updated
+      set_correction(rs1, 0, 0, 1);
+    } else if (reg_asts[rs1] == 0 && reg_symb_type[rs1] == CONCRETE) {
+      create_crt_operand_ast_node_entry(rs1);
+    }
+    if (reg_addsub_corr[rs2] || reg_hasmn[rs2]) {
+      create_ast_node_entry_for_accumulated_corr(rs2);
+      // now reg_asts[rs1] is updated
+      set_correction(rs2, 0, 0, 1);
+    } else if (reg_asts[rs2] == 0 && reg_symb_type[rs2] == CONCRETE) {
+      create_crt_operand_ast_node_entry(rs2);
+    }
 
     // if (reg_symb_type[rs1])
     //   tc_before_branch_evaluation_rs1 = load_symbolic_memory(pt, reg_vaddrs[rs1][0]);
@@ -1018,6 +1193,21 @@ void constrain_xor() {
   }
 
   is_only_one_branch_reachable = false;
+
+  if (reg_addsub_corr[rs1] || reg_hasmn[rs1]) {
+    create_ast_node_entry_for_accumulated_corr(rs1);
+    // now reg_asts[rs1] is updated
+    set_correction(rs1, 0, 0, 1);
+  } else if (reg_asts[rs1] == 0 && reg_symb_type[rs1] == CONCRETE) {
+    create_crt_operand_ast_node_entry(rs1);
+  }
+  if (reg_addsub_corr[rs2] || reg_hasmn[rs2]) {
+    create_ast_node_entry_for_accumulated_corr(rs2);
+    // now reg_asts[rs1] is updated
+    set_correction(rs2, 0, 0, 1);
+  } else if (reg_asts[rs2] == 0 && reg_symb_type[rs2] == CONCRETE) {
+    create_crt_operand_ast_node_entry(rs2);
+  }
 
   // if (reg_symb_type[rs1])
   //   tc_before_branch_evaluation_rs1 = load_symbolic_memory(pt, reg_vaddrs[rs1][0]);
@@ -1116,6 +1306,8 @@ uint64_t constrain_ld() {
           reg_symb_type[rd]   = CONCRETE;
           reg_vaddrs_cnts[rd] = 0;
         }
+
+        set_correction(rd, 0, 0, 0);
       }
 
       // keep track of instruction address for profiling loads
@@ -1149,6 +1341,12 @@ uint64_t constrain_sd() {
   if (is_safe_address(vaddr, rs1)) {
     if (is_virtual_address_mapped(pt, vaddr)) {
       // interval semantics of sd
+      if (reg_addsub_corr[rs2] || reg_hasmn[rs2]) {
+        create_ast_node_entry_for_accumulated_corr(rs2);
+        // now reg_asts[rs2] is updated
+        set_correction(rs2, 0, 0, 1);
+      }
+
       if (reg_asts[rs2] == 0) {
         if (reg_symb_type[rs2] == CONCRETE)
           reg_asts[rs2] = add_ast_node(CONST, 0, 0, 1, reg_mintervals_los[rs2], reg_mintervals_ups[rs2], 1, 0, zero_v);
@@ -1189,6 +1387,8 @@ void constrain_jal_jalr() {
     reg_steps[rd]             = 1;
     reg_vaddrs_cnts[rd]       = 0;
     reg_asts[rd]              = 0;
+
+    set_correction(rd, 0, 0, 0);
   }
 }
 
@@ -1264,7 +1464,7 @@ void efree() {
   tc = tc - 1;
 }
 
-bool is_pure_concrete_value(uint32_t data_type, uint32_t mints_num, uint64_t lo, uint64_t up) {
+bool is_pure_concrete_value(uint32_t data_type, uint64_t mints_num, uint64_t lo, uint64_t up) {
   if (is_symbolic_value(data_type, mints_num, lo, up))
     return false;
   else
@@ -1277,10 +1477,10 @@ void store_symbolic_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, uint32_
   if (vaddr == 0)
     // tracking program break and size for malloc
     mrvc = 0;
-  else if (vaddr < NUMBEROFREGISTERS)
+  else if (vaddr < NUMBEROFREGISTERS) {
     // tracking a register value for sltu
-    mrvc = mrcc;
-  else if (vaddr == NUMBEROFREGISTERS) {
+    mrvc    = mrcc;
+  } else if (vaddr == NUMBEROFREGISTERS) {
     if (is_trace_space_available()) {
       ealloc();
 
@@ -1299,23 +1499,29 @@ void store_symbolic_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, uint32_
     // assert: vaddr is valid and mapped
     mrvc = load_symbolic_memory(pt, vaddr);
 
-    // bool is_this_value_concrete = is_pure_concrete_value(data_type, mints_num, lo[0], up[0]);
-    // bool is_prev_value_concrete = is_pure_concrete_value(data_types[mrvc], mintervals_los[asts[mrvc]].size(), mintervals_los[asts[mrvc]][0], mintervals_ups[asts[mrvc]][0]);
+    // if (trb < mrvc) {
+    //   bool is_this_value_concrete = is_pure_concrete_value(data_type, mints_num, lo[0], up[0]);
+    //   bool is_prev_value_concrete = is_pure_concrete_value(data_types[mrvc], mintervals_los[asts[mrvc]].size(), mintervals_los[asts[mrvc]][0], mintervals_ups[asts[mrvc]][0]);
     //
-    // if (is_this_value_concrete && is_prev_value_concrete && trb < mrvc) {
-    //   // overwrite
-    //   if (mints_num > MAX_NUM_OF_INTERVALS) {
-    //     printf("OUTPUT: maximum number of possible intervals is reached at %x\n", pc - entry_point);
-    //     exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
+    //   if (is_this_value_concrete && is_prev_value_concrete) {
+    //     // overwrite
+    //     if (mints_num > MAX_NUM_OF_INTERVALS) {
+    //       printf("OUTPUT: maximum number of possible intervals is reached at %x\n", pc - entry_point);
+    //       exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
+    //     }
+    //
+    //     pcs[mrvc]        = pc;
+    //     data_types[mrvc] = data_type;
+    //     values[mrvc]     = value;
+    //     asts[mrvc]       = ast_ptr;
+    //
+    //     if (ast_ptr) {
+    //       store_trace_ptrs[ast_ptr].clear();
+    //       store_trace_ptrs[ast_ptr].push_back(mrvc);
+    //     }
+    //
+    //     return;
     //   }
-    //
-    //   data_types[mrvc] = data_type;
-    //   values[mrvc]     = value;
-    //   asts[mrvc]       = ast_ptr;
-    //
-    //   if (ast_ptr) store_trace_ptrs[ast_ptr].push_back(mrvc);
-    //
-    //   return;
     // }
   }
 
@@ -1339,9 +1545,10 @@ void store_symbolic_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, uint32_
     }
 
     if (vaddr < NUMBEROFREGISTERS) {
-      if (vaddr > 0)
+      if (vaddr > 0) {
         // register tracking marks most recent constraint
         mrcc = tc;
+      }
     } else
       // assert: vaddr is valid and mapped
       store_virtual_memory(pt, vaddr, tc);
@@ -1448,9 +1655,7 @@ uint64_t backward_analysis_ast(uint64_t ast_tc, std::vector<uint64_t>& lo, std::
   for (size_t i = 0; i < mints_num; i++) {
     // is_found = false;
     // we have several intervals; we need to detect which lo_before_op was for which [lo, up] interval.
-    // printf("- i: %llu, %llu\n", i, mintervals_los[ast_tc].size());
     for (j = 0; j < mintervals_los[ast_tc].size(); j++) {
-      // printf("* j: %llu; mup: %llu, mlo: %llu, lo: %llu\n", j, mintervals_ups[ast_tc][j], mintervals_los[ast_tc][j], lo[i]);
       if (mintervals_ups[ast_tc][j] - mintervals_los[ast_tc][j] >= lo[i] - mintervals_los[ast_tc][j]) {
         // is_found = true;
         break;
@@ -1483,9 +1688,6 @@ uint64_t backward_analysis_ast(uint64_t ast_tc, std::vector<uint64_t>& lo, std::
       }
     }
     if (is_assigned == false) {
-      // store an input record on the trace for two purposes:
-      // backtracking the input
-      // on demand updating of affecting variables (will be in load)
       store_input_record(ast_ptr, prev_input);
     }
 
@@ -1643,7 +1845,6 @@ void constrain_memory(uint64_t reg, std::vector<uint64_t>& lo, std::vector<uint6
     if (only_reachable_branch == false) {
       backward_analysis_ast(reg_asts[reg], lo, up, mints_num);
     }
-
   }
 }
 
@@ -1666,15 +1867,17 @@ void take_branch(uint64_t b, uint64_t how_many_more) {
     value_v[0] = registers[REG_SP];
     store_register_memory(REG_SP, value_v);
   } else {
-    reg_data_type[rd] = VALUE_T;
-    reg_symb_type[rd] = CONCRETE;
-    registers[rd]     = b;
+    reg_data_type[rd]         = VALUE_T;
+    reg_symb_type[rd]         = CONCRETE;
+    registers[rd]             = b;
     reg_mintervals_los[rd][0] = b;
     reg_mintervals_ups[rd][0] = b;
     reg_mintervals_cnts[rd]   = 1;
     reg_steps[rd]             = 1;
     reg_vaddrs_cnts[rd]       = 0;
     reg_asts[rd]              = (b == 0) ? zero_node : one_node;
+
+    set_correction(rd, 0, 0, 0);
   }
 }
 
@@ -2449,10 +2652,12 @@ void backtrack_sltu() {
       reg_vaddrs_cnts[vaddr]       = 0;
       reg_asts[vaddr]              = 0;
 
+      set_correction(vaddr, 0, 0, 0);
+
       // restoring mrcc
       mrcc = tcs[tc];
 
-      if (vaddr != REG_FP)
+      if (vaddr != REG_FP) {
         if (vaddr != REG_SP) {
           // stop backtracking and try next case
           pc = pc + INSTRUCTIONSIZE;
@@ -2460,6 +2665,7 @@ void backtrack_sltu() {
 
           reg_asts[vaddr] = (registers[vaddr] == 0) ? zero_node : one_node;
         }
+      }
     }
   } else if (vaddr == NUMBEROFREGISTERS) {
     input_table.at(ast_nodes[asts[tc]].right_node) = values[tc];
@@ -3006,7 +3212,7 @@ uint64_t compute_remu(uint64_t left_operand_ast_tc, uint64_t right_operand_ast_t
       is_assigned = true;
     }
   }
-
+  
   return ast_ptr;
 }
 
