@@ -5,7 +5,7 @@ typedef unsigned __int128 uint128_t;
 // ------------------------ GLOBAL VARIABLES -----------------------
 
 uint64_t MIT                  = 9;        // symbolic execution with modular interval theory as backend
-uint64_t MAX_TRACE_LENGTH     = 10000000;
+uint64_t MAX_TRACE_LENGTH     = 5000000;
 uint64_t MAX_NUM_OF_INTERVALS = 2001;
 uint64_t MAX_NUM_OF_OP_VADDRS = 100;
 uint64_t TWO_TO_THE_POWER_OF_32;
@@ -430,9 +430,9 @@ void constrain_addi() {
     reg_steps[rd]             = 1;
     reg_vaddrs_cnts[rd]       = 0;
 
-    if (is_system_register(rs1))
-      reg_asts[rd]            = 0;
-    else
+    // if (is_system_register(rs1))
+    //   reg_asts[rd]            = 0;
+    // else
       reg_asts[rd]            = 0; //add_ast_node(CONST, 0, 0, 1, reg_mintervals_los[rd], reg_mintervals_los[rd], 1, 0, zero_v);
 
     set_correction(rd, 0, 0, 0);
@@ -495,7 +495,6 @@ void constrain_add() {
         set_vaddrs(rd, reg_vaddrs[rs1], 0, reg_vaddrs_cnts[rs1]);
         set_vaddrs(rd, reg_vaddrs[rs2], reg_vaddrs_cnts[rs1], rd_addr_idx);
 
-        // means if the correction technique is employed
         if (reg_addsub_corr[rs1] || reg_hasmn[rs1]) {
           create_ast_node_entry_for_accumulated_corr(rs1);
         }
@@ -597,9 +596,9 @@ void constrain_add() {
 
       set_correction(rd, 0, 0, 0);
 
-      if (is_system_register(rs1))
-        reg_asts[rd]            = 0;
-      else
+      // if (is_system_register(rs1))
+      //   reg_asts[rd]            = 0;
+      // else
         reg_asts[rd]            = 0; // add_ast_node(CONST, 0, 0, 1, reg_mintervals_los[rd], reg_mintervals_los[rd], 1, 0, zero_v);
     }
   }
@@ -842,12 +841,10 @@ void constrain_mul() {
       // rd inherits rs2 constraint since rs1 has none
       // assert: rs1 interval is singleton
 
-      // correction value should be dumped as ast_node
       if (reg_addsub_corr[rs2] || reg_hasmn[rs2]) {
         create_ast_node_entry_for_accumulated_corr(rs2);
         // now reg_asts[rs2] is updated
       }
-      // concrete value should be dumped as ast_node
       if (reg_asts[rs1] == 0) {
         create_crt_operand_ast_node_entry(rs1);
       }
@@ -1134,14 +1131,12 @@ void constrain_sltu() {
     if (reg_addsub_corr[rs1] || reg_hasmn[rs1]) {
       create_ast_node_entry_for_accumulated_corr(rs1);
       // now reg_asts[rs1] is updated
-      set_correction(rs1, 0, 0, 1);
     } else if (reg_asts[rs1] == 0 && reg_symb_type[rs1] == CONCRETE) {
       create_crt_operand_ast_node_entry(rs1);
     }
     if (reg_addsub_corr[rs2] || reg_hasmn[rs2]) {
       create_ast_node_entry_for_accumulated_corr(rs2);
       // now reg_asts[rs1] is updated
-      set_correction(rs2, 0, 0, 1);
     } else if (reg_asts[rs2] == 0 && reg_symb_type[rs2] == CONCRETE) {
       create_crt_operand_ast_node_entry(rs2);
     }
@@ -1197,14 +1192,12 @@ void constrain_xor() {
   if (reg_addsub_corr[rs1] || reg_hasmn[rs1]) {
     create_ast_node_entry_for_accumulated_corr(rs1);
     // now reg_asts[rs1] is updated
-    set_correction(rs1, 0, 0, 1);
   } else if (reg_asts[rs1] == 0 && reg_symb_type[rs1] == CONCRETE) {
     create_crt_operand_ast_node_entry(rs1);
   }
   if (reg_addsub_corr[rs2] || reg_hasmn[rs2]) {
     create_ast_node_entry_for_accumulated_corr(rs2);
     // now reg_asts[rs1] is updated
-    set_correction(rs2, 0, 0, 1);
   } else if (reg_asts[rs2] == 0 && reg_symb_type[rs2] == CONCRETE) {
     create_crt_operand_ast_node_entry(rs2);
   }
@@ -1240,10 +1233,6 @@ uint64_t check_whether_represents_most_recent_constraint(uint64_t mrvc) {
     most_recent_input = input_table[ast_nodes[input_ast_tc].right_node];
     if (most_recent_input > input_ast_tc) {
       is_updated = false;
-      // if (ast_nodes[ast_tc].type == VAR) {
-      //   printf("OUTPUT: ------ num: %llu; %llu, %llu, %llu: %x\n", ast_nodes[input_ast_tc].right_node, most_recent_input, input_ast_tc, involved_sym_inputs_cnts[ast_tc], pc - entry_point);
-      //   exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
-      // }
       break;
     }
   }
@@ -1348,9 +1337,9 @@ uint64_t constrain_sd() {
       }
 
       if (reg_asts[rs2] == 0) {
-        if (reg_symb_type[rs2] == CONCRETE)
+        if (reg_symb_type[rs2] == CONCRETE) {
           reg_asts[rs2] = add_ast_node(CONST, 0, 0, 1, reg_mintervals_los[rs2], reg_mintervals_ups[rs2], 1, 0, zero_v);
-        else {
+        } else {
           printf("OUTPUT: detected symbolic value with reg_asts = 0 at %x\n", pc - entry_point);
           exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
         }
@@ -1464,13 +1453,6 @@ void efree() {
   tc = tc - 1;
 }
 
-bool is_pure_concrete_value(uint32_t data_type, uint64_t mints_num, uint64_t lo, uint64_t up) {
-  if (is_symbolic_value(data_type, mints_num, lo, up))
-    return false;
-  else
-    return true;
-}
-
 void store_symbolic_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, uint32_t data_type, uint64_t ast_ptr, uint64_t trb, uint64_t is_store) {
   uint64_t mrvc;
 
@@ -1480,6 +1462,7 @@ void store_symbolic_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, uint32_
   else if (vaddr < NUMBEROFREGISTERS) {
     // tracking a register value for sltu
     mrvc    = mrcc;
+    // ast_ptr = most_recent_if_on_ast_trace;
   } else if (vaddr == NUMBEROFREGISTERS) {
     if (is_trace_space_available()) {
       ealloc();
@@ -1499,30 +1482,25 @@ void store_symbolic_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, uint32_
     // assert: vaddr is valid and mapped
     mrvc = load_symbolic_memory(pt, vaddr);
 
-    // if (trb < mrvc) {
-    //   bool is_this_value_concrete = is_pure_concrete_value(data_type, mints_num, lo[0], up[0]);
-    //   bool is_prev_value_concrete = is_pure_concrete_value(data_types[mrvc], mintervals_los[asts[mrvc]].size(), mintervals_los[asts[mrvc]][0], mintervals_ups[asts[mrvc]][0]);
-    //
-    //   if (is_this_value_concrete && is_prev_value_concrete) {
-    //     // overwrite
-    //     if (mints_num > MAX_NUM_OF_INTERVALS) {
-    //       printf("OUTPUT: maximum number of possible intervals is reached at %x\n", pc - entry_point);
-    //       exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
-    //     }
-    //
-    //     pcs[mrvc]        = pc;
-    //     data_types[mrvc] = data_type;
-    //     values[mrvc]     = value;
-    //     asts[mrvc]       = ast_ptr;
-    //
-    //     if (ast_ptr) {
-    //       store_trace_ptrs[ast_ptr].clear();
-    //       store_trace_ptrs[ast_ptr].push_back(mrvc);
-    //     }
-    //
-    //     return;
-    //   }
-    // }
+    if (trb < mrvc) {
+      if (ast_nodes[ast_ptr].type == CONST) {
+        if (ast_nodes[asts[mrvc]].type == CONST) {
+          // overwrite
+
+          // pcs[mrvc]        = pc;
+          data_types[mrvc] = data_type;
+          values[mrvc]     = value;
+          asts[mrvc]       = ast_ptr;
+
+          if (ast_ptr) {
+            // store_trace_ptrs[ast_ptr].clear();
+            store_trace_ptrs[ast_ptr].push_back(mrvc);
+          }
+
+          return;
+        }
+      }
+    }
   }
 
   if (is_trace_space_available()) {
@@ -1548,6 +1526,8 @@ void store_symbolic_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, uint32_
       if (vaddr > 0) {
         // register tracking marks most recent constraint
         mrcc = tc;
+        asts[tc] = most_recent_if_on_ast_trace;
+        most_recent_if_on_ast_trace = ast_trace_cnt;
       }
     } else
       // assert: vaddr is valid and mapped
@@ -2665,6 +2645,11 @@ void backtrack_sltu() {
 
           reg_asts[vaddr] = (registers[vaddr] == 0) ? zero_node : one_node;
         }
+      } else {
+        if (ast_trace_cnt > most_recent_if_on_ast_trace) {
+          ast_trace_cnt = most_recent_if_on_ast_trace;
+        }
+        most_recent_if_on_ast_trace = asts[tc];
       }
     }
   } else if (vaddr == NUMBEROFREGISTERS) {
@@ -2704,7 +2689,6 @@ void backtrack_sd() {
     if (store_trace_ptrs[asts[tc]].size() > 1) {
       store_trace_ptrs[asts[tc]].pop_back();
     } else if (store_trace_ptrs[asts[tc]].size() == 1) {
-      // input_table.at(ast_nodes[asts[tc]].right_node) = asts[tcs[tc]];
       input_table.pop_back();
       symbolic_input_cnt = input_table.size();
       printf("OUT: *** input %llu undone \n", symbolic_input_cnt); // never happens in backtrack_sd
@@ -2724,11 +2708,11 @@ void backtrack_sd() {
     }
   }
 
-  if (asts[tc] != 0 && ast_trace_cnt > asts[tc] && store_trace_ptrs[asts[tc]].size() == 0) {
-    if (asts[tc] != zero_node && asts[tc] != one_node) {
-      ast_trace_cnt = asts[tc];
-    }
-  }
+  // if (asts[tc] != 0 && ast_trace_cnt > asts[tc] && store_trace_ptrs[asts[tc]].size() == 0) {
+  //   if (asts[tc] != zero_node && asts[tc] != one_node) {
+  //     ast_trace_cnt = asts[tc];
+  //   }
+  // }
 
   store_virtual_memory(pt, vaddrs[tc], tcs[tc]);
 
@@ -3212,7 +3196,7 @@ uint64_t compute_remu(uint64_t left_operand_ast_tc, uint64_t right_operand_ast_t
       is_assigned = true;
     }
   }
-  
+
   return ast_ptr;
 }
 
