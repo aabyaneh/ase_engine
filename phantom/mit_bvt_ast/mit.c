@@ -5,7 +5,7 @@ typedef unsigned __int128 uint128_t;
 // ------------------------ GLOBAL VARIABLES -----------------------
 
 uint64_t MITS                 = 9;
-uint64_t MAX_TRACE_LENGTH     = 500000;
+uint64_t MAX_TRACE_LENGTH     = 5000000;
 uint64_t MAX_NUM_OF_INTERVALS = 2001;
 uint64_t MAX_NUM_OF_OP_VADDRS = 100;
 
@@ -27,6 +27,7 @@ uint64_t* mr_sds          = (uint64_t*) 0; // the tc of most recent store to a m
 
 uint32_t  VALUE_T         = 0;
 uint32_t  POINTER_T       = 1;
+uint32_t  INPUT_T         = 2;
 
 // ---------------------------------------------
 // --------------- read trace
@@ -1163,11 +1164,6 @@ uint64_t check_whether_represents_most_recent_constraint(uint64_t mrvc, uint8_t 
     most_recent_input = input_table[ast_nodes[input_ast_tc].right_node];
     if (most_recent_input > input_ast_tc) {
       is_updated = false;
-      if (ast_nodes[ast_tc].type == VAR) {
-        printf("%llu, %llu, %llu\n", mrvc, theory_type, ast_tc);
-        printf("OUTPUT: ------ num: %llu; %llu, %llu, %llu: %x\n", ast_nodes[input_ast_tc].right_node, most_recent_input, input_ast_tc, involved_sym_inputs_cnts[ast_tc], pc - entry_point);
-        exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
-      }
       break;
     }
   }
@@ -1397,7 +1393,23 @@ void store_symbolic_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, uint32_
   else if (vaddr < NUMBEROFREGISTERS)
     // tracking a register value for sltu
     mrvc = mrcc;
-  else {
+  else if (vaddr == NUMBEROFREGISTERS) {
+    if (is_trace_space_available()) {
+      ealloc();
+
+      pcs[tc]          = pc;
+      tcs[tc]          = 0;
+      data_types[tc]   = data_type;
+      values[tc]       = value;
+      vaddrs[tc]       = vaddr;
+      asts[tc]         = ast_ptr;
+      mr_sds[tc]       = tc;
+      theory_types[tc] = theory_type;
+    } else {
+      throw_exception(EXCEPTION_MAXTRACE, 0);
+    }
+    return;
+  } else {
     // assert: vaddr is valid and mapped
     mrvc = load_symbolic_memory(pt, vaddr);
   }
@@ -1424,9 +1436,12 @@ void store_symbolic_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, uint32_
     theory_types[tc] = theory_type;
 
     if (vaddr < NUMBEROFREGISTERS) {
-      if (vaddr > 0)
+      if (vaddr > 0) {
         // register tracking marks most recent constraint
         mrcc = tc;
+        asts[tc] = most_recent_if_on_ast_trace;
+        most_recent_if_on_ast_trace = ast_trace_cnt;
+      }
     } else
       // assert: vaddr is valid and mapped
       store_virtual_memory(pt, vaddr, tc);
@@ -1522,6 +1537,10 @@ uint8_t detect_sym_operand(uint64_t ast_tc) {
   }
 }
 
+void store_input_record(uint64_t ast_ptr, uint64_t prev_input_record, uint8_t theory_type) {
+  store_symbolic_memory(pt, NUMBEROFREGISTERS, prev_input_record, INPUT_T, ast_ptr, tc, 0, theory_type);
+}
+
 uint64_t stored_to_tc;
 uint64_t mr_stored_to_tc;
 uint64_t backward_analysis_ast(uint64_t ast_tc, std::vector<uint64_t>& lo, std::vector<uint64_t>& up, size_t mints_num, uint8_t theory_type) {
@@ -1557,8 +1576,6 @@ uint64_t backward_analysis_ast(uint64_t ast_tc, std::vector<uint64_t>& lo, std::
   if (ast_nodes[ast_tc].type == VAR) {
     ast_ptr = add_ast_node(VAR, 0, ast_nodes[ast_tc].right_node, mints_num, propagated_minterval_lo, propagated_minterval_up, steps[ast_tc], 0, zero_v, MIT, smt_exprs[ast_tc]);
 
-    input_table.at(ast_nodes[ast_tc].right_node) = ast_ptr;
-
     for (size_t i = 0; i < store_trace_ptrs[ast_tc].size(); i++) {
       stored_to_tc    = store_trace_ptrs[ast_tc][i];
       mr_stored_to_tc = load_symbolic_memory(pt, vaddrs[stored_to_tc]);
@@ -1568,10 +1585,11 @@ uint64_t backward_analysis_ast(uint64_t ast_tc, std::vector<uint64_t>& lo, std::
         is_assigned = true;
       }
     }
+
     if (is_assigned == false) {
-      printf("OUTPUT: +++++++++++++++++++ at %x\n", pc - entry_point);
-      exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
+      store_input_record(ast_ptr, input_table.at(ast_nodes[ast_tc].right_node), MIT);
     }
+    input_table.at(ast_nodes[ast_tc].right_node) = ast_ptr;
 
     return ast_ptr;
   }
@@ -1747,9 +1765,9 @@ void take_branch(uint64_t b, uint64_t how_many_more) {
     value_v[0] = registers[REG_SP];
     store_register_memory(REG_SP, value_v);
   } else {
-    reg_data_type[rd] = VALUE_T;
-    reg_symb_type[rd] = CONCRETE;
-    registers[rd]     = b;
+    reg_data_type[rd]         = VALUE_T;
+    reg_symb_type[rd]         = CONCRETE;
+    registers[rd]             = b;
     reg_mintervals_los[rd][0] = b;
     reg_mintervals_ups[rd][0] = b;
     reg_mintervals_cnts[rd]   = 1;
@@ -2159,12 +2177,12 @@ void create_mconstraints(std::vector<uint64_t>& lo1_p, std::vector<uint64_t>& up
       if (check_conditional_type_lte_or_gte() == LGTE) {
         constrain_memory(rs1, true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, true_branch_rs1_minterval_cnt, trb, false);
         constrain_memory(rs2, true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, true_branch_rs2_minterval_cnt, trb, false);
+        uint64_t false_ast_ptr   = add_ast_node(ILT, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 0, 0, zero_v, MIT, boolector_null);
         take_branch(1, 1);
-        asts[tc-2]               = add_ast_node(ILT, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 0, 0, zero_v, MIT, boolector_null);
+        asts[tc-2]               = false_ast_ptr;
         sase_false_branchs[tc-2] = boolector_null; // important place be careful
 
         path_condition.push_back(add_ast_node(IGTE, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 1, 0, zero_v, MIT, boolector_null));
-        most_recent_if_on_ast_trace = path_condition.back();
 
         constrain_memory(rs1, false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups,false_branch_rs1_minterval_cnt, trb, false);
         constrain_memory(rs2, false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups,false_branch_rs2_minterval_cnt, trb, false);
@@ -2172,12 +2190,12 @@ void create_mconstraints(std::vector<uint64_t>& lo1_p, std::vector<uint64_t>& up
       } else {
         constrain_memory(rs1, false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups,false_branch_rs1_minterval_cnt, trb, false);
         constrain_memory(rs2, false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups,false_branch_rs2_minterval_cnt, trb, false);
+        uint64_t false_ast_ptr   = add_ast_node(IGTE, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 0, 0, zero_v, MIT, boolector_null);
         take_branch(0, 1);
-        asts[tc-2]               = add_ast_node(IGTE, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 0, 0, zero_v, MIT, boolector_null);
+        asts[tc-2]               = false_ast_ptr;
         sase_false_branchs[tc-2] = boolector_null; // careful
 
         path_condition.push_back(add_ast_node(ILT, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 1, 0, zero_v, MIT, boolector_null));
-        most_recent_if_on_ast_trace = path_condition.back();
 
         constrain_memory(rs1, true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, true_branch_rs1_minterval_cnt, trb, false);
         constrain_memory(rs2, true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, true_branch_rs2_minterval_cnt, trb, false);
@@ -2280,12 +2298,12 @@ void create_mconstraints_lptr(uint64_t lo1, uint64_t up1, std::vector<uint64_t>&
       if (check_conditional_type_lte_or_gte() == LGTE) {
         constrain_memory(rs1, true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, true_branch_rs1_minterval_cnt, trb, false);
         constrain_memory(rs2, true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, true_branch_rs2_minterval_cnt, trb, false);
+        uint64_t false_ast_ptr   = add_ast_node(ILT, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 0, 0, zero_v, MIT, boolector_null);
         take_branch(1, 1);
-        asts[tc-2]               = add_ast_node(ILT, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 0, 0, zero_v, MIT, boolector_null);
+        asts[tc-2]               = false_ast_ptr;
         sase_false_branchs[tc-2] = boolector_null; // important place be careful
 
         path_condition.push_back(add_ast_node(IGTE, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 1, 0, zero_v, MIT, boolector_null));
-        most_recent_if_on_ast_trace = path_condition.back();
 
         constrain_memory(rs1, false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups,false_branch_rs1_minterval_cnt, trb, false);
         constrain_memory(rs2, false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups,false_branch_rs2_minterval_cnt, trb, false);
@@ -2293,12 +2311,12 @@ void create_mconstraints_lptr(uint64_t lo1, uint64_t up1, std::vector<uint64_t>&
       } else {
         constrain_memory(rs1, false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups,false_branch_rs1_minterval_cnt, trb, false);
         constrain_memory(rs2, false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups,false_branch_rs2_minterval_cnt, trb, false);
+        uint64_t false_ast_ptr   = add_ast_node(IGTE, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 0, 0, zero_v, MIT, boolector_null);
         take_branch(0, 1);
-        asts[tc-2]               = add_ast_node(IGTE, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 0, 0, zero_v, MIT, boolector_null);
+        asts[tc-2]               = false_ast_ptr;
         sase_false_branchs[tc-2] = boolector_null; // careful
 
         path_condition.push_back(add_ast_node(ILT, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 1, 0, zero_v, MIT, boolector_null));
-        most_recent_if_on_ast_trace = path_condition.back();
 
         constrain_memory(rs1, true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, true_branch_rs1_minterval_cnt, trb, false);
         constrain_memory(rs2, true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, true_branch_rs2_minterval_cnt, trb, false);
@@ -2401,12 +2419,12 @@ void create_mconstraints_rptr(std::vector<uint64_t>& lo1_p, std::vector<uint64_t
       if (check_conditional_type_lte_or_gte() == LGTE) {
         constrain_memory(rs1, true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, true_branch_rs1_minterval_cnt, trb, false);
         constrain_memory(rs2, true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, true_branch_rs2_minterval_cnt, trb, false);
+        uint64_t false_ast_ptr   = add_ast_node(ILT, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 0, 0, zero_v, MIT, boolector_null);
         take_branch(1, 1);
-        asts[tc-2]               = add_ast_node(ILT, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 0, 0, zero_v, MIT, boolector_null);
+        asts[tc-2]               = false_ast_ptr;
         sase_false_branchs[tc-2] = boolector_null; // important place be careful
 
         path_condition.push_back(add_ast_node(IGTE, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 1, 0, zero_v, MIT, boolector_null));
-        most_recent_if_on_ast_trace = path_condition.back();
 
         constrain_memory(rs1, false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups,false_branch_rs1_minterval_cnt, trb, false);
         constrain_memory(rs2, false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups,false_branch_rs2_minterval_cnt, trb, false);
@@ -2414,12 +2432,12 @@ void create_mconstraints_rptr(std::vector<uint64_t>& lo1_p, std::vector<uint64_t
       } else {
         constrain_memory(rs1, false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups,false_branch_rs1_minterval_cnt, trb, false);
         constrain_memory(rs2, false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups,false_branch_rs2_minterval_cnt, trb, false);
+        uint64_t false_ast_ptr   = add_ast_node(IGTE, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 0, 0, zero_v, MIT, boolector_null);
         take_branch(0, 1);
-        asts[tc-2]               = add_ast_node(IGTE, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 0, 0, zero_v, MIT, boolector_null);
+        asts[tc-2]               = false_ast_ptr;
         sase_false_branchs[tc-2] = boolector_null; // careful
 
         path_condition.push_back(add_ast_node(ILT, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 1, 0, zero_v, MIT, boolector_null));
-        most_recent_if_on_ast_trace = path_condition.back();
 
         constrain_memory(rs1, true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, true_branch_rs1_minterval_cnt, trb, false);
         constrain_memory(rs2, true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, true_branch_rs2_minterval_cnt, trb, false);
@@ -2690,12 +2708,12 @@ void create_xor_mconstraints(std::vector<uint64_t>& lo1_p, std::vector<uint64_t>
       if (check_conditional_type_equality_or_disequality() == EQ) {
         constrain_memory(rs1, true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, true_branch_rs1_minterval_cnt, trb, false);
         constrain_memory(rs2, true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, true_branch_rs2_minterval_cnt, trb, false);
+        uint64_t false_ast_ptr   = add_ast_node(INEQ, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 0, 0, zero_v, MIT, boolector_null);
         take_branch(1, 1);
-        asts[tc-2]               = add_ast_node(INEQ, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 0, 0, zero_v, MIT, boolector_null);
+        asts[tc-2]               = false_ast_ptr;
         sase_false_branchs[tc-2] = boolector_null; // careful
 
         path_condition.push_back(add_ast_node(IEQ, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 1, 0, zero_v, MIT, boolector_null));
-        most_recent_if_on_ast_trace = path_condition.back();
 
         constrain_memory(rs1, false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups,false_branch_rs1_minterval_cnt, trb, false);
         constrain_memory(rs2, false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups,false_branch_rs2_minterval_cnt, trb, false);
@@ -2703,12 +2721,12 @@ void create_xor_mconstraints(std::vector<uint64_t>& lo1_p, std::vector<uint64_t>
       } else {
         constrain_memory(rs1, false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups,false_branch_rs1_minterval_cnt, trb, false);
         constrain_memory(rs2, false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups,false_branch_rs2_minterval_cnt, trb, false);
+        uint64_t false_ast_ptr   = add_ast_node(IEQ, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 0, 0, zero_v, MIT, boolector_null);
         take_branch(0, 1);
-        asts[tc-2]               = add_ast_node(IEQ, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 0, 0, zero_v, MIT, boolector_null);
+        asts[tc-2]               = false_ast_ptr;
         sase_false_branchs[tc-2] = boolector_null; // carful
 
         path_condition.push_back(add_ast_node(INEQ, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 1, 0, zero_v, MIT, boolector_null));
-        most_recent_if_on_ast_trace = path_condition.back();
 
         constrain_memory(rs1, true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, true_branch_rs1_minterval_cnt, trb, false);
         constrain_memory(rs2, true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, true_branch_rs2_minterval_cnt, trb, false);
@@ -2812,12 +2830,12 @@ void create_xor_mconstraints_lptr(uint64_t lo1, uint64_t up1, std::vector<uint64
       if (check_conditional_type_equality_or_disequality() == EQ) {
         constrain_memory(rs1, true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, true_branch_rs1_minterval_cnt, trb, false);
         constrain_memory(rs2, true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, true_branch_rs2_minterval_cnt, trb, false);
+        uint64_t false_ast_ptr   = add_ast_node(INEQ, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 0, 0, zero_v, MIT, boolector_null);
         take_branch(1, 1);
-        asts[tc-2]               = add_ast_node(INEQ, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 0, 0, zero_v, MIT, boolector_null);
+        asts[tc-2]               = false_ast_ptr;
         sase_false_branchs[tc-2] = boolector_null; // careful
 
         path_condition.push_back(add_ast_node(IEQ, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 1, 0, zero_v, MIT, boolector_null));
-        most_recent_if_on_ast_trace = path_condition.back();
 
         constrain_memory(rs1, false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups,false_branch_rs1_minterval_cnt, trb, false);
         constrain_memory(rs2, false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups,false_branch_rs2_minterval_cnt, trb, false);
@@ -2825,12 +2843,12 @@ void create_xor_mconstraints_lptr(uint64_t lo1, uint64_t up1, std::vector<uint64
       } else {
         constrain_memory(rs1, false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups,false_branch_rs1_minterval_cnt, trb, false);
         constrain_memory(rs2, false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups,false_branch_rs2_minterval_cnt, trb, false);
+        uint64_t false_ast_ptr   = add_ast_node(IEQ, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 0, 0, zero_v, MIT, boolector_null);
         take_branch(0, 1);
-        asts[tc-2]               = add_ast_node(IEQ, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 0, 0, zero_v, MIT, boolector_null);
+        asts[tc-2]               = false_ast_ptr;
         sase_false_branchs[tc-2] = boolector_null; // carful
 
         path_condition.push_back(add_ast_node(INEQ, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 1, 0, zero_v, MIT, boolector_null));
-        most_recent_if_on_ast_trace = path_condition.back();
 
         constrain_memory(rs1, true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, true_branch_rs1_minterval_cnt, trb, false);
         constrain_memory(rs2, true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, true_branch_rs2_minterval_cnt, trb, false);
@@ -2934,12 +2952,12 @@ void create_xor_mconstraints_rptr(std::vector<uint64_t>& lo1_p, std::vector<uint
       if (check_conditional_type_equality_or_disequality() == EQ) {
         constrain_memory(rs1, true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, true_branch_rs1_minterval_cnt, trb, false);
         constrain_memory(rs2, true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, true_branch_rs2_minterval_cnt, trb, false);
+        uint64_t false_ast_ptr   = add_ast_node(INEQ, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 0, 0, zero_v, MIT, boolector_null);
         take_branch(1, 1);
-        asts[tc-2]               = add_ast_node(INEQ, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 0, 0, zero_v, MIT, boolector_null);
+        asts[tc-2]               = false_ast_ptr;
         sase_false_branchs[tc-2] = boolector_null; // careful
 
         path_condition.push_back(add_ast_node(IEQ, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 1, 0, zero_v, MIT, boolector_null));
-        most_recent_if_on_ast_trace = path_condition.back();
 
         constrain_memory(rs1, false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups,false_branch_rs1_minterval_cnt, trb, false);
         constrain_memory(rs2, false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups,false_branch_rs2_minterval_cnt, trb, false);
@@ -2947,12 +2965,12 @@ void create_xor_mconstraints_rptr(std::vector<uint64_t>& lo1_p, std::vector<uint
       } else {
         constrain_memory(rs1, false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups,false_branch_rs1_minterval_cnt, trb, false);
         constrain_memory(rs2, false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups,false_branch_rs2_minterval_cnt, trb, false);
+        uint64_t false_ast_ptr   = add_ast_node(IEQ, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 0, 0, zero_v, MIT, boolector_null);
         take_branch(0, 1);
-        asts[tc-2]               = add_ast_node(IEQ, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 0, 0, zero_v, MIT, boolector_null);
+        asts[tc-2]               = false_ast_ptr;
         sase_false_branchs[tc-2] = boolector_null; // carful
 
         path_condition.push_back(add_ast_node(INEQ, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 1, 0, zero_v, MIT, boolector_null));
-        most_recent_if_on_ast_trace = path_condition.back();
 
         constrain_memory(rs1, true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, true_branch_rs1_minterval_cnt, trb, false);
         constrain_memory(rs2, true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, true_branch_rs2_minterval_cnt, trb, false);
@@ -2999,7 +3017,7 @@ void backtrack_sltu() {
       // restoring mrcc
       mrcc = tcs[tc];
 
-      if (vaddr != REG_FP)
+      if (vaddr != REG_FP) {
         if (vaddr != REG_SP) {
           // stop backtracking and try next case
           pc = pc + INSTRUCTIONSIZE;
@@ -3030,7 +3048,15 @@ void backtrack_sltu() {
             path_condition.clear();
           }
         }
+      } else {
+        if (ast_trace_cnt > most_recent_if_on_ast_trace) {
+          ast_trace_cnt = most_recent_if_on_ast_trace;
+        }
+        most_recent_if_on_ast_trace = asts[tc];
+      }
     }
+  } else if (vaddr == NUMBEROFREGISTERS) {
+    input_table.at(ast_nodes[asts[tc]].right_node) = values[tc];
   } else {
     if (ast_nodes[asts[tc]].type == VAR) {
       if (store_trace_ptrs[asts[tc]].size() > 1) {
@@ -3085,11 +3111,11 @@ void backtrack_sd() {
       }
     }
 
-    if (asts[tc] != 0 && ast_trace_cnt > asts[tc] && store_trace_ptrs[asts[tc]].size() == 0) {
-      if (asts[tc] != zero_node && asts[tc] != one_node && most_recent_if_on_ast_trace < asts[tc]) {
-        ast_trace_cnt = asts[tc];
-      }
-    }
+    // if (asts[tc] != 0 && ast_trace_cnt > asts[tc] && store_trace_ptrs[asts[tc]].size() == 0) {
+    //   if (asts[tc] != zero_node && asts[tc] != one_node && most_recent_if_on_ast_trace < asts[tc]) {
+    //     ast_trace_cnt = asts[tc];
+    //   }
+    // }
   } else if (theory_types[tc] == BVT && asts[tc] != 0) {
     if (ast_nodes[asts[tc]].type == VAR) {
       if (store_trace_ptrs[asts[tc]].size() > 1) {
@@ -3122,28 +3148,25 @@ void backtrack_sd() {
 }
 
 void backtrack_ld() {
-  // if (theory_types[tc] == MIT)
-  {
-    if (ast_nodes[asts[tc]].type == VAR) {
-      if (store_trace_ptrs[asts[tc]].size() > 1) {
-        store_trace_ptrs[asts[tc]].pop_back();
-      } else if (store_trace_ptrs[asts[tc]].size() == 1) {
-        input_table.at(ast_nodes[asts[tc]].right_node) = asts[tcs[tc]];
-        store_trace_ptrs[asts[tc]].pop_back();
-      } else {
-        printf("OUTPUT: ld backtracking error at %x", pc - entry_point);
-        exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
-      }
+  if (ast_nodes[asts[tc]].type == VAR) {
+    if (store_trace_ptrs[asts[tc]].size() > 1) {
+      store_trace_ptrs[asts[tc]].pop_back();
+    } else if (store_trace_ptrs[asts[tc]].size() == 1) {
+      input_table.at(ast_nodes[asts[tc]].right_node) = asts[tcs[tc]];
+      store_trace_ptrs[asts[tc]].pop_back();
+    } else {
+      printf("OUTPUT: ld backtracking error at %x", pc - entry_point);
+      exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
     }
-    else {
-      if (store_trace_ptrs[asts[tc]].size() > 1) {
-        store_trace_ptrs[asts[tc]].pop_back();
-      } else if (store_trace_ptrs[asts[tc]].size() == 1) {
-        store_trace_ptrs[asts[tc]].pop_back();
-      } else {
-        printf("OUTPUT: ld backtracking error at %x", pc - entry_point);
-        exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
-      }
+  }
+  else {
+    if (store_trace_ptrs[asts[tc]].size() > 1) {
+      store_trace_ptrs[asts[tc]].pop_back();
+    } else if (store_trace_ptrs[asts[tc]].size() == 1) {
+      store_trace_ptrs[asts[tc]].pop_back();
+    } else {
+      printf("OUTPUT: ld backtracking error at %x", pc - entry_point);
+      exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
     }
   }
 
