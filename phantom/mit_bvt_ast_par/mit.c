@@ -2064,7 +2064,7 @@ void create_input_variable_constraints_true_branch_bvt() {
   if (reg_symb_type[rs1] == SYMBOLIC) {
     for (size_t i = 0; i < involved_sym_inputs_cnts[reg_asts[rs1]]; i++) {
       involved_input = involved_sym_inputs_ast_tcs[reg_asts[rs1]][i];
-      value_v[0] = std::stoi(true_input_assignments[ast_nodes[involved_input].right_node], 0, 2);
+      value_v[0] = std::stoull(true_input_assignments[ast_nodes[involved_input].right_node], 0, 2);
       ast_ptr = add_ast_node(VAR, 0, ast_nodes[involved_input].right_node, 1, value_v, value_v, 1, 0, zero_v, BVT);
       for (size_t k = 0; k < store_trace_ptrs[involved_input].size(); k++) {
         stored_to_tc    = store_trace_ptrs[involved_input][k];
@@ -2081,7 +2081,7 @@ void create_input_variable_constraints_true_branch_bvt() {
   if (reg_symb_type[rs2] == SYMBOLIC) {
     for (size_t i = 0; i < involved_sym_inputs_cnts[reg_asts[rs2]]; i++) {
       involved_input = involved_sym_inputs_ast_tcs[reg_asts[rs2]][i];
-      value_v[0] = std::stoi(true_input_assignments[ast_nodes[involved_input].right_node], 0, 2);
+      value_v[0] = std::stoull(true_input_assignments[ast_nodes[involved_input].right_node], 0, 2);
       ast_ptr = add_ast_node(VAR, 0, ast_nodes[involved_input].right_node, 1, value_v, value_v, 1, 0, zero_v, BVT);
       for (size_t k = 0; k < store_trace_ptrs[involved_input].size(); k++) {
         stored_to_tc    = store_trace_ptrs[involved_input][k];
@@ -2102,7 +2102,7 @@ void create_input_variable_constraints_false_branch_bvt() {
   if (reg_symb_type[rs1] == SYMBOLIC) {
     for (size_t i = 0; i < involved_sym_inputs_cnts[reg_asts[rs1]]; i++) {
       involved_input = involved_sym_inputs_ast_tcs[reg_asts[rs1]][i];
-      value_v[0] = std::stoi(false_input_assignments[ast_nodes[involved_input].right_node], 0, 2);
+      value_v[0] = std::stoull(false_input_assignments[ast_nodes[involved_input].right_node], 0, 2);
       ast_ptr = add_ast_node(VAR, 0, ast_nodes[involved_input].right_node, 1, value_v, value_v, 1, 0, zero_v, BVT);
       for (size_t k = 0; k < store_trace_ptrs[involved_input].size(); k++) {
         stored_to_tc    = store_trace_ptrs[involved_input][k];
@@ -2119,7 +2119,7 @@ void create_input_variable_constraints_false_branch_bvt() {
   if (reg_symb_type[rs2] == SYMBOLIC) {
     for (size_t i = 0; i < involved_sym_inputs_cnts[reg_asts[rs2]]; i++) {
       involved_input = involved_sym_inputs_ast_tcs[reg_asts[rs2]][i];
-      value_v[0] = std::stoi(false_input_assignments[ast_nodes[involved_input].right_node], 0, 2);
+      value_v[0] = std::stoull(false_input_assignments[ast_nodes[involved_input].right_node], 0, 2);
       ast_ptr = add_ast_node(VAR, 0, ast_nodes[involved_input].right_node, 1, value_v, value_v, 1, 0, zero_v, BVT);
       for (size_t k = 0; k < store_trace_ptrs[involved_input].size(); k++) {
         stored_to_tc    = store_trace_ptrs[involved_input][k];
