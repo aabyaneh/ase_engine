@@ -989,7 +989,7 @@ void constrain_divu() {
           reg_steps[rd]             = 1;
           reg_vaddrs_cnts[rd]       = 0;
 
-          reg_asts[rd] = add_ast_node(CONST, 0, 0, 1, reg_mintervals_los[rd], reg_mintervals_ups[rd], 1, 0, zero_v);
+          reg_asts[rd] = 0; // add_ast_node(CONST, 0, 0, 1, reg_mintervals_los[rd], reg_mintervals_ups[rd], 1, 0, zero_v);
           set_correction(rd, 0, 0, 0);
         }
       }
@@ -1098,7 +1098,7 @@ void constrain_remu() {
     reg_steps[rd]             = 1;
     reg_vaddrs_cnts[rd]       = 0;
 
-    reg_asts[rd] = add_ast_node(CONST, 0, 0, 1, reg_mintervals_los[rd], reg_mintervals_ups[rd], 1, 0, zero_v);
+    reg_asts[rd] = 0; // add_ast_node(CONST, 0, 0, 1, reg_mintervals_los[rd], reg_mintervals_ups[rd], 1, 0, zero_v);
     set_correction(rd, 0, 0, 0);
   }
 }
@@ -1487,15 +1487,14 @@ void store_symbolic_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, uint32_
         if (ast_nodes[asts[mrvc]].type == CONST) {
           // overwrite
 
-          // pcs[mrvc]        = pc;
+          pcs[mrvc]        = pc;
           data_types[mrvc] = data_type;
           values[mrvc]     = value;
           asts[mrvc]       = ast_ptr;
 
-          if (ast_ptr) {
-            // store_trace_ptrs[ast_ptr].clear();
-            store_trace_ptrs[ast_ptr].push_back(mrvc);
-          }
+          if (ast_ptr) { store_trace_ptrs[ast_ptr].push_back(mrvc); }
+
+          if (is_store) { mr_sds[mrvc] = mrvc; }
 
           return;
         }
