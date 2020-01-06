@@ -4444,8 +4444,6 @@ uint64_t engine(uint64_t* to_context) {
         boolector_assert(btor, sase_false_branchs[sase_tc]);
 
       } else {
-        // printf("%\nbacktracking %llu\n", b+1);
-
         if (IS_TEST_MODE) {
           for (size_t j = 0; j < input_table.size(); j++) {
             for (uint32_t i = 0; i < mintervals_los[input_table[j]].size(); i++) {
@@ -4468,10 +4466,9 @@ uint64_t engine(uint64_t* to_context) {
 
         if (pc == 0) {
           println();
-
-          printf1((uint64_t*) "%s: backtracking ", exe_name);
-          print_integer(b);
           println();
+
+          std::cout << GREEN "backtracking: " << b << RESET << "\n\n";
 
           return EXITCODE_NOERROR;
         }
