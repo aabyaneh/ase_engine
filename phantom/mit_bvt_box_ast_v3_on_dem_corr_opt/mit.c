@@ -4376,6 +4376,14 @@ bool apply_under_approximate_analysis(std::vector<uint64_t>& lo1, std::vector<ui
     return false;
   }
 
+  for (size_t i = 0; i < reg_vaddrs_cnts[rs1]; i++) {
+    for (size_t j = 0; j < reg_vaddrs_cnts[rs2]; j++) {
+      if (reg_vaddrs[rs1][i] == reg_vaddrs[rs2][j]) {
+        return false;
+      }
+    }
+  }
+
   uint8_t conditional_type = check_conditional_type_lte_or_gte();
 
   if (reg_theory_types[rs1] == MIT && reg_theory_types[rs2] == MIT) {
