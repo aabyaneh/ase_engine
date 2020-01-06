@@ -435,7 +435,7 @@ void constrain_addi() {
   // interval semantics of addi
   if (reg_symb_type[rs1] == SYMBOLIC) {
     // rd inherits rs1 constraint
-    set_correction(rd, reg_symb_type[rs1], 0, reg_addsub_corr[rs1] + imm, reg_muldivrem_corr[rs1],
+    set_correction(rd, reg_symb_type[rs1], reg_hasmn[rs1], reg_addsub_corr[rs1] + imm, reg_muldivrem_corr[rs1],
       (reg_corr_validity[rs1] == 0) ? MUL_T : reg_corr_validity[rs1]);
     set_vaddrs(rd, reg_vaddrs[rs1], 0, reg_vaddrs_cnts[rs1]);
 
@@ -557,7 +557,7 @@ void constrain_add() {
 
       } else {
         // rd inherits rs1 constraint since rs2 has none
-        set_correction(rd, reg_symb_type[rs1], 0, reg_addsub_corr[rs1] + reg_mintervals_los[rs2][0], reg_muldivrem_corr[rs1],
+        set_correction(rd, reg_symb_type[rs1], reg_hasmn[rs1], reg_addsub_corr[rs1] + reg_mintervals_los[rs2][0], reg_muldivrem_corr[rs1],
           (reg_corr_validity[rs1] == 0) ? MUL_T : reg_corr_validity[rs1]);
         set_vaddrs(rd, reg_vaddrs[rs1], 0, reg_vaddrs_cnts[rs1]);
 
@@ -573,7 +573,7 @@ void constrain_add() {
 
     } else if (reg_symb_type[rs2] == SYMBOLIC) {
       // rd inherits rs2 constraint since rs1 has none
-      set_correction(rd, reg_symb_type[rs2], 0, reg_addsub_corr[rs2] + reg_mintervals_los[rs1][0], reg_muldivrem_corr[rs2],
+      set_correction(rd, reg_symb_type[rs2], reg_hasmn[rs2], reg_addsub_corr[rs2] + reg_mintervals_los[rs1][0], reg_muldivrem_corr[rs2],
         (reg_corr_validity[rs2] == 0) ? MUL_T : reg_corr_validity[rs2]);
       set_vaddrs(rd, reg_vaddrs[rs2], 0, reg_vaddrs_cnts[rs2]);
 
@@ -700,7 +700,7 @@ void constrain_sub() {
 
       } else {
         // rd inherits rs1 constraint since rs2 has none
-        set_correction(rd, reg_symb_type[rs1], 0, reg_addsub_corr[rs1] - reg_mintervals_los[rs2][0], reg_muldivrem_corr[rs1],
+        set_correction(rd, reg_symb_type[rs1], reg_hasmn[rs1], reg_addsub_corr[rs1] - reg_mintervals_los[rs2][0], reg_muldivrem_corr[rs1],
           (reg_corr_validity[rs1] == 0) ? MUL_T : reg_corr_validity[rs1]);
         set_vaddrs(rd, reg_vaddrs[rs1], 0, reg_vaddrs_cnts[rs1]);
 
