@@ -200,7 +200,7 @@ void handle_mul_cnd_failure(std::vector<uint64_t>& mul_lo_rd, std::vector<uint64
 uint64_t compute_upper_bound(uint64_t lo, uint64_t step, uint64_t value);
 
 uint64_t add_ast_node(uint8_t typ, uint64_t left_node, uint64_t right_node, uint32_t mints_num, std::vector<uint64_t>& lo, std::vector<uint64_t>& up, uint64_t step, uint64_t sym_input_num, std::vector<uint64_t>& sym_input_ast_tcs, uint8_t theory_type, BoolectorNode* smt_expr);
-uint64_t recompute_expression(uint64_t ast_tc, uint8_t theory_type);
+uint64_t recompute_expression(uint64_t ast_tc);
 
 BoolectorNode* boolector_op(uint8_t op, uint64_t ast_tc);
 BoolectorNode* create_smt_expression(uint64_t ast_tc);

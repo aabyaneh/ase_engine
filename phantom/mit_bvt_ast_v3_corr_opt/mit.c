@@ -139,8 +139,6 @@ BoolectorNode**                     smt_exprs;
 // temporary data-structure to pass values targeting propagations
 std::vector<uint64_t> propagated_minterval_lo(MAX_NUM_OF_INTERVALS);
 std::vector<uint64_t> propagated_minterval_up(MAX_NUM_OF_INTERVALS);
-// uint32_t propagated_minterval_cnt = 0;
-// uint64_t propagated_minterval_step;
 
 // ---------------------------------------------
 // --------------- two level decision procedure
@@ -180,21 +178,22 @@ void init_symbolic_engine() {
   data_types            = (uint32_t*) malloc(MAX_TRACE_LENGTH  * sizeof(uint32_t));
   asts                  = (uint64_t*) malloc(MAX_TRACE_LENGTH  * sizeof(uint64_t));
   mr_sds                = (uint64_t*) malloc(MAX_TRACE_LENGTH  * sizeof(uint64_t));
+  theory_types          = (uint8_t*)  malloc(MAX_TRACE_LENGTH  * sizeof(uint8_t ));
 
   read_values           = (uint64_t*) malloc(MAX_TRACE_LENGTH  * sizeof(uint64_t));
   read_los              = (uint64_t*) malloc(MAX_TRACE_LENGTH  * sizeof(uint64_t));
   read_ups              = (uint64_t*) malloc(MAX_TRACE_LENGTH  * sizeof(uint64_t));
 
   reg_data_type         = (uint32_t*) zalloc(NUMBEROFREGISTERS * sizeof(uint32_t));
-  reg_symb_type         = (uint8_t*)  zalloc(NUMBEROFREGISTERS * sizeof(uint8_t));
+  reg_symb_type         = (uint8_t*)  zalloc(NUMBEROFREGISTERS * sizeof(uint8_t ));
   reg_steps             = (uint64_t*) malloc(NUMBEROFREGISTERS * sizeof(uint64_t));
   reg_mintervals_cnts   = (uint32_t*) malloc(NUMBEROFREGISTERS * sizeof(uint32_t));
   reg_vaddrs_cnts       = (uint32_t*) zalloc(NUMBEROFREGISTERS * sizeof(uint32_t));
   reg_asts              = (uint64_t*) malloc(NUMBEROFREGISTERS * sizeof(uint64_t));
-
-  reg_hasmn             = (uint8_t*)  zalloc(NUMBEROFREGISTERS * sizeof(uint8_t));
+  reg_theory_types      = (uint8_t*)  malloc(NUMBEROFREGISTERS * sizeof(uint8_t ));
+  reg_hasmn             = (uint8_t*)  zalloc(NUMBEROFREGISTERS * sizeof(uint8_t ));
   reg_addsub_corr       = (uint64_t*) malloc(NUMBEROFREGISTERS * sizeof(uint64_t));
-  reg_corr_validity     = (uint8_t*)  zalloc(NUMBEROFREGISTERS * sizeof(uint8_t));
+  reg_corr_validity     = (uint8_t*)  zalloc(NUMBEROFREGISTERS * sizeof(uint8_t ));
 
   steps                    = (uint64_t*)       malloc(MAX_NODE_TRACE_LENGTH  * sizeof(uint64_t));
   ast_nodes                = (struct node*)    malloc(MAX_NODE_TRACE_LENGTH  * sizeof(struct node*));
@@ -207,6 +206,7 @@ void init_symbolic_engine() {
   store_trace_ptrs.resize(MAX_NODE_TRACE_LENGTH);
   involved_sym_inputs_ast_tcs.resize(MAX_NODE_TRACE_LENGTH);
 
+  // boolector smt solver
   btor        = boolector_new();
   bv_sort     = boolector_bitvec_sort(btor, 64);
   boolector_set_opt(btor, BTOR_OPT_INCREMENTAL, 1);
@@ -216,8 +216,6 @@ void init_symbolic_engine() {
 
   sase_regs             = (BoolectorNode**) malloc(sizeof(BoolectorNode*) * NUMBEROFREGISTERS);
   sase_false_branchs    = (BoolectorNode**) malloc(MAX_TRACE_LENGTH  * sizeof(BoolectorNode*));
-  theory_types          = (uint8_t*)        malloc(MAX_TRACE_LENGTH  * sizeof(uint8_t)       );
-  reg_theory_types      = (uint8_t*)        malloc(NUMBEROFREGISTERS * sizeof(uint8_t)       );
 
   zero_node            = add_ast_node(CONST, 0, 0, 1, zero_v, zero_v, 1, 0, zero_v, MIT, boolector_null);
   one_node             = add_ast_node(CONST, 0, 0, 1, one_v , one_v , 1, 0, zero_v, MIT, boolector_null);
@@ -234,30 +232,31 @@ void init_symbolic_engine() {
     reg_vaddrs[i].resize(MAX_NUM_OF_OP_VADDRS);
   }
 
+  input_table.reserve(1000);
+
   pcs[0]             = 0;
   tcs[0]             = 0;
+  vaddrs[0]          = 0;
   values[0]          = 0;
   data_types[0]      = 0;
-  steps[0]           = 0;
-  vaddrs[0]          = 0;
   asts[0]            = 0;
   mr_sds[0]          = 0;
+  theory_types[0]    = 0;
+  steps[0]           = 0;
   smt_exprs[0]       = boolector_null;
+  involved_sym_inputs_cnts[0] = 0;
 
   mintervals_los[0].push_back(0);
   mintervals_ups[0].push_back(0);
 
   TWO_TO_THE_POWER_OF_64 = UINT64_MAX_VALUE + 1U;
+  two_to_the_power_of_32 = 4294967296ULL;
 
   if (IS_TEST_MODE) {
     std::string test_output = reinterpret_cast<const char*>(binary_name);
     test_output += ".result";
     output_results.open(test_output, std::ofstream::trunc);
   }
-
-  input_table.reserve(1000);
-
-  two_to_the_power_of_32 = 4294967296ULL;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1240,12 +1239,6 @@ void constrain_sltu() {
       create_crt_operand_ast_node_entry(rs2);
     }
 
-    // if (reg_symb_type[rs1])
-    //   tc_before_branch_evaluation_rs1 = load_symbolic_memory(pt, reg_vaddrs[rs1][0]);
-    //
-    // if (reg_symb_type[rs2])
-    //   tc_before_branch_evaluation_rs2 = load_symbolic_memory(pt, reg_vaddrs[rs2][0]);
-
     input_table_ast_tcs_before_branch_evaluation.clear();
     for (size_t i = 0; i < input_table.size(); i++) {
       input_table_ast_tcs_before_branch_evaluation.push_back(input_table[i]);
@@ -1309,11 +1302,10 @@ void constrain_xor() {
     create_crt_operand_ast_node_entry(rs2);
   }
 
-  // if (reg_symb_type[rs1])
-  //   tc_before_branch_evaluation_rs1 = load_symbolic_memory(pt, reg_vaddrs[rs1][0]);
-  //
-  // if (reg_symb_type[rs2])
-  //   tc_before_branch_evaluation_rs2 = load_symbolic_memory(pt, reg_vaddrs[rs2][0]);
+  input_table_ast_tcs_before_branch_evaluation.clear();
+  for (size_t i = 0; i < input_table.size(); i++) {
+    input_table_ast_tcs_before_branch_evaluation.push_back(input_table[i]);
+  }
 
   if (reg_data_type[rs1] == POINTER_T) {
     if (reg_data_type[rs2] != POINTER_T) {
@@ -1329,7 +1321,7 @@ void constrain_xor() {
 
 }
 
-uint64_t check_whether_represents_most_recent_constraint(uint64_t mrvc, uint8_t theory_type) {
+uint64_t check_whether_represents_most_recent_constraint(uint64_t mrvc) {
   uint64_t ast_tc = asts[mrvc];
   uint64_t most_recent_input;
   uint64_t input_ast_tc;
@@ -1345,7 +1337,7 @@ uint64_t check_whether_represents_most_recent_constraint(uint64_t mrvc, uint8_t 
   }
 
   if (is_updated == false) {
-    recompute_expression(ast_tc, theory_type);
+    recompute_expression(ast_tc);
     return load_symbolic_memory(pt, vaddrs[mrvc]);
   } else
     return mrvc;
@@ -1354,7 +1346,6 @@ uint64_t check_whether_represents_most_recent_constraint(uint64_t mrvc, uint8_t 
 uint64_t constrain_ld() {
   uint64_t vaddr;
   uint64_t mrvc;
-  uint64_t mrvc_;
   uint64_t a;
 
   // load double word
@@ -1364,12 +1355,9 @@ uint64_t constrain_ld() {
   if (is_safe_address(vaddr, rs1)) {
     if (is_virtual_address_mapped(pt, vaddr)) {
       if (rd != REG_ZR) {
-        mrvc = load_symbolic_memory(pt, vaddr);
+        mrvc = check_whether_represents_most_recent_constraint(load_symbolic_memory(pt, vaddr));
 
         reg_theory_types[rd] = theory_types[mrvc];
-
-        mrvc = check_whether_represents_most_recent_constraint(mrvc, reg_theory_types[rd]);
-
         reg_asts[rd]         = asts[mrvc];
         sase_regs[rd]        = smt_exprs[reg_asts[rd]];
 
@@ -1740,8 +1728,8 @@ uint8_t detect_sym_operand(uint64_t ast_tc) {
     crt_operand_ast_tc = ast_nodes[ast_tc].left_node;
     return RIGHT;
   } else {
-    printf("%llu %llu %llu %llu, size: %llu\n", mintervals_los[ast_nodes[ast_tc].left_node][0], mintervals_ups[ast_nodes[ast_tc].left_node][0], left_typ, theory_type_ast_nodes[ast_nodes[ast_tc].left_node], mintervals_los[ast_nodes[ast_tc].left_node].size());
-    printf("%llu %llu %llu %llu, size: %llu\n", mintervals_los[ast_nodes[ast_tc].right_node][0], mintervals_ups[ast_nodes[ast_tc].right_node][0], right_typ, theory_type_ast_nodes[ast_nodes[ast_tc].right_node], mintervals_los[ast_nodes[ast_tc].right_node].size());
+    printf("%llu %llu %llu %llu, size: %llu\n", mintervals_los[ast_nodes[ast_tc].right_node][0], mintervals_ups[ast_nodes[ast_tc].right_node][0], right_typ, theory_type_ast_nodes[ast_nodes[ast_tc].left_node], ast_nodes[ast_tc].right_node);
+    printf("%llu %llu %llu %llu, size: %llu\n", mintervals_los[ast_nodes[ast_tc].left_node][0], mintervals_ups[ast_nodes[ast_tc].left_node][0], left_typ, theory_type_ast_nodes[ast_nodes[ast_tc].right_node], mintervals_los[ast_nodes[ast_tc].right_node].size());
     printf("OUTPUT: backward propagation of symbolics at %x\n", pc - entry_point);
     exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
   }
@@ -2278,6 +2266,44 @@ void create_input_variable_constraints_true_branch_bvt() {
   }
 }
 
+void dump_all_input_variables_on_trace_true_branch_bvt_pure() {
+  uint64_t ast_ptr, involved_input, stored_to_tc, mr_stored_to_tc;
+  uint64_t involved_input_rs1, involved_input_rs2;
+  bool is_assigned = false;
+
+  if (involved_sym_inputs_cnts[reg_asts[rs1]])
+    involved_input_rs1 = ast_nodes[involved_sym_inputs_ast_tcs[reg_asts[rs1]][0]].right_node;
+  else
+    involved_input_rs1 = -1;
+
+  if (involved_sym_inputs_cnts[reg_asts[rs2]])
+    involved_input_rs2 = ast_nodes[involved_sym_inputs_ast_tcs[reg_asts[rs2]][0]].right_node;
+  else
+    involved_input_rs2 = -1;
+
+  for (size_t i = 0; i < input_table.size(); i++) {
+    if (i == involved_input_rs1 || i == involved_input_rs2) continue;
+    involved_input = input_table_ast_tcs_before_branch_evaluation[i];
+    if (theory_type_ast_nodes[involved_input] == MIT) continue;
+    value_v[0] = std::stoull(true_input_assignments[ast_nodes[involved_input].right_node], 0, 2);
+    ast_ptr = add_ast_node(VAR, 0, ast_nodes[involved_input].right_node, 1, value_v, value_v, 1, 0, zero_v, BVT, smt_exprs[involved_input]);
+    for (size_t k = 0; k < store_trace_ptrs[involved_input].size(); k++) {
+      stored_to_tc    = store_trace_ptrs[involved_input][k];
+      mr_stored_to_tc = load_symbolic_memory(pt, vaddrs[stored_to_tc]);
+      mr_stored_to_tc = mr_sds[mr_stored_to_tc];
+      if (mr_stored_to_tc <= stored_to_tc) {
+        store_symbolic_memory(pt, vaddrs[stored_to_tc], value_v[0], VALUE_T, ast_ptr, tc, 0, BVT);
+        is_assigned = true;
+      }
+    }
+    if (is_assigned == false) {
+      store_input_record(ast_ptr, input_table.at(ast_nodes[involved_input].right_node), BVT);
+    }
+    input_table.at(ast_nodes[involved_input].right_node) = ast_ptr;
+  }
+
+}
+
 void create_input_variable_constraints_false_branch_bvt() {
   uint64_t ast_ptr, involved_input, stored_to_tc, mr_stored_to_tc;
   bool is_assigned = false;
@@ -2329,6 +2355,43 @@ void create_input_variable_constraints_false_branch_bvt() {
   }
 }
 
+void dump_all_input_variables_on_trace_false_branch_bvt_pure() {
+  uint64_t ast_ptr, involved_input, stored_to_tc, mr_stored_to_tc;
+  uint64_t involved_input_rs1, involved_input_rs2;
+  bool is_assigned = false;
+
+  if (involved_sym_inputs_cnts[reg_asts[rs1]])
+    involved_input_rs1 = ast_nodes[involved_sym_inputs_ast_tcs[reg_asts[rs1]][0]].right_node;
+  else
+    involved_input_rs1 = -1;
+
+  if (involved_sym_inputs_cnts[reg_asts[rs2]])
+    involved_input_rs2 = ast_nodes[involved_sym_inputs_ast_tcs[reg_asts[rs2]][0]].right_node;
+  else
+    involved_input_rs2 = -1;
+
+  for (size_t i = 0; i < input_table.size(); i++) {
+    if (i == involved_input_rs1 || i == involved_input_rs2) continue;
+    involved_input = input_table_ast_tcs_before_branch_evaluation[i];
+    if (theory_type_ast_nodes[involved_input] == MIT) continue;
+    value_v[0] = std::stoull(false_input_assignments[ast_nodes[involved_input].right_node], 0, 2);
+    ast_ptr = add_ast_node(VAR, 0, ast_nodes[involved_input].right_node, 1, value_v, value_v, 1, 0, zero_v, BVT, smt_exprs[involved_input]);
+    for (size_t k = 0; k < store_trace_ptrs[involved_input].size(); k++) {
+      stored_to_tc    = store_trace_ptrs[involved_input][k];
+      mr_stored_to_tc = load_symbolic_memory(pt, vaddrs[stored_to_tc]);
+      mr_stored_to_tc = mr_sds[mr_stored_to_tc];
+      if (mr_stored_to_tc <= stored_to_tc) {
+        store_symbolic_memory(pt, vaddrs[stored_to_tc], value_v[0], VALUE_T, ast_ptr, tc, 0, BVT);
+        is_assigned = true;
+      }
+    }
+    if (is_assigned == false) {
+      store_input_record(ast_ptr, input_table.at(ast_nodes[involved_input].right_node), BVT);
+    }
+    input_table.at(ast_nodes[involved_input].right_node) = ast_ptr;
+  }
+}
+
 void create_mconstraints(std::vector<uint64_t>& lo1_p, std::vector<uint64_t>& up1_p, std::vector<uint64_t>& lo2_p, std::vector<uint64_t>& up2_p, uint64_t trb) {
   bool cannot_handle   = false;
   bool true_reachable  = false;
@@ -2368,6 +2431,7 @@ void create_mconstraints(std::vector<uint64_t>& lo1_p, std::vector<uint64_t>& up
         if (check_conditional_type_lte_or_gte() == LGTE) {
           // false
           create_input_variable_constraints_true_branch_bvt();
+          dump_all_input_variables_on_trace_true_branch_bvt_pure();
           take_branch(1, 1);
           sase_false_branchs[tc-2] = boolector_ult(btor, sase_regs[rs1], sase_regs[rs2]); // carefull
 
@@ -2375,10 +2439,12 @@ void create_mconstraints(std::vector<uint64_t>& lo1_p, std::vector<uint64_t>& up
           boolector_push(btor, 1);
           boolector_assert(btor, boolector_ugte(btor, sase_regs[rs1], sase_regs[rs2]));
           create_input_variable_constraints_false_branch_bvt();
+          dump_all_input_variables_on_trace_false_branch_bvt_pure();
           take_branch(0, 0);
         } else {
           // false
           create_input_variable_constraints_false_branch_bvt();
+          dump_all_input_variables_on_trace_false_branch_bvt_pure();
           take_branch(0, 1);
           sase_false_branchs[tc-2] = boolector_ugte(btor, sase_regs[rs1], sase_regs[rs2]); // carefull
 
@@ -2386,14 +2452,17 @@ void create_mconstraints(std::vector<uint64_t>& lo1_p, std::vector<uint64_t>& up
           boolector_push(btor, 1);
           boolector_assert(btor, boolector_ult(btor, sase_regs[rs1], sase_regs[rs2]));
           create_input_variable_constraints_true_branch_bvt();
+          dump_all_input_variables_on_trace_true_branch_bvt_pure();
           take_branch(1, 0);
         }
       } else {
         create_input_variable_constraints_true_branch_bvt();
+        dump_all_input_variables_on_trace_true_branch_bvt_pure();
         take_branch(1, 0);
       }
     } else if (false_reachable) {
       create_input_variable_constraints_false_branch_bvt();
+      dump_all_input_variables_on_trace_false_branch_bvt_pure();
       take_branch(0, 0);
     } else {
       printf("OUTPUT: both branches unreachable!!! 2 %x\n", pc - entry_point);
@@ -2489,6 +2558,7 @@ void create_mconstraints_lptr(uint64_t lo1, uint64_t up1, std::vector<uint64_t>&
         if (check_conditional_type_lte_or_gte() == LGTE) {
           // false
           create_input_variable_constraints_true_branch_bvt();
+          dump_all_input_variables_on_trace_true_branch_bvt_pure();
           take_branch(1, 1);
           sase_false_branchs[tc-2] = boolector_ult(btor, sase_regs[rs1], sase_regs[rs2]); // careful
 
@@ -2496,10 +2566,12 @@ void create_mconstraints_lptr(uint64_t lo1, uint64_t up1, std::vector<uint64_t>&
           boolector_push(btor, 1);
           boolector_assert(btor, boolector_ugte(btor, sase_regs[rs1], sase_regs[rs2]));
           create_input_variable_constraints_false_branch_bvt();
+          dump_all_input_variables_on_trace_false_branch_bvt_pure();
           take_branch(0, 0);
         } else {
           // false
           create_input_variable_constraints_false_branch_bvt();
+          dump_all_input_variables_on_trace_false_branch_bvt_pure();
           take_branch(0, 1);
           sase_false_branchs[tc-2] = boolector_ugte(btor, sase_regs[rs1], sase_regs[rs2]); // careful
 
@@ -2507,14 +2579,17 @@ void create_mconstraints_lptr(uint64_t lo1, uint64_t up1, std::vector<uint64_t>&
           boolector_push(btor, 1);
           boolector_assert(btor, boolector_ult(btor, sase_regs[rs1], sase_regs[rs2]));
           create_input_variable_constraints_true_branch_bvt();
+          dump_all_input_variables_on_trace_true_branch_bvt_pure();
           take_branch(1, 0);
         }
       } else {
         create_input_variable_constraints_true_branch_bvt();
+        dump_all_input_variables_on_trace_true_branch_bvt_pure();
         take_branch(1, 0);
       }
     } else if (false_reachable) {
       create_input_variable_constraints_false_branch_bvt();
+      dump_all_input_variables_on_trace_false_branch_bvt_pure();
       take_branch(0, 0);
     } else {
       printf("OUTPUT: both branches unreachable!!! 2 %x\n", pc - entry_point);
@@ -2610,6 +2685,7 @@ void create_mconstraints_rptr(std::vector<uint64_t>& lo1_p, std::vector<uint64_t
         if (check_conditional_type_lte_or_gte() == LGTE) {
           // false
           create_input_variable_constraints_true_branch_bvt();
+          dump_all_input_variables_on_trace_true_branch_bvt_pure();
           take_branch(1, 1);
           sase_false_branchs[tc-2] = boolector_ult(btor, sase_regs[rs1], sase_regs[rs2]); // carefull
 
@@ -2617,10 +2693,12 @@ void create_mconstraints_rptr(std::vector<uint64_t>& lo1_p, std::vector<uint64_t
           boolector_push(btor, 1);
           boolector_assert(btor, boolector_ugte(btor, sase_regs[rs1], sase_regs[rs2]));
           create_input_variable_constraints_false_branch_bvt();
+          dump_all_input_variables_on_trace_false_branch_bvt_pure();
           take_branch(0, 0);
         } else {
           // false
           create_input_variable_constraints_false_branch_bvt();
+          dump_all_input_variables_on_trace_false_branch_bvt_pure();
           take_branch(0, 1);
           sase_false_branchs[tc-2] = boolector_ugte(btor, sase_regs[rs1], sase_regs[rs2]); // carefull
 
@@ -2628,14 +2706,17 @@ void create_mconstraints_rptr(std::vector<uint64_t>& lo1_p, std::vector<uint64_t
           boolector_push(btor, 1);
           boolector_assert(btor, boolector_ult(btor, sase_regs[rs1], sase_regs[rs2]));
           create_input_variable_constraints_true_branch_bvt();
+          dump_all_input_variables_on_trace_true_branch_bvt_pure();
           take_branch(1, 0);
         }
       } else {
         create_input_variable_constraints_true_branch_bvt();
+        dump_all_input_variables_on_trace_true_branch_bvt_pure();
         take_branch(1, 0);
       }
     } else if (false_reachable) {
       create_input_variable_constraints_false_branch_bvt();
+      dump_all_input_variables_on_trace_false_branch_bvt_pure();
       take_branch(0, 0);
     } else {
       printf("OUTPUT: both branches unreachable!!! 2 %x\n", pc - entry_point);
@@ -2899,6 +2980,7 @@ void create_xor_mconstraints(std::vector<uint64_t>& lo1_p, std::vector<uint64_t>
         if (check_conditional_type_equality_or_disequality() == EQ) {
           // false
           create_input_variable_constraints_true_branch_bvt();
+          dump_all_input_variables_on_trace_true_branch_bvt_pure();
           take_branch(1, 1);
           sase_false_branchs[tc-2] = boolector_ne(btor, sase_regs[rs1], sase_regs[rs2]); // carefull
 
@@ -2906,10 +2988,12 @@ void create_xor_mconstraints(std::vector<uint64_t>& lo1_p, std::vector<uint64_t>
           boolector_push(btor, 1);
           boolector_assert(btor, boolector_eq(btor, sase_regs[rs1], sase_regs[rs2]));
           create_input_variable_constraints_false_branch_bvt();
+          dump_all_input_variables_on_trace_false_branch_bvt_pure();
           take_branch(0, 0);
         } else {
           // false
           create_input_variable_constraints_false_branch_bvt();
+          dump_all_input_variables_on_trace_false_branch_bvt_pure();
           take_branch(0, 1);
           sase_false_branchs[tc-2] = boolector_eq(btor, sase_regs[rs1], sase_regs[rs2]); // carefull
 
@@ -2917,14 +3001,17 @@ void create_xor_mconstraints(std::vector<uint64_t>& lo1_p, std::vector<uint64_t>
           boolector_push(btor, 1);
           boolector_assert(btor, boolector_ne(btor, sase_regs[rs1], sase_regs[rs2]));
           create_input_variable_constraints_true_branch_bvt();
+          dump_all_input_variables_on_trace_true_branch_bvt_pure();
           take_branch(1, 0);
         }
       } else {
         create_input_variable_constraints_true_branch_bvt();
+        dump_all_input_variables_on_trace_true_branch_bvt_pure();
         take_branch(1, 0);
       }
     } else if (false_reachable) {
       create_input_variable_constraints_false_branch_bvt();
+      dump_all_input_variables_on_trace_false_branch_bvt_pure();
       take_branch(0, 0);
     } else {
       printf("OUTPUT: both branches unreachable!!! 2 %x\n", pc - entry_point);
@@ -3021,6 +3108,7 @@ void create_xor_mconstraints_lptr(uint64_t lo1, uint64_t up1, std::vector<uint64
         if (check_conditional_type_equality_or_disequality() == EQ) {
           // false
           create_input_variable_constraints_true_branch_bvt();
+          dump_all_input_variables_on_trace_true_branch_bvt_pure();
           take_branch(1, 1);
           sase_false_branchs[tc-2] = boolector_ne(btor, sase_regs[rs1], sase_regs[rs2]); // carefull
 
@@ -3028,10 +3116,12 @@ void create_xor_mconstraints_lptr(uint64_t lo1, uint64_t up1, std::vector<uint64
           boolector_push(btor, 1);
           boolector_assert(btor, boolector_eq(btor, sase_regs[rs1], sase_regs[rs2]));
           create_input_variable_constraints_false_branch_bvt();
+          dump_all_input_variables_on_trace_false_branch_bvt_pure();
           take_branch(0, 0);
         } else {
           // false
           create_input_variable_constraints_false_branch_bvt();
+          dump_all_input_variables_on_trace_false_branch_bvt_pure();
           take_branch(0, 1);
           sase_false_branchs[tc-2] = boolector_eq(btor, sase_regs[rs1], sase_regs[rs2]); // carefull
 
@@ -3039,14 +3129,17 @@ void create_xor_mconstraints_lptr(uint64_t lo1, uint64_t up1, std::vector<uint64
           boolector_push(btor, 1);
           boolector_assert(btor, boolector_ne(btor, sase_regs[rs1], sase_regs[rs2]));
           create_input_variable_constraints_true_branch_bvt();
+          dump_all_input_variables_on_trace_true_branch_bvt_pure();
           take_branch(1, 0);
         }
       } else {
         create_input_variable_constraints_true_branch_bvt();
+        dump_all_input_variables_on_trace_true_branch_bvt_pure();
         take_branch(1, 0);
       }
     } else if (false_reachable) {
       create_input_variable_constraints_false_branch_bvt();
+      dump_all_input_variables_on_trace_false_branch_bvt_pure();
       take_branch(0, 0);
     } else {
       printf("OUTPUT: both branches unreachable!!! 2 %x\n", pc - entry_point);
@@ -3143,6 +3236,7 @@ void create_xor_mconstraints_rptr(std::vector<uint64_t>& lo1_p, std::vector<uint
         if (check_conditional_type_equality_or_disequality() == EQ) {
           // false
           create_input_variable_constraints_true_branch_bvt();
+          dump_all_input_variables_on_trace_true_branch_bvt_pure();
           take_branch(1, 1);
           sase_false_branchs[tc-2] = boolector_ne(btor, sase_regs[rs1], sase_regs[rs2]); // carefull
 
@@ -3150,10 +3244,12 @@ void create_xor_mconstraints_rptr(std::vector<uint64_t>& lo1_p, std::vector<uint
           boolector_push(btor, 1);
           boolector_assert(btor, boolector_eq(btor, sase_regs[rs1], sase_regs[rs2]));
           create_input_variable_constraints_false_branch_bvt();
+          dump_all_input_variables_on_trace_false_branch_bvt_pure();
           take_branch(0, 0);
         } else {
           // false
           create_input_variable_constraints_false_branch_bvt();
+          dump_all_input_variables_on_trace_false_branch_bvt_pure();
           take_branch(0, 1);
           sase_false_branchs[tc-2] = boolector_eq(btor, sase_regs[rs1], sase_regs[rs2]); // carefull
 
@@ -3161,14 +3257,17 @@ void create_xor_mconstraints_rptr(std::vector<uint64_t>& lo1_p, std::vector<uint
           boolector_push(btor, 1);
           boolector_assert(btor, boolector_ne(btor, sase_regs[rs1], sase_regs[rs2]));
           create_input_variable_constraints_true_branch_bvt();
+          dump_all_input_variables_on_trace_true_branch_bvt_pure();
           take_branch(1, 0);
         }
       } else {
         create_input_variable_constraints_true_branch_bvt();
+        dump_all_input_variables_on_trace_true_branch_bvt_pure();
         take_branch(1, 0);
       }
     } else if (false_reachable) {
       create_input_variable_constraints_false_branch_bvt();
+      dump_all_input_variables_on_trace_false_branch_bvt_pure();
       take_branch(0, 0);
     } else {
       printf("OUTPUT: both branches unreachable!!! 2 %x\n", pc - entry_point);
@@ -3281,7 +3380,6 @@ void backtrack_sltu() {
             }
 
             path_condition.push_back(asts[tc]);
-            // most_recent_if_on_ast_trace = path_condition.back();
           } else {
             boolector_pop(btor, 1);
             boolector_assert(btor, sase_false_branchs[tc]);
@@ -3350,12 +3448,6 @@ void backtrack_sd() {
         exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
       }
     }
-
-    // if (asts[tc] != 0 && ast_trace_cnt > asts[tc] && store_trace_ptrs[asts[tc]].size() == 0) {
-    //   if (asts[tc] != zero_node && asts[tc] != one_node && most_recent_if_on_ast_trace < asts[tc]) {
-    //     ast_trace_cnt = asts[tc];
-    //   }
-    // }
   } else if (theory_types[tc] == BVT && asts[tc] != 0) {
     if (ast_nodes[asts[tc]].type == VAR) {
       if (store_trace_ptrs[asts[tc]].size() > 1) {
@@ -3867,21 +3959,24 @@ uint64_t recompute_operation(uint8_t op, uint64_t left_operand_ast_tc, uint64_t 
   }
 }
 
-uint64_t recompute_expression(uint64_t ast_tc, uint8_t theory_type) {
+uint64_t recompute_expression(uint64_t ast_tc) {
   uint64_t left_operand_ast_tc;
   uint64_t right_operand_ast_tc;
   uint64_t ast_ptr;
+  uint8_t theory_type;
 
   if (ast_nodes[ast_tc].type == VAR)
     return input_table[ast_nodes[ast_tc].right_node];
 
   if (detect_sym_operand(ast_tc) == LEFT) {
-    left_operand_ast_tc  = recompute_expression(ast_nodes[ast_tc].left_node, theory_type);
+    left_operand_ast_tc  = recompute_expression(ast_nodes[ast_tc].left_node);
     right_operand_ast_tc = ast_nodes[ast_tc].right_node;
+    theory_type = theory_type_ast_nodes[left_operand_ast_tc];
     return recompute_operation(ast_nodes[ast_tc].type, left_operand_ast_tc, right_operand_ast_tc, ast_tc, theory_type); //ast_nodes[ast_tc].left_node
   } else {
-    right_operand_ast_tc = recompute_expression(ast_nodes[ast_tc].right_node, theory_type);
+    right_operand_ast_tc = recompute_expression(ast_nodes[ast_tc].right_node);
     left_operand_ast_tc  = ast_nodes[ast_tc].left_node;
+    theory_type = theory_type_ast_nodes[right_operand_ast_tc];
     return recompute_operation(ast_nodes[ast_tc].type, left_operand_ast_tc, right_operand_ast_tc, ast_tc, theory_type); //ast_nodes[ast_tc].right_node
   }
 }
