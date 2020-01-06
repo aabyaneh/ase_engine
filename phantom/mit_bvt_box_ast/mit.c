@@ -27,6 +27,7 @@ uint64_t* mr_sds          = (uint64_t*) 0; // the tc of most recent store to a m
 
 uint32_t  VALUE_T         = 0;
 uint32_t  POINTER_T       = 1;
+uint32_t  INPUT_T         = 2;
 
 // ---------------------------------------------
 // --------------- read trace
@@ -53,6 +54,12 @@ uint8_t   SYMBOLIC            = 2;
 
 std::vector<std::vector<uint64_t> > reg_vaddrs(NUMBEROFREGISTERS); // virtual addresses of expression operands
 uint32_t* reg_vaddrs_cnts     = (uint32_t*) 0;
+
+// optimization technique
+// corrections -- constant folding
+uint8_t*  reg_hasmn;
+uint64_t* reg_addsub_corr;
+uint8_t*  reg_corr_validity;
 
 // ---------------------------------------------
 // --------------- branch evaluation
@@ -126,13 +133,12 @@ std::vector<std::vector<uint64_t> > mintervals_ups;
 uint64_t* steps = (uint64_t*) 0;
 std::vector<std::vector<uint64_t> > store_trace_ptrs;
 std::vector<std::vector<uint64_t> > involved_sym_inputs_ast_tcs;
-std::vector<uint64_t>               involved_sym_inputs_cnts;
+uint64_t*                           involved_sym_inputs_cnts;
+BoolectorNode**                     smt_exprs;
 
 // temporary data-structure to pass values targeting propagations
 std::vector<uint64_t> propagated_minterval_lo(MAX_NUM_OF_INTERVALS);
 std::vector<uint64_t> propagated_minterval_up(MAX_NUM_OF_INTERVALS);
-// uint32_t propagated_minterval_cnt = 0;
-// uint64_t propagated_minterval_step;
 
 // ---------------------------------------------
 // --------------- two level decision procedure
@@ -142,7 +148,7 @@ uint8_t  MIT = 0, BOX = 1, BVT = 2; // modular interval theory, bit vector theor
 uint8_t* theory_type_ast_nodes;
 uint8_t* reg_theory_types;
 uint8_t* theory_types;
-uint64_t mit_cnt = 0;      // number of queries handled by interval solver
+uint64_t mit_cnt = 0;      // number of queries handled by complete interval solver
 
 // smt's witness
 std::vector<const char*> true_input_assignments;
@@ -157,9 +163,17 @@ extern BoolectorNode*  one_bv;
 extern BoolectorNode** sase_false_branchs;
 extern BoolectorNode** sase_regs;         // array of pointers to SMT expressions
 extern uint64_t        two_to_the_power_of_32;
-extern BoolectorNode** symbolic_values;
+
+BoolectorNode*         boolector_null = (BoolectorNode*) 0;
+std::vector<uint64_t>  path_condition;
+uint64_t               most_recent_if_on_ast_trace = 0;
+
+// ---------------------------------------------
+// --------------- three level decision procedure
+// ---------------------------------------------
 
 uint64_t* boxes;
+uint64_t queries_reasoned_by_box = 0;      // number of queries handled by under-apprx interval solver
 
 // ------------------------- INITIALIZATION ------------------------
 
@@ -171,31 +185,48 @@ void init_symbolic_engine() {
   data_types            = (uint32_t*) malloc(MAX_TRACE_LENGTH  * sizeof(uint32_t));
   asts                  = (uint64_t*) malloc(MAX_TRACE_LENGTH  * sizeof(uint64_t));
   mr_sds                = (uint64_t*) malloc(MAX_TRACE_LENGTH  * sizeof(uint64_t));
+  theory_types          = (uint8_t*)  malloc(MAX_TRACE_LENGTH  * sizeof(uint8_t ));
 
   read_values           = (uint64_t*) malloc(MAX_TRACE_LENGTH  * sizeof(uint64_t));
   read_los              = (uint64_t*) malloc(MAX_TRACE_LENGTH  * sizeof(uint64_t));
   read_ups              = (uint64_t*) malloc(MAX_TRACE_LENGTH  * sizeof(uint64_t));
 
   reg_data_type         = (uint32_t*) zalloc(NUMBEROFREGISTERS * sizeof(uint32_t));
-  reg_symb_type         = (uint8_t*)  zalloc(NUMBEROFREGISTERS * sizeof(uint8_t));
+  reg_symb_type         = (uint8_t*)  zalloc(NUMBEROFREGISTERS * sizeof(uint8_t ));
   reg_steps             = (uint64_t*) malloc(NUMBEROFREGISTERS * sizeof(uint64_t));
   reg_mintervals_cnts   = (uint32_t*) malloc(NUMBEROFREGISTERS * sizeof(uint32_t));
   reg_vaddrs_cnts       = (uint32_t*) zalloc(NUMBEROFREGISTERS * sizeof(uint32_t));
   reg_asts              = (uint64_t*) malloc(NUMBEROFREGISTERS * sizeof(uint64_t));
+  reg_theory_types      = (uint8_t*)  zalloc(NUMBEROFREGISTERS * sizeof(uint8_t ));
+  reg_hasmn             = (uint8_t*)  zalloc(NUMBEROFREGISTERS * sizeof(uint8_t ));
+  reg_addsub_corr       = (uint64_t*) malloc(NUMBEROFREGISTERS * sizeof(uint64_t));
+  reg_corr_validity     = (uint8_t*)  zalloc(NUMBEROFREGISTERS * sizeof(uint8_t ));
 
-  steps                 = (uint64_t*)    malloc(MAX_NODE_TRACE_LENGTH  * sizeof(uint64_t));
-  ast_nodes             = (struct node*) malloc(MAX_NODE_TRACE_LENGTH  * sizeof(struct node*));
-  theory_type_ast_nodes = (uint8_t*)     malloc(MAX_NODE_TRACE_LENGTH  * sizeof(uint8_t));
-  boxes                 = (uint64_t*)    malloc(MAX_NODE_TRACE_LENGTH  * sizeof(uint64_t));
+  steps                    = (uint64_t*)       malloc(MAX_NODE_TRACE_LENGTH  * sizeof(uint64_t));
+  ast_nodes                = (struct node*)    malloc(MAX_NODE_TRACE_LENGTH  * sizeof(struct node*));
+  theory_type_ast_nodes    = (uint8_t*)        malloc(MAX_NODE_TRACE_LENGTH  * sizeof(uint8_t));
+  involved_sym_inputs_cnts = (uint64_t*)       malloc(MAX_NODE_TRACE_LENGTH  * sizeof(uint64_t));
+  smt_exprs                = (BoolectorNode**) malloc(MAX_NODE_TRACE_LENGTH  * sizeof(BoolectorNode*));
+  boxes                    = (uint64_t*)       malloc(MAX_NODE_TRACE_LENGTH  * sizeof(uint64_t));
 
   mintervals_los.resize(MAX_NODE_TRACE_LENGTH);
   mintervals_ups.resize(MAX_NODE_TRACE_LENGTH);
   store_trace_ptrs.resize(MAX_NODE_TRACE_LENGTH);
-  involved_sym_inputs_cnts.resize(MAX_NODE_TRACE_LENGTH);
   involved_sym_inputs_ast_tcs.resize(MAX_NODE_TRACE_LENGTH);
 
-  zero_node            = add_ast_node(CONST, 0, 0, 1, zero_v, zero_v, 1, 0, zero_v, MIT);
-  one_node             = add_ast_node(CONST, 0, 0, 1, one_v , one_v , 1, 0, zero_v, MIT);
+  // boolector smt solver
+  btor        = boolector_new();
+  bv_sort     = boolector_bitvec_sort(btor, 64);
+  boolector_set_opt(btor, BTOR_OPT_INCREMENTAL, 1);
+  boolector_set_opt(btor, BTOR_OPT_MODEL_GEN, 1);
+  zero_bv     = boolector_unsigned_int(btor, 0, bv_sort);
+  one_bv      = boolector_unsigned_int(btor, 1, bv_sort);
+
+  sase_regs             = (BoolectorNode**) malloc(NUMBEROFREGISTERS * sizeof(BoolectorNode*));
+  sase_false_branchs    = (BoolectorNode**) malloc(MAX_TRACE_LENGTH  * sizeof(BoolectorNode*));
+
+  zero_node            = add_ast_node(CONST, 0, 0, 1, zero_v, zero_v, 1, 0, zero_v, MIT, boolector_null);
+  one_node             = add_ast_node(CONST, 0, 0, 1, one_v , one_v , 1, 0, zero_v, MIT, boolector_null);
   reg_asts[REG_ZR]     = zero_node;
   // reg_asts[REG_FP]     = zero_node;
 
@@ -209,44 +240,32 @@ void init_symbolic_engine() {
     reg_vaddrs[i].resize(MAX_NUM_OF_OP_VADDRS);
   }
 
+  input_table.reserve(1000);
+
   pcs[0]             = 0;
   tcs[0]             = 0;
+  vaddrs[0]          = 0;
   values[0]          = 0;
   data_types[0]      = 0;
-  steps[0]           = 0;
-  vaddrs[0]          = 0;
   asts[0]            = 0;
   mr_sds[0]          = 0;
+  theory_types[0]    = 0;
+  steps[0]           = 0;
+  smt_exprs[0]       = boolector_null;
+  involved_sym_inputs_cnts[0] = 0;
+  theory_type_ast_nodes[0]    = 0;
 
   mintervals_los[0].push_back(0);
   mintervals_ups[0].push_back(0);
 
   TWO_TO_THE_POWER_OF_64 = UINT64_MAX_VALUE + 1U;
+  two_to_the_power_of_32 = 4294967296ULL;
 
   if (IS_TEST_MODE) {
     std::string test_output = reinterpret_cast<const char*>(binary_name);
     test_output += ".result";
     output_results.open(test_output, std::ofstream::trunc);
   }
-
-  input_table.reserve(1000);
-
-  btor        = boolector_new();
-  bv_sort     = boolector_bitvec_sort(btor, 64);
-  boolector_set_opt(btor, BTOR_OPT_INCREMENTAL, 1);
-  boolector_set_opt(btor, BTOR_OPT_MODEL_GEN, 1);
-  zero_bv     = boolector_unsigned_int(btor, 0, bv_sort);
-  one_bv      = boolector_unsigned_int(btor, 1, bv_sort);
-
-  sase_regs             = (BoolectorNode**) malloc(sizeof(BoolectorNode*) * NUMBEROFREGISTERS);
-  sase_false_branchs    = (BoolectorNode**) malloc(MAX_TRACE_LENGTH  * sizeof(BoolectorNode*));
-  symbolic_values       = (BoolectorNode**) malloc(MAX_TRACE_LENGTH  * sizeof(BoolectorNode*));
-  theory_types          = (uint8_t*)        malloc(MAX_TRACE_LENGTH  * sizeof(uint8_t)       );
-  reg_theory_types      = (uint8_t*)        malloc(NUMBEROFREGISTERS * sizeof(uint8_t)       );
-  sase_regs[REG_ZR]     = zero_bv;
-  symbolic_values[0]    = zero_bv;
-
-  two_to_the_power_of_32 = 4294967296UL;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -365,6 +384,31 @@ uint64_t compute_lower_bound(uint64_t lo, uint64_t step, uint64_t value) {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+//                                corrections
+////////////////////////////////////////////////////////////////////////////////
+
+void set_correction(uint64_t reg, uint8_t hasmn, uint64_t addsub_corr, uint8_t corr_validity) {
+  reg_hasmn[reg]          = hasmn;
+  reg_addsub_corr[reg]    = addsub_corr;
+  reg_corr_validity[reg]  = corr_validity;
+}
+
+void create_ast_node_entry_for_accumulated_corr(uint64_t sym_reg) {
+  value_v[0] = reg_addsub_corr[sym_reg];
+  uint64_t crt_ptr = add_ast_node(CONST, 0, 0, 1, value_v, value_v, 1, 0, zero_v, MIT, boolector_null);
+  if (reg_hasmn[sym_reg]) {
+    reg_asts[sym_reg] = add_ast_node(SUB, crt_ptr, reg_asts[sym_reg], reg_mintervals_cnts[sym_reg], reg_mintervals_los[sym_reg], reg_mintervals_ups[sym_reg], reg_steps[sym_reg], reg_vaddrs_cnts[sym_reg], reg_vaddrs[sym_reg], reg_theory_types[sym_reg], sase_regs[sym_reg]);
+  } else {
+    reg_asts[sym_reg] = add_ast_node(ADD, crt_ptr, reg_asts[sym_reg], reg_mintervals_cnts[sym_reg], reg_mintervals_los[sym_reg], reg_mintervals_ups[sym_reg], reg_steps[sym_reg], reg_vaddrs_cnts[sym_reg], reg_vaddrs[sym_reg], reg_theory_types[sym_reg], sase_regs[sym_reg]);
+  }
+}
+
+void create_crt_operand_ast_node_entry(uint64_t crt_reg) {
+  value_v[0]        = reg_mintervals_los[crt_reg][0];
+  reg_asts[crt_reg] = add_ast_node(CONST, 0, 0, 1, value_v, value_v, 1, 0, zero_v, MIT, sase_regs[crt_reg]);
+}
+
+////////////////////////////////////////////////////////////////////////////////
 //                                operations
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -378,10 +422,12 @@ void constrain_lui() {
     reg_mintervals_cnts[rd]   = 1;
     reg_steps[rd]             = 1;
     reg_vaddrs_cnts[rd]       = 0;
-    reg_asts[rd]              = add_ast_node(CONST, 0, 0, 1, reg_mintervals_los[rd], reg_mintervals_ups[rd], 1, 0, zero_v, MIT);
+    reg_asts[rd]              = 0;
 
-    sase_regs[rd]             = (imm << 12 < two_to_the_power_of_32) ? boolector_unsigned_int(btor, imm << 12, bv_sort) : boolector_unsigned_int_64(imm << 12);
+    sase_regs[rd]             = boolector_null;
     reg_theory_types[rd]      = MIT;
+
+    set_correction(rd, 0, 0, 0);
   }
 }
 
@@ -401,10 +447,10 @@ void constrain_addi() {
     reg_vaddrs_cnts[rd]       = 0;
     reg_asts[rd]              = 0;
 
-    // cannot be ""(BoolectorNode*) 0", because of first binary lines which calls malloc with 0 as argument
-    // pcs: 0x10 to 0x20
-    sase_regs[rd]             = sase_regs[rs1];
+    sase_regs[rd]             = boolector_null;
     reg_theory_types[rd]      = MIT;
+
+    set_correction(rd, 0, 0, 0);
 
     return;
   }
@@ -415,6 +461,8 @@ void constrain_addi() {
     // rd inherits rs1 constraint
     reg_symb_type[rd] = SYMBOLIC;
 
+    sase_regs[rd] = boolector_null;
+
     for (uint32_t i = 0; i < reg_mintervals_cnts[rs1]; i++) {
       reg_mintervals_los[rd][i] = reg_mintervals_los[rs1][i] + imm;
       reg_mintervals_ups[rd][i] = reg_mintervals_ups[rs1][i] + imm;
@@ -423,30 +471,30 @@ void constrain_addi() {
     reg_steps[rd]           = reg_steps[rs1];
     set_vaddrs(rd, reg_vaddrs[rs1], 0, reg_vaddrs_cnts[rs1]);
 
-    value_v[0] = imm; crt_ptr = add_ast_node(CONST, 0, 0, 1, value_v, value_v, 1, 0, zero_v, MIT);
-    reg_asts[rd] = add_ast_node(ADD, reg_asts[rs1], crt_ptr, reg_mintervals_cnts[rd], reg_mintervals_los[rd], reg_mintervals_ups[rd], reg_steps[rd], reg_vaddrs_cnts[rd], reg_vaddrs[rd], reg_theory_types[rs1]);
-
-    sase_regs[rd] = (imm < two_to_the_power_of_32) ? boolector_add(btor, sase_regs[rs1], boolector_unsigned_int(btor, imm, bv_sort)) : boolector_add(btor, sase_regs[rs1], boolector_unsigned_int_64(imm));
     reg_theory_types[rd] = reg_theory_types[rs1];
 
+    if (reg_corr_validity[rs1] == 0) {
+      set_correction(rd, reg_hasmn[rs1], reg_addsub_corr[rs1] + imm, 0);
+      reg_asts[rd] = reg_asts[rs1];
+    } else {
+      set_correction(rd, 0, 0, 1);
+      value_v[0] = imm; crt_ptr = add_ast_node(CONST, 0, 0, 1, value_v, value_v, 1, 0, zero_v, MIT, boolector_null);
+      reg_asts[rd] = add_ast_node(ADD, reg_asts[rs1], crt_ptr, reg_mintervals_cnts[rd], reg_mintervals_los[rd], reg_mintervals_ups[rd], reg_steps[rd], reg_vaddrs_cnts[rd], reg_vaddrs[rd], reg_theory_types[rd], sase_regs[rd]);
+    }
+
   } else {
+    sase_regs[rd] = boolector_null;
+
     reg_symb_type[rd]         = CONCRETE;
     reg_mintervals_los[rd][0] = reg_mintervals_los[rs1][0] + imm;
     reg_mintervals_ups[rd][0] = reg_mintervals_los[rd][0];
     reg_mintervals_cnts[rd]   = 1;
     reg_steps[rd]             = 1;
     reg_vaddrs_cnts[rd]       = 0;
+    reg_theory_types[rd]      = MIT;
+    reg_asts[rd]              = 0;
 
-    if (is_system_register(rs1))
-      reg_asts[rd]            = 0;
-    else {
-      reg_asts[rd]            = add_ast_node(CONST, 0, 0, 1, reg_mintervals_los[rd], reg_mintervals_los[rd], 1, 0, zero_v, MIT);
-
-      // sase_regs[rd] = (reg_mintervals_los[rd][0] < two_to_the_power_of_32) ? boolector_unsigned_int(btor, reg_mintervals_los[rd][0], bv_sort) : boolector_unsigned_int_64(reg_mintervals_los[rd][0]);
-      sase_regs[rd] = (imm < two_to_the_power_of_32) ? boolector_add(btor, sase_regs[rs1], boolector_unsigned_int(btor, imm, bv_sort)) : boolector_add(btor, sase_regs[rs1], boolector_unsigned_int_64(imm));
-    }
-
-    reg_theory_types[rd] = MIT;
+    set_correction(rd, 0, 0, 0);
   }
 }
 
@@ -467,8 +515,10 @@ bool constrain_add_pointer() {
     reg_vaddrs_cnts[rd]       = 0;
     reg_asts[rd]              = 0;
 
-    sase_regs[rd]             = (BoolectorNode*) 0;
+    sase_regs[rd]             = boolector_null;
     reg_theory_types[rd]      = MIT;
+
+    set_correction(rd, 0, 0, 0);
 
     return 1;
   } else if (reg_data_type[rs2] == POINTER_T) {
@@ -481,8 +531,10 @@ bool constrain_add_pointer() {
     reg_vaddrs_cnts[rd]       = 0;
     reg_asts[rd]              = 0;
 
-    sase_regs[rd]             = (BoolectorNode*) 0;
+    sase_regs[rd]             = boolector_null;
     reg_theory_types[rd]      = MIT;
+
+    set_correction(rd, 0, 0, 0);
 
     return 1;
   }
@@ -500,6 +552,8 @@ void constrain_add() {
 
     reg_data_type[rd] = VALUE_T;
 
+    sase_regs[rd] = boolector_null;
+
     // interval semantics of add
     if (reg_symb_type[rs1] == SYMBOLIC) {
       if (reg_symb_type[rs2] == SYMBOLIC) {
@@ -508,6 +562,14 @@ void constrain_add() {
         uint32_t rd_addr_idx = reg_vaddrs_cnts[rs1] + reg_vaddrs_cnts[rs2];
         set_vaddrs(rd, reg_vaddrs[rs1], 0, reg_vaddrs_cnts[rs1]);
         set_vaddrs(rd, reg_vaddrs[rs2], reg_vaddrs_cnts[rs1], rd_addr_idx);
+
+        if (reg_addsub_corr[rs1] || reg_hasmn[rs1]) {
+          create_ast_node_entry_for_accumulated_corr(rs1);
+        }
+        if (reg_addsub_corr[rs2] || reg_hasmn[rs2]) {
+          create_ast_node_entry_for_accumulated_corr(rs2);
+        }
+        set_correction(rd, 0, 0, 1);
 
         // interval semantics of add
         uint64_t gcd_steps = gcd(reg_steps[rs1], reg_steps[rs2]);
@@ -546,10 +608,11 @@ void constrain_add() {
         reg_mintervals_cnts[rd] = mul_lo_rd.size();
         reg_steps[rd]           = gcd_steps;
         reg_theory_types[rd]    = BVT; // TODO
-        reg_asts[rd] = add_ast_node(ADD, reg_asts[rs1], reg_asts[rs2], reg_mintervals_cnts[rd], reg_mintervals_los[rd], reg_mintervals_ups[rd], reg_steps[rd], reg_vaddrs_cnts[rd], reg_vaddrs[rd], reg_theory_types[rd]);
+        reg_asts[rd] = add_ast_node(ADD, reg_asts[rs1], reg_asts[rs2], reg_mintervals_cnts[rd], reg_mintervals_los[rd], reg_mintervals_ups[rd], reg_steps[rd], reg_vaddrs_cnts[rd], reg_vaddrs[rd], reg_theory_types[rd], sase_regs[rd]);
 
       } else {
         // rd inherits rs1 constraint since rs2 has none
+        uint64_t addend = reg_mintervals_los[rs2][0];
         reg_symb_type[rd] = SYMBOLIC;
 
         set_vaddrs(rd, reg_vaddrs[rs1], 0, reg_vaddrs_cnts[rs1]);
@@ -561,11 +624,19 @@ void constrain_add() {
         reg_mintervals_cnts[rd] = reg_mintervals_cnts[rs1];
         reg_steps[rd]           = reg_steps[rs1];
         reg_theory_types[rd]    = reg_theory_types[rs1];
-        reg_asts[rd] = add_ast_node(ADD, reg_asts[rs1], reg_asts[rs2], reg_mintervals_cnts[rd], reg_mintervals_los[rd], reg_mintervals_ups[rd], reg_steps[rd], reg_vaddrs_cnts[rd], reg_vaddrs[rd], reg_theory_types[rd]);
+
+        if (reg_corr_validity[rs1] == 0) {
+          set_correction(rd, reg_hasmn[rs1], reg_addsub_corr[rs1] + addend, 0);
+          reg_asts[rd] = reg_asts[rs1];
+        } else {
+          set_correction(rd, 0, 0, 1);
+          reg_asts[rd] = add_ast_node(ADD, reg_asts[rs1], reg_asts[rs2], reg_mintervals_cnts[rd], reg_mintervals_los[rd], reg_mintervals_ups[rd], reg_steps[rd], reg_vaddrs_cnts[rd], reg_vaddrs[rd], reg_theory_types[rd], sase_regs[rd]);
+        }
       }
 
     } else if (reg_symb_type[rs2] == SYMBOLIC) {
       // rd inherits rs2 constraint since rs1 has none
+      uint64_t addend = reg_mintervals_los[rs1][0];
       reg_symb_type[rd] = SYMBOLIC;
 
       set_vaddrs(rd, reg_vaddrs[rs2], 0, reg_vaddrs_cnts[rs2]);
@@ -577,7 +648,14 @@ void constrain_add() {
       reg_mintervals_cnts[rd] = reg_mintervals_cnts[rs2];
       reg_steps[rd]           = reg_steps[rs2];
       reg_theory_types[rd]    = reg_theory_types[rs2];
-      reg_asts[rd] = add_ast_node(ADD, reg_asts[rs1], reg_asts[rs2], reg_mintervals_cnts[rd], reg_mintervals_los[rd], reg_mintervals_ups[rd], reg_steps[rd], reg_vaddrs_cnts[rd], reg_vaddrs[rd], reg_theory_types[rd]);
+
+      if (reg_corr_validity[rs2] == 0) {
+        set_correction(rd, reg_hasmn[rs2], reg_addsub_corr[rs2] + addend, 0);
+        reg_asts[rd] = reg_asts[rs2];
+      } else {
+        set_correction(rd, 0, 0, 1);
+        reg_asts[rd] = add_ast_node(ADD, reg_asts[rs1], reg_asts[rs2], reg_mintervals_cnts[rd], reg_mintervals_los[rd], reg_mintervals_ups[rd], reg_steps[rd], reg_vaddrs_cnts[rd], reg_vaddrs[rd], reg_theory_types[rd], sase_regs[rd]);
+      }
 
     } else {
       // rd has no constraint if both rs1 and rs2 have no constraints
@@ -588,13 +666,10 @@ void constrain_add() {
       reg_steps[rd]             = 1;
       reg_vaddrs_cnts[rd]       = 0;
       reg_theory_types[rd]      = MIT;
-      if (is_system_register(rs1))
-        reg_asts[rd]            = 0;
-      else
-        reg_asts[rd]            = add_ast_node(CONST, 0, 0, 1, reg_mintervals_los[rd], reg_mintervals_los[rd], 1, 0, zero_v, reg_theory_types[rd]);
-    }
+      reg_asts[rd]              = 0;
 
-    sase_regs[rd] = boolector_add(btor, sase_regs[rs1], sase_regs[rs2]);
+      set_correction(rd, 0, 0, 0);
+    }
   }
 }
 
@@ -614,6 +689,8 @@ bool constrain_sub_pointer() {
 
           sase_regs[rd]             = (BoolectorNode*) 0;
           reg_theory_types[rd]      = MIT;
+
+          set_correction(rd, 0, 0, 0);
 
           return 1;
         }
@@ -636,6 +713,8 @@ bool constrain_sub_pointer() {
       sase_regs[rd]             = (BoolectorNode*) 0;
       reg_theory_types[rd]      = MIT;
 
+      set_correction(rd, 0, 0, 0);
+
       return 1;
     }
   } else if (reg_data_type[rs2] == POINTER_T) {
@@ -650,6 +729,8 @@ bool constrain_sub_pointer() {
 
     sase_regs[rd]             = (BoolectorNode*) 0;
     reg_theory_types[rd]      = MIT;
+
+    set_correction(rd, 0, 0, 0);
 
     return 1;
   }
@@ -668,6 +749,8 @@ void constrain_sub() {
 
     reg_data_type[rd] = VALUE_T;
 
+    sase_regs[rd] = boolector_null;
+
     // interval semantics of sub
     if (reg_symb_type[rs1] == SYMBOLIC) {
       if (reg_symb_type[rs2] == SYMBOLIC) {
@@ -676,6 +759,14 @@ void constrain_sub() {
         uint32_t rd_addr_idx = reg_vaddrs_cnts[rs1] + reg_vaddrs_cnts[rs2];
         set_vaddrs(rd, reg_vaddrs[rs1], 0, reg_vaddrs_cnts[rs1]);
         set_vaddrs(rd, reg_vaddrs[rs2], reg_vaddrs_cnts[rs1], rd_addr_idx);
+
+        if (reg_addsub_corr[rs1] || reg_hasmn[rs1]) {
+          create_ast_node_entry_for_accumulated_corr(rs1);
+        }
+        if (reg_addsub_corr[rs2] || reg_hasmn[rs2]) {
+          create_ast_node_entry_for_accumulated_corr(rs2);
+        }
+        set_correction(rd, 0, 0, 1);
 
         if (reg_mintervals_cnts[rs1] > 1 || reg_mintervals_cnts[rs2] > 1) {
           printf("OUTPUT: unsupported mintervals in sub at %x \n", pc - entry_point);
@@ -701,10 +792,11 @@ void constrain_sub() {
         reg_mintervals_cnts[rd]   = 1;
         reg_steps[rd]             = gcd_steps;
         reg_theory_types[rd]      = BVT; // TODO
-        reg_asts[rd]              = add_ast_node(SUB, reg_asts[rs1], reg_asts[rs2], reg_mintervals_cnts[rd], reg_mintervals_los[rd], reg_mintervals_ups[rd], reg_steps[rd], reg_vaddrs_cnts[rd], reg_vaddrs[rd], reg_theory_types[rd]);
+        reg_asts[rd]              = add_ast_node(SUB, reg_asts[rs1], reg_asts[rs2], reg_mintervals_cnts[rd], reg_mintervals_los[rd], reg_mintervals_ups[rd], reg_steps[rd], reg_vaddrs_cnts[rd], reg_vaddrs[rd], reg_theory_types[rd], sase_regs[rd]);
 
       } else {
         // rd inherits rs1 constraint since rs2 has none
+        uint64_t subend = reg_mintervals_los[rs2][0];
         reg_symb_type[rd] = SYMBOLIC;
 
         set_vaddrs(rd, reg_vaddrs[rs1], 0, reg_vaddrs_cnts[rs1]);
@@ -718,9 +810,17 @@ void constrain_sub() {
         reg_mintervals_cnts[rd] = reg_mintervals_cnts[rs1];
         reg_steps[rd]           = reg_steps[rs1];
         reg_theory_types[rd]    = reg_theory_types[rs1];
-        reg_asts[rd]            = add_ast_node(SUB, reg_asts[rs1], reg_asts[rs2], reg_mintervals_cnts[rd], reg_mintervals_los[rd], reg_mintervals_ups[rd], reg_steps[rd], reg_vaddrs_cnts[rd], reg_vaddrs[rd], reg_theory_types[rd]);
+
+        if (reg_corr_validity[rs1] == 0) {
+          set_correction(rd, reg_hasmn[rs1], reg_addsub_corr[rs1] - subend, 0);
+          reg_asts[rd] = reg_asts[rs1];
+        } else {
+          set_correction(rd, 0, 0, 1);
+          reg_asts[rd]            = add_ast_node(SUB, reg_asts[rs1], reg_asts[rs2], reg_mintervals_cnts[rd], reg_mintervals_los[rd], reg_mintervals_ups[rd], reg_steps[rd], reg_vaddrs_cnts[rd], reg_vaddrs[rd], reg_theory_types[rd], sase_regs[rd]);
+        }
       }
     } else if (reg_symb_type[rs2] == SYMBOLIC) {
+      uint64_t subend = reg_mintervals_los[rs1][0];
       reg_symb_type[rd] = SYMBOLIC;
 
       set_vaddrs(rd, reg_vaddrs[rs2], 0, reg_vaddrs_cnts[rs2]);
@@ -735,7 +835,20 @@ void constrain_sub() {
       reg_mintervals_cnts[rd] = reg_mintervals_cnts[rs2];
       reg_steps[rd]           = reg_steps[rs2];
       reg_theory_types[rd]    = reg_theory_types[rs2];
-      reg_asts[rd]            = add_ast_node(SUB, reg_asts[rs1], reg_asts[rs2], reg_mintervals_cnts[rd], reg_mintervals_los[rd], reg_mintervals_ups[rd], reg_steps[rd], reg_vaddrs_cnts[rd], reg_vaddrs[rd], reg_theory_types[rd]);
+
+      if (reg_corr_validity[rs2] == 0) {
+        if (reg_hasmn[rs2]) {
+          // rs2 constraint has already minuend and can have another minuend
+          set_correction(rd, 0, subend - reg_addsub_corr[rs2], 0);
+        } else {
+          // rd inherits rs2 constraint since rs1 has none
+          set_correction(rd, 1, subend - reg_addsub_corr[rs2], 0);
+        }
+        reg_asts[rd] = reg_asts[rs2];
+      } else {
+        set_correction(rd, 0, 0, 1);
+        reg_asts[rd]            = add_ast_node(SUB, reg_asts[rs1], reg_asts[rs2], reg_mintervals_cnts[rd], reg_mintervals_los[rd], reg_mintervals_ups[rd], reg_steps[rd], reg_vaddrs_cnts[rd], reg_vaddrs[rd], reg_theory_types[rd], sase_regs[rd]);
+      }
 
     } else {
       // rd has no constraint if both rs1 and rs2 have no constraints
@@ -746,10 +859,10 @@ void constrain_sub() {
       reg_steps[rd]             = 1;
       reg_vaddrs_cnts[rd]       = 0;
       reg_theory_types[rd]      = MIT;
-      reg_asts[rd]              = add_ast_node(CONST, 0, 0, 1, reg_mintervals_los[rd], reg_mintervals_ups[rd], 1, 0, zero_v, reg_theory_types[rd]);
-    }
+      reg_asts[rd]              = 0;
 
-    sase_regs[rd] = boolector_sub(btor, sase_regs[rs1], sase_regs[rs2]);
+      set_correction(rd, 0, 0, 0);
+    }
   }
 }
 
@@ -762,6 +875,8 @@ void constrain_mul() {
   if (rd != REG_ZR) {
     reg_data_type[rd] = VALUE_T;
 
+    sase_regs[rd] = boolector_null;
+
     // interval semantics of mul
     if (reg_symb_type[rs1] == SYMBOLIC) {
       if (reg_symb_type[rs2] == SYMBOLIC) {
@@ -772,6 +887,16 @@ void constrain_mul() {
       } else {
         // rd inherits rs1 constraint since rs2 has none
         // assert: rs2 interval is singleton
+
+        if (reg_addsub_corr[rs1] || reg_hasmn[rs1]) {
+          create_ast_node_entry_for_accumulated_corr(rs1);
+          // now reg_asts[rs1] is updated
+        }
+        if (reg_asts[rs2] == 0) {
+          create_crt_operand_ast_node_entry(rs2);
+        }
+        set_correction(rd, 0, 0, 1);
+
         reg_symb_type[rd] = SYMBOLIC;
 
         set_vaddrs(rd, reg_vaddrs[rs1], 0, reg_vaddrs_cnts[rs1]);
@@ -801,12 +926,22 @@ void constrain_mul() {
         reg_mintervals_cnts[rd] = mul_lo_rd.size();
         reg_steps[rd]           = reg_steps[rs1] * multiplier;
         reg_theory_types[rd]    = reg_theory_types[rs1];
-        reg_asts[rd]            = add_ast_node(MUL, reg_asts[rs1], reg_asts[rs2], reg_mintervals_cnts[rd], reg_mintervals_los[rd], reg_mintervals_ups[rd], reg_steps[rd], reg_vaddrs_cnts[rd], reg_vaddrs[rd], reg_theory_types[rd]);
+        reg_asts[rd]            = add_ast_node(MUL, reg_asts[rs1], reg_asts[rs2], reg_mintervals_cnts[rd], reg_mintervals_los[rd], reg_mintervals_ups[rd], reg_steps[rd], reg_vaddrs_cnts[rd], reg_vaddrs[rd], reg_theory_types[rd], sase_regs[rd]);
       }
 
     } else if (reg_symb_type[rs2] == SYMBOLIC) {
       // rd inherits rs2 constraint since rs1 has none
       // assert: rs1 interval is singleton
+
+      if (reg_addsub_corr[rs2] || reg_hasmn[rs2]) {
+        create_ast_node_entry_for_accumulated_corr(rs2);
+        // now reg_asts[rs2] is updated
+      }
+      if (reg_asts[rs1] == 0) {
+        create_crt_operand_ast_node_entry(rs1);
+      }
+      set_correction(rd, 0, 0, 1);
+
       reg_symb_type[rd] = SYMBOLIC;
 
       set_vaddrs(rd, reg_vaddrs[rs2], 0, reg_vaddrs_cnts[rs2]);
@@ -836,7 +971,7 @@ void constrain_mul() {
       reg_mintervals_cnts[rd] = mul_lo_rd.size();
       reg_steps[rd]           = reg_steps[rs2] * multiplier;
       reg_theory_types[rd]    = reg_theory_types[rs2];
-      reg_asts[rd]            = add_ast_node(MUL, reg_asts[rs1], reg_asts[rs2], reg_mintervals_cnts[rd], reg_mintervals_los[rd], reg_mintervals_ups[rd], reg_steps[rd], reg_vaddrs_cnts[rd], reg_vaddrs[rd], reg_theory_types[rd]);
+      reg_asts[rd]            = add_ast_node(MUL, reg_asts[rs1], reg_asts[rs2], reg_mintervals_cnts[rd], reg_mintervals_los[rd], reg_mintervals_ups[rd], reg_steps[rd], reg_vaddrs_cnts[rd], reg_vaddrs[rd], reg_theory_types[rd], sase_regs[rd]);
 
     } else {
       // rd has no constraint if both rs1 and rs2 have no constraints
@@ -847,10 +982,10 @@ void constrain_mul() {
       reg_steps[rd]             = 1;
       reg_vaddrs_cnts[rd]       = 0;
       reg_theory_types[rd]      = MIT;
-      reg_asts[rd]              = add_ast_node(CONST, 0, 0, 1, reg_mintervals_los[rd], reg_mintervals_ups[rd], 1, 0, zero_v, reg_theory_types[rd]);
-    }
+      reg_asts[rd]              = 0;
 
-    sase_regs[rd] = boolector_mul(btor, sase_regs[rs1], sase_regs[rs2]);
+      set_correction(rd, 0, 0, 0);
+    }
   }
 }
 
@@ -870,6 +1005,8 @@ void constrain_divu() {
           exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
         }
 
+        sase_regs[rd] = boolector_null;
+
         // interval semantics of divu
         div_lo = reg_mintervals_los[rs1][0] / reg_mintervals_ups[rs2][0];
         div_up = reg_mintervals_ups[rs1][0] / reg_mintervals_los[rs2][0];
@@ -884,6 +1021,16 @@ void constrain_divu() {
           } else {
             // rd inherits rs1 constraint since rs2 has none
             // assert: rs2 interval is singleton
+
+            if (reg_addsub_corr[rs1] || reg_hasmn[rs1]) {
+              create_ast_node_entry_for_accumulated_corr(rs1);
+              // now reg_asts[rs1] is updated
+            }
+            if (reg_asts[rs2] == 0) {
+              create_crt_operand_ast_node_entry(rs2);
+            }
+            set_correction(rd, 0, 0, 1);
+
             reg_symb_type[rd] = SYMBOLIC;
 
             set_vaddrs(rd, reg_vaddrs[rs1], 0, reg_vaddrs_cnts[rs1]);
@@ -926,7 +1073,7 @@ void constrain_divu() {
           }
 
           reg_theory_types[rd]    = reg_theory_types[rs1];
-          reg_asts[rd] = add_ast_node(DIVU, reg_asts[rs1], reg_asts[rs2], reg_mintervals_cnts[rd], reg_mintervals_los[rd], reg_mintervals_ups[rd], reg_steps[rd], reg_vaddrs_cnts[rd], reg_vaddrs[rd], reg_theory_types[rd]);
+          reg_asts[rd] = add_ast_node(DIVU, reg_asts[rs1], reg_asts[rs2], reg_mintervals_cnts[rd], reg_mintervals_los[rd], reg_mintervals_ups[rd], reg_steps[rd], reg_vaddrs_cnts[rd], reg_vaddrs[rd], reg_theory_types[rd], sase_regs[rd]);
 
         } else if (reg_symb_type[rs2] == SYMBOLIC) {
           printf("OUTPUT: detected division of constant by interval at %x\n", pc - entry_point);
@@ -941,10 +1088,10 @@ void constrain_divu() {
           reg_steps[rd]             = 1;
           reg_vaddrs_cnts[rd]       = 0;
           reg_theory_types[rd]      = MIT;
-          reg_asts[rd] = add_ast_node(CONST, 0, 0, 1, reg_mintervals_los[rd], reg_mintervals_ups[rd], 1, 0, zero_v, reg_theory_types[rd]);
-        }
+          reg_asts[rd]              = 0;
 
-        sase_regs[rd] = boolector_udiv(btor, sase_regs[rs1], sase_regs[rs2]);
+          set_correction(rd, 0, 0, 0);
+        }
       }
     } else
       throw_exception(EXCEPTION_DIVISIONBYZERO, 0);
@@ -977,7 +1124,18 @@ void constrain_remu() {
 
   reg_data_type[rd] = VALUE_T;
 
+  sase_regs[rd] = boolector_null;
+
   if (reg_symb_type[rs1] == SYMBOLIC) {
+
+    if (reg_addsub_corr[rs1] || reg_hasmn[rs1]) {
+      create_ast_node_entry_for_accumulated_corr(rs1);
+      // now reg_asts[rs1] is updated
+    }
+    if (reg_asts[rs2] == 0) {
+      create_crt_operand_ast_node_entry(rs2);
+    }
+    set_correction(rd, 0, 0, 1);
 
     reg_symb_type[rd] = SYMBOLIC;
 
@@ -1032,7 +1190,7 @@ void constrain_remu() {
     reg_mintervals_ups[rd][0] = rem_up;
     reg_mintervals_cnts[rd]   = 1;
     reg_theory_types[rd]      = reg_theory_types[rs1];
-    reg_asts[rd] = add_ast_node(REMU, reg_asts[rs1], reg_asts[rs2], reg_mintervals_cnts[rd], reg_mintervals_los[rd], reg_mintervals_ups[rd], reg_steps[rd], reg_vaddrs_cnts[rd], reg_vaddrs[rd], reg_theory_types[rd]);
+    reg_asts[rd] = add_ast_node(REMU, reg_asts[rs1], reg_asts[rs2], reg_mintervals_cnts[rd], reg_mintervals_los[rd], reg_mintervals_ups[rd], reg_steps[rd], reg_vaddrs_cnts[rd], reg_vaddrs[rd], reg_theory_types[rd], sase_regs[rd]);
 
   } else {
     // rd has no constraint if both rs1 and rs2 have no constraints
@@ -1043,10 +1201,10 @@ void constrain_remu() {
     reg_steps[rd]             = 1;
     reg_vaddrs_cnts[rd]       = 0;
     reg_theory_types[rd]      = MIT;
-    reg_asts[rd] = add_ast_node(CONST, 0, 0, 1, reg_mintervals_los[rd], reg_mintervals_ups[rd], 1, 0, zero_v, reg_theory_types[rd]);
-  }
+    reg_asts[rd]              = 0;
 
-  sase_regs[rd] = boolector_urem(btor, sase_regs[rs1], sase_regs[rs2]);
+    set_correction(rd, 0, 0, 0);
+  }
 }
 
 void constrain_sltu() {
@@ -1064,7 +1222,7 @@ void constrain_sltu() {
       reg_vaddrs_cnts[rd]       = 0;
       reg_asts[rd]              = (registers[rd] == 0) ? zero_node : one_node;
 
-      sase_regs[rd]             = (registers[rd] == 0) ? zero_bv : one_bv;
+      sase_regs[rd]             = (registers[rd] == 0) ? smt_exprs[zero_node] : smt_exprs[one_node];
       reg_theory_types[rd]      = MIT;
 
       is_only_one_branch_reachable = true;
@@ -1077,11 +1235,18 @@ void constrain_sltu() {
 
     is_only_one_branch_reachable = false;
 
-    // if (reg_symb_type[rs1])
-    //   tc_before_branch_evaluation_rs1 = load_symbolic_memory(pt, reg_vaddrs[rs1][0]);
-    //
-    // if (reg_symb_type[rs2])
-    //   tc_before_branch_evaluation_rs2 = load_symbolic_memory(pt, reg_vaddrs[rs2][0]);
+    if (reg_addsub_corr[rs1] || reg_hasmn[rs1]) {
+      create_ast_node_entry_for_accumulated_corr(rs1);
+      // now reg_asts[rs1] is updated
+    } else if (reg_asts[rs1] == 0 && reg_symb_type[rs1] == CONCRETE) {
+      create_crt_operand_ast_node_entry(rs1);
+    }
+    if (reg_addsub_corr[rs2] || reg_hasmn[rs2]) {
+      create_ast_node_entry_for_accumulated_corr(rs2);
+      // now reg_asts[rs1] is updated
+    } else if (reg_asts[rs2] == 0 && reg_symb_type[rs2] == CONCRETE) {
+      create_crt_operand_ast_node_entry(rs2);
+    }
 
     input_table_ast_tcs_before_branch_evaluation.clear();
     for (size_t i = 0; i < input_table.size(); i++) {
@@ -1120,7 +1285,7 @@ void constrain_xor() {
     reg_vaddrs_cnts[rd]       = 0;
     reg_asts[rd]              = (registers[rd] == 0) ? zero_node : one_node;
 
-    sase_regs[rd]             = (registers[rd] == 0) ? zero_bv : one_bv;
+    sase_regs[rd]             = (registers[rd] == 0) ? smt_exprs[zero_node] : smt_exprs[one_node];
     reg_theory_types[rd]      = MIT;
 
     is_only_one_branch_reachable = true;
@@ -1133,11 +1298,18 @@ void constrain_xor() {
 
   is_only_one_branch_reachable = false;
 
-  // if (reg_symb_type[rs1])
-  //   tc_before_branch_evaluation_rs1 = load_symbolic_memory(pt, reg_vaddrs[rs1][0]);
-  //
-  // if (reg_symb_type[rs2])
-  //   tc_before_branch_evaluation_rs2 = load_symbolic_memory(pt, reg_vaddrs[rs2][0]);
+  if (reg_addsub_corr[rs1] || reg_hasmn[rs1]) {
+    create_ast_node_entry_for_accumulated_corr(rs1);
+    // now reg_asts[rs1] is updated
+  } else if (reg_asts[rs1] == 0 && reg_symb_type[rs1] == CONCRETE) {
+    create_crt_operand_ast_node_entry(rs1);
+  }
+  if (reg_addsub_corr[rs2] || reg_hasmn[rs2]) {
+    create_ast_node_entry_for_accumulated_corr(rs2);
+    // now reg_asts[rs1] is updated
+  } else if (reg_asts[rs2] == 0 && reg_symb_type[rs2] == CONCRETE) {
+    create_crt_operand_ast_node_entry(rs2);
+  }
 
   input_table_ast_tcs_before_branch_evaluation.clear();
   for (size_t i = 0; i < input_table.size(); i++) {
@@ -1158,7 +1330,7 @@ void constrain_xor() {
 
 }
 
-uint64_t check_whether_represents_most_recent_constraint(uint64_t mrvc, uint8_t theory_type) {
+uint64_t check_whether_represents_most_recent_constraint(uint64_t mrvc) {
   uint64_t ast_tc = asts[mrvc];
   uint64_t most_recent_input;
   uint64_t input_ast_tc;
@@ -1169,17 +1341,12 @@ uint64_t check_whether_represents_most_recent_constraint(uint64_t mrvc, uint8_t 
     most_recent_input = input_table[ast_nodes[input_ast_tc].right_node];
     if (most_recent_input > input_ast_tc) {
       is_updated = false;
-      if (ast_nodes[ast_tc].type == VAR) {
-        printf("%llu, %llu, %llu\n", mrvc, theory_type, ast_tc);
-        printf("OUTPUT: ------ num: %llu; %llu, %llu, %llu: %x\n", ast_nodes[input_ast_tc].right_node, most_recent_input, input_ast_tc, involved_sym_inputs_cnts[ast_tc], pc - entry_point);
-        exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
-      }
       break;
     }
   }
 
   if (is_updated == false) {
-    recompute_expression(ast_tc, theory_type);
+    recompute_expression(ast_tc);
     return load_symbolic_memory(pt, vaddrs[mrvc]);
   } else
     return mrvc;
@@ -1188,7 +1355,6 @@ uint64_t check_whether_represents_most_recent_constraint(uint64_t mrvc, uint8_t 
 uint64_t constrain_ld() {
   uint64_t vaddr;
   uint64_t mrvc;
-  uint64_t mrvc_;
   uint64_t a;
 
   // load double word
@@ -1198,14 +1364,11 @@ uint64_t constrain_ld() {
   if (is_safe_address(vaddr, rs1)) {
     if (is_virtual_address_mapped(pt, vaddr)) {
       if (rd != REG_ZR) {
-        mrvc = load_symbolic_memory(pt, vaddr);
+        mrvc = check_whether_represents_most_recent_constraint(load_symbolic_memory(pt, vaddr));
 
         reg_theory_types[rd] = theory_types[mrvc];
-        sase_regs[rd]        = symbolic_values[mrvc];
-
-        mrvc = check_whether_represents_most_recent_constraint(mrvc, reg_theory_types[rd]);
-
         reg_asts[rd]         = asts[mrvc];
+        sase_regs[rd]        = smt_exprs[reg_asts[rd]];
 
         // it is important because we have prevousely freed stack addresses on the trace
         if (vaddr >= get_program_break(current_context))
@@ -1240,6 +1403,8 @@ uint64_t constrain_ld() {
           reg_symb_type[rd]   = CONCRETE;
           reg_vaddrs_cnts[rd] = 0;
         }
+
+        set_correction(rd, 0, 0, 0);
       }
 
       // keep track of instruction address for profiling loads
@@ -1273,16 +1438,22 @@ uint64_t constrain_sd() {
   if (is_safe_address(vaddr, rs1)) {
     if (is_virtual_address_mapped(pt, vaddr)) {
       // interval semantics of sd
-      if (reg_asts[rs2] == 0 && reg_theory_types[rs2] == MIT) {
+      if (reg_addsub_corr[rs2] || reg_hasmn[rs2]) {
+        create_ast_node_entry_for_accumulated_corr(rs2);
+        // now reg_asts[rs2] is updated
+        set_correction(rs2, 0, 0, 1);
+      }
+
+      if (reg_asts[rs2] == 0) { // && reg_theory_types[rs2] == MIT) {
         if (reg_symb_type[rs2] == CONCRETE)
-          reg_asts[rs2] = add_ast_node(CONST, 0, 0, 1, reg_mintervals_los[rs2], reg_mintervals_ups[rs2], 1, 0, zero_v, MIT);
+          reg_asts[rs2] = add_ast_node(CONST, 0, 0, 1, reg_mintervals_los[rs2], reg_mintervals_ups[rs2], 1, 0, zero_v, MIT, boolector_null);
         else {
           printf("OUTPUT: detected symbolic value with reg_asts = 0 at %x\n", pc - entry_point);
           exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
         }
       }
 
-      store_symbolic_memory(pt, vaddr, registers[rs2], reg_data_type[rs2], reg_asts[rs2], mrcc, 1, sase_regs[rs2], reg_theory_types[rs2]);
+      store_symbolic_memory(pt, vaddr, registers[rs2], reg_data_type[rs2], reg_asts[rs2], mrcc, 1, reg_theory_types[rs2]);
 
       // keep track of instruction address for profiling stores
       a = (pc - entry_point) / INSTRUCTIONSIZE;
@@ -1315,8 +1486,10 @@ void constrain_jal_jalr() {
     reg_vaddrs_cnts[rd]       = 0;
     reg_asts[rd]              = 0;
 
-    sase_regs[rd]             = (BoolectorNode*) 0;
+    sase_regs[rd]             = boolector_null;
     reg_theory_types[rd]      = MIT;
+
+    set_correction(rd, 0, 0, 0);
   }
 }
 
@@ -1394,14 +1567,7 @@ void efree() {
   tc = tc - 1;
 }
 
-// bool is_pure_concrete_value(uint32_t data_type, uint32_t mints_num, uint64_t lo, uint64_t up, uint8_t theory_type) {
-//   if (is_symbolic_value(data_type, mints_num, lo, up, theory_type))
-//     return false;
-//   else
-//     return true;
-// }
-
-void store_symbolic_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, uint32_t data_type, uint64_t ast_ptr, uint64_t trb, uint64_t is_store, BoolectorNode* sym_value, uint8_t theory_type) {
+void store_symbolic_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, uint32_t data_type, uint64_t ast_ptr, uint64_t trb, uint64_t is_store, uint8_t theory_type) {
   uint64_t mrvc;
 
   if (vaddr == 0)
@@ -1410,27 +1576,47 @@ void store_symbolic_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, uint32_
   else if (vaddr < NUMBEROFREGISTERS)
     // tracking a register value for sltu
     mrvc = mrcc;
-  else {
+  else if (vaddr == NUMBEROFREGISTERS) {
+    if (is_trace_space_available()) {
+      ealloc();
+
+      pcs[tc]          = pc;
+      tcs[tc]          = 0;
+      data_types[tc]   = data_type;
+      values[tc]       = value;
+      vaddrs[tc]       = vaddr;
+      asts[tc]         = ast_ptr;
+      mr_sds[tc]       = tc;
+      theory_types[tc] = theory_type;
+    } else {
+      throw_exception(EXCEPTION_MAXTRACE, 0);
+    }
+    return;
+  } else {
     // assert: vaddr is valid and mapped
     mrvc = load_symbolic_memory(pt, vaddr);
 
-    // bool is_this_value_concrete = is_pure_concrete_value(data_type, mints_num, lo[0], up[0]);
-    // bool is_prev_value_concrete = is_pure_concrete_value(data_types[mrvc], mintervals_los[asts[mrvc]].size(), mintervals_los[asts[mrvc]][0], mintervals_ups[asts[mrvc]][0]);
+    // if (trb < mrvc) {
+    //   if (ast_nodes[ast_ptr].type == CONST) {
+    //     if (ast_nodes[asts[mrvc]].type == CONST) {
+    //       // overwrite
     //
-    // if (is_this_value_concrete && is_prev_value_concrete && trb < mrvc) {
-    //   // overwrite
-    //   if (mints_num > MAX_NUM_OF_INTERVALS) {
-    //     printf("OUTPUT: maximum number of possible intervals is reached at %x\n", pc - entry_point);
-    //     exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
+    //       pcs[mrvc]        = pc;
+    //       data_types[mrvc] = data_type;
+    //       values[mrvc]     = value;
+    //       asts[mrvc]       = ast_ptr;
+    //
+    //       if (ast_ptr) { store_trace_ptrs[ast_ptr].push_back(mrvc); }
+    //
+    //       if (is_store) {
+    //         mr_sds[mrvc]   = mrvc;
+    //       }
+    //
+    //       theory_types[mrvc] = theory_type;
+    //
+    //       return;
+    //     }
     //   }
-    //
-    //   data_types[mrvc] = data_type;
-    //   values[mrvc]     = value;
-    //   asts[mrvc]       = ast_ptr;
-    //
-    //   if (ast_ptr) store_trace_ptrs[ast_ptr].push_back(mrvc);
-    //
-    //   return;
     // }
   }
 
@@ -1447,24 +1633,21 @@ void store_symbolic_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, uint32_
     if (ast_ptr) store_trace_ptrs[ast_ptr].push_back(tc);
 
     if (is_store) {
-      mr_sds[tc]          = tc;
-      symbolic_values[tc] = sym_value;
+      mr_sds[tc]         = tc;
     } else {
-      mr_sds[tc]          = mr_sds[mrvc];
-      symbolic_values[tc] = symbolic_values[mrvc];
-
-      if (symbolic_values[tc] == (BoolectorNode*) 0) {
-        printf("OUTPUT: 000000 %x\n", pc - entry_point);
-        exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
-      }
+      mr_sds[tc]         = mr_sds[mrvc];
+      // if (smt_exprs[ast_ptr] == boolector_null) smt_exprs[ast_ptr] = smt_exprs[asts[mrvc]];
     }
 
     theory_types[tc] = theory_type;
 
     if (vaddr < NUMBEROFREGISTERS) {
-      if (vaddr > 0)
+      if (vaddr > 0) {
         // register tracking marks most recent constraint
         mrcc = tc;
+        asts[tc] = most_recent_if_on_ast_trace;
+        most_recent_if_on_ast_trace = ast_trace_cnt;
+      }
     } else
       // assert: vaddr is valid and mapped
       store_virtual_memory(pt, vaddr, tc);
@@ -1480,7 +1663,7 @@ void store_symbolic_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, uint32_
 
 void store_register_memory(uint64_t reg, std::vector<uint64_t>& value) {
   // always track register memory by using tc as most recent branch
-  store_symbolic_memory(pt, reg, value[0], VALUE_T, 0, tc, 1, (BoolectorNode*) 0, MIT);
+  store_symbolic_memory(pt, reg, value[0], VALUE_T, 0, tc, 1, MIT);
 }
 
 uint64_t reverse_division_up(uint64_t ups_mrvc, uint64_t up, uint64_t codiv) {
@@ -1490,7 +1673,7 @@ uint64_t reverse_division_up(uint64_t ups_mrvc, uint64_t up, uint64_t codiv) {
     return codiv - 1;
 }
 
-uint64_t add_ast_node(uint8_t typ, uint64_t left_node, uint64_t right_node, uint32_t mints_num, std::vector<uint64_t>& lo, std::vector<uint64_t>& up, uint64_t step, uint64_t sym_input_num, std::vector<uint64_t>& sym_input_ast_tcs, uint8_t theory_type) {
+uint64_t add_ast_node(uint8_t typ, uint64_t left_node, uint64_t right_node, uint32_t mints_num, std::vector<uint64_t>& lo, std::vector<uint64_t>& up, uint64_t step, uint64_t sym_input_num, std::vector<uint64_t>& sym_input_ast_tcs, uint8_t theory_type, BoolectorNode* smt_expr) {
   ast_trace_cnt++;
 
   if (ast_trace_cnt > MAX_NODE_TRACE_LENGTH) {
@@ -1531,6 +1714,8 @@ uint64_t add_ast_node(uint8_t typ, uint64_t left_node, uint64_t right_node, uint
 
   theory_type_ast_nodes[ast_trace_cnt] = theory_type;
 
+  smt_exprs[ast_trace_cnt] = smt_expr;
+
   boxes[ast_trace_cnt] = 0;
 
   return ast_trace_cnt;
@@ -1558,6 +1743,10 @@ uint8_t detect_sym_operand(uint64_t ast_tc) {
     printf("OUTPUT: backward propagation of symbolics at %x\n", pc - entry_point);
     exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
   }
+}
+
+void store_input_record(uint64_t ast_ptr, uint64_t prev_input_record, uint8_t theory_type) {
+  store_symbolic_memory(pt, NUMBEROFREGISTERS, prev_input_record, INPUT_T, ast_ptr, tc, 0, theory_type);
 }
 
 uint64_t stored_to_tc;
@@ -1593,50 +1782,25 @@ uint64_t backward_analysis_ast(uint64_t ast_tc, std::vector<uint64_t>& lo, std::
   }
 
   if (ast_nodes[ast_tc].type == VAR) {
-    ast_ptr = add_ast_node(VAR, 0, ast_nodes[ast_tc].right_node, mints_num, propagated_minterval_lo, propagated_minterval_up, steps[ast_tc], 0, zero_v, MIT);
-
-    input_table.at(ast_nodes[ast_tc].right_node) = ast_ptr;
-    // printf("input ptr back: %llu\n", ast_ptr);
+    ast_ptr = add_ast_node(VAR, 0, ast_nodes[ast_tc].right_node, mints_num, propagated_minterval_lo, propagated_minterval_up, steps[ast_tc], 0, zero_v, MIT, smt_exprs[ast_tc]);
 
     for (size_t i = 0; i < store_trace_ptrs[ast_tc].size(); i++) {
       stored_to_tc    = store_trace_ptrs[ast_tc][i];
       mr_stored_to_tc = load_symbolic_memory(pt, vaddrs[stored_to_tc]);
       mr_stored_to_tc = mr_sds[mr_stored_to_tc];
       if (mr_stored_to_tc <= store_trace_ptrs[ast_tc][i]) {
-        store_symbolic_memory(pt, vaddrs[store_trace_ptrs[ast_tc][i]], propagated_minterval_lo[0], VALUE_T, ast_ptr, tc, 0, (BoolectorNode*) 0, MIT);
+        store_symbolic_memory(pt, vaddrs[store_trace_ptrs[ast_tc][i]], propagated_minterval_lo[0], VALUE_T, ast_ptr, tc, 0, MIT);
         is_assigned = true;
       }
     }
+
     if (is_assigned == false) {
-      printf("OUTPUT: +++++++++++++++++++ at %x\n", pc - entry_point);
-      exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
+      store_input_record(ast_ptr, input_table.at(ast_nodes[ast_tc].right_node), MIT);
     }
+    input_table.at(ast_nodes[ast_tc].right_node) = ast_ptr;
 
     return ast_ptr;
   }
-
-  // if (ast_nodes[ast_tc].type == VAR) {
-  //   ast_ptr = add_ast_node(VAR, 0, ast_nodes[ast_tc].right_node, mints_num, lo, up, steps[ast_tc], 0, zero_v);
-  //
-  //   input_table.at(ast_nodes[ast_tc].right_node) = ast_ptr;
-  //   // printf("input ptr back: %llu\n", ast_ptr);
-  //
-  //   for (size_t i = 0; i < store_trace_ptrs[ast_tc].size(); i++) {
-  //     stored_to_tc    = store_trace_ptrs[ast_tc][i];
-  //     mr_stored_to_tc = load_symbolic_memory(pt, vaddrs[stored_to_tc]);
-  //     mr_stored_to_tc = mr_sds[mr_stored_to_tc];
-  //     if (mr_stored_to_tc <= store_trace_ptrs[ast_tc][i]) {
-  //       store_symbolic_memory(pt, vaddrs[store_trace_ptrs[ast_tc][i]], lo[0], VALUE_T, ast_ptr, tc, 0);
-  //       is_assigned = true;
-  //     }
-  //   }
-  //   if (is_assigned == false) {
-  //     printf("OUTPUT: +++++++++++++++++++ at %x\n", pc - entry_point);
-  //     exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
-  //   }
-  //
-  //   return ast_ptr;
-  // }
 
   left_or_right_is_sym = detect_sym_operand(ast_tc);
 
@@ -1765,16 +1929,16 @@ uint64_t backward_analysis_ast(uint64_t ast_tc, std::vector<uint64_t>& lo, std::
   uint64_t sym_operand_ptr = backward_analysis_ast(sym_operand_ast_tc, propagated_minterval_lo, propagated_minterval_up, mints_num, theory_type);
 
   if (left_or_right_is_sym == LEFT)
-    ast_ptr = add_ast_node(ast_nodes[ast_tc].type, sym_operand_ptr, ast_nodes[ast_tc].right_node, mints_num, saved_lo, saved_up, steps[ast_tc], involved_sym_inputs_cnts[sym_operand_ptr], involved_sym_inputs_ast_tcs[sym_operand_ptr], MIT);
+    ast_ptr = add_ast_node(ast_nodes[ast_tc].type, sym_operand_ptr, ast_nodes[ast_tc].right_node, mints_num, saved_lo, saved_up, steps[ast_tc], involved_sym_inputs_cnts[sym_operand_ptr], involved_sym_inputs_ast_tcs[sym_operand_ptr], MIT, smt_exprs[ast_tc]);
   else
-    ast_ptr = add_ast_node(ast_nodes[ast_tc].type, ast_nodes[ast_tc].left_node, sym_operand_ptr, mints_num, saved_lo, saved_up, steps[ast_tc], involved_sym_inputs_cnts[sym_operand_ptr], involved_sym_inputs_ast_tcs[sym_operand_ptr], MIT);
+    ast_ptr = add_ast_node(ast_nodes[ast_tc].type, ast_nodes[ast_tc].left_node, sym_operand_ptr, mints_num, saved_lo, saved_up, steps[ast_tc], involved_sym_inputs_cnts[sym_operand_ptr], involved_sym_inputs_ast_tcs[sym_operand_ptr], MIT, smt_exprs[ast_tc]);
 
   for (size_t i = 0; i < store_trace_ptrs[ast_tc].size(); i++) {
     stored_to_tc    = store_trace_ptrs[ast_tc][i];
     mr_stored_to_tc = load_symbolic_memory(pt, vaddrs[stored_to_tc]);
     mr_stored_to_tc = mr_sds[mr_stored_to_tc];
     if (mr_stored_to_tc <= store_trace_ptrs[ast_tc][i])
-      store_symbolic_memory(pt, vaddrs[store_trace_ptrs[ast_tc][i]], saved_lo[0], VALUE_T, ast_ptr, tc, 0, (BoolectorNode*) 0, MIT);
+      store_symbolic_memory(pt, vaddrs[store_trace_ptrs[ast_tc][i]], saved_lo[0], VALUE_T, ast_ptr, tc, 0, MIT);
   }
 
   return ast_ptr;
@@ -1809,17 +1973,19 @@ void take_branch(uint64_t b, uint64_t how_many_more) {
     value_v[0] = registers[REG_SP];
     store_register_memory(REG_SP, value_v);
   } else {
-    reg_data_type[rd] = VALUE_T;
-    reg_symb_type[rd] = CONCRETE;
-    registers[rd]     = b;
+    reg_data_type[rd]         = VALUE_T;
+    reg_symb_type[rd]         = CONCRETE;
+    registers[rd]             = b;
     reg_mintervals_los[rd][0] = b;
     reg_mintervals_ups[rd][0] = b;
     reg_mintervals_cnts[rd]   = 1;
     reg_steps[rd]             = 1;
     reg_vaddrs_cnts[rd]       = 0;
     reg_asts[rd]              = (b == 0) ? zero_node : one_node;
-    sase_regs[rd]             = (b == 0) ? zero_bv : one_bv;
+    sase_regs[rd]             = (b == 0) ? smt_exprs[zero_node] : smt_exprs[one_node];
     reg_theory_types[rd]      = MIT;
+
+    set_correction(rd, 0, 0, 0);
   }
 }
 
@@ -2032,8 +2198,8 @@ bool check_sat_true_branch_bvt(BoolectorNode* assert) {
   if (boolector_sat(btor) == BOOLECTOR_SAT) {
     result = true;
     for (size_t i = 0; i < input_table.size(); i++) {
-      // true_input_assignments.push_back(boolector_bv_assignment(btor, symbolic_values[store_trace_ptrs[input_table.at(i)][0]] ) );
-      true_input_assignments.push_back(boolector_bv_assignment(btor, symbolic_values[input_table_store_trace_ptr[i]] ) );
+      // true_input_assignments.push_back(boolector_bv_assignment(btor, symbolic_values[input_table_store_trace_ptr[i]] ) );
+      true_input_assignments.push_back(boolector_bv_assignment(btor, smt_exprs[asts[input_table_store_trace_ptr[i]]] ) );
     }
   }
   boolector_pop(btor, 1);
@@ -2050,8 +2216,8 @@ bool check_sat_false_branch_bvt(BoolectorNode* assert) {
   if (boolector_sat(btor) == BOOLECTOR_SAT) {
     result = true;
     for (size_t i = 0; i < input_table.size(); i++) {
-      // false_input_assignments.push_back(boolector_bv_assignment(btor, symbolic_values[store_trace_ptrs[input_table.at(i)][0]] ) );
-      false_input_assignments.push_back(boolector_bv_assignment(btor, symbolic_values[input_table_store_trace_ptr[i]] ) );
+      // false_input_assignments.push_back(boolector_bv_assignment(btor, symbolic_values[input_table_store_trace_ptr[i]] ) );
+      false_input_assignments.push_back(boolector_bv_assignment(btor, smt_exprs[asts[input_table_store_trace_ptr[i]]] ) );
     }
   }
   boolector_pop(btor, 1);
@@ -2061,36 +2227,49 @@ bool check_sat_false_branch_bvt(BoolectorNode* assert) {
 
 void create_input_variable_constraints_true_branch_bvt() {
   uint64_t ast_ptr, involved_input, stored_to_tc, mr_stored_to_tc;
+  bool is_assigned = false;
 
   if (reg_symb_type[rs1] == SYMBOLIC) {
     for (size_t i = 0; i < involved_sym_inputs_cnts[reg_asts[rs1]]; i++) {
       involved_input = involved_sym_inputs_ast_tcs[reg_asts[rs1]][i];
       value_v[0] = std::stoull(true_input_assignments[ast_nodes[involved_input].right_node], 0, 2);
-      ast_ptr = add_ast_node(VAR, 0, ast_nodes[involved_input].right_node, 1, value_v, value_v, 1, 0, zero_v, BVT);
+      ast_ptr = add_ast_node(VAR, 0, ast_nodes[involved_input].right_node, 1, value_v, value_v, 1, 0, zero_v, BVT, smt_exprs[involved_input]);
       for (size_t k = 0; k < store_trace_ptrs[involved_input].size(); k++) {
         stored_to_tc    = store_trace_ptrs[involved_input][k];
         mr_stored_to_tc = load_symbolic_memory(pt, vaddrs[stored_to_tc]);
         mr_stored_to_tc = mr_sds[mr_stored_to_tc];
         if (mr_stored_to_tc <= stored_to_tc) {
-          store_symbolic_memory(pt, vaddrs[stored_to_tc], value_v[0], VALUE_T, ast_ptr, tc, 0, (BoolectorNode*) 0, BVT);
+          store_symbolic_memory(pt, vaddrs[stored_to_tc], value_v[0], VALUE_T, ast_ptr, tc, 0, BVT);
+          is_assigned = true;
         }
+      }
+
+      if (is_assigned == false) {
+        store_input_record(ast_ptr, input_table.at(ast_nodes[involved_input].right_node), BVT);
       }
       input_table.at(ast_nodes[involved_input].right_node) = ast_ptr;
     }
   }
 
+  is_assigned = false;
+
   if (reg_symb_type[rs2] == SYMBOLIC) {
     for (size_t i = 0; i < involved_sym_inputs_cnts[reg_asts[rs2]]; i++) {
       involved_input = involved_sym_inputs_ast_tcs[reg_asts[rs2]][i];
       value_v[0] = std::stoull(true_input_assignments[ast_nodes[involved_input].right_node], 0, 2);
-      ast_ptr = add_ast_node(VAR, 0, ast_nodes[involved_input].right_node, 1, value_v, value_v, 1, 0, zero_v, BVT);
+      ast_ptr = add_ast_node(VAR, 0, ast_nodes[involved_input].right_node, 1, value_v, value_v, 1, 0, zero_v, BVT, smt_exprs[involved_input]);
       for (size_t k = 0; k < store_trace_ptrs[involved_input].size(); k++) {
         stored_to_tc    = store_trace_ptrs[involved_input][k];
         mr_stored_to_tc = load_symbolic_memory(pt, vaddrs[stored_to_tc]);
         mr_stored_to_tc = mr_sds[mr_stored_to_tc];
         if (mr_stored_to_tc <= stored_to_tc) {
-          store_symbolic_memory(pt, vaddrs[stored_to_tc], value_v[0], VALUE_T, ast_ptr, tc, 0, (BoolectorNode*) 0, BVT);
+          store_symbolic_memory(pt, vaddrs[stored_to_tc], value_v[0], VALUE_T, ast_ptr, tc, 0, BVT);
+          is_assigned = true;
         }
+      }
+
+      if (is_assigned == false) {
+        store_input_record(ast_ptr, input_table.at(ast_nodes[involved_input].right_node), BVT);
       }
       input_table.at(ast_nodes[involved_input].right_node) = ast_ptr;
     }
@@ -2099,36 +2278,49 @@ void create_input_variable_constraints_true_branch_bvt() {
 
 void create_input_variable_constraints_false_branch_bvt() {
   uint64_t ast_ptr, involved_input, stored_to_tc, mr_stored_to_tc;
+  bool is_assigned = false;
 
   if (reg_symb_type[rs1] == SYMBOLIC) {
     for (size_t i = 0; i < involved_sym_inputs_cnts[reg_asts[rs1]]; i++) {
       involved_input = involved_sym_inputs_ast_tcs[reg_asts[rs1]][i];
       value_v[0] = std::stoull(false_input_assignments[ast_nodes[involved_input].right_node], 0, 2);
-      ast_ptr = add_ast_node(VAR, 0, ast_nodes[involved_input].right_node, 1, value_v, value_v, 1, 0, zero_v, BVT);
+      ast_ptr = add_ast_node(VAR, 0, ast_nodes[involved_input].right_node, 1, value_v, value_v, 1, 0, zero_v, BVT, smt_exprs[involved_input]);
       for (size_t k = 0; k < store_trace_ptrs[involved_input].size(); k++) {
         stored_to_tc    = store_trace_ptrs[involved_input][k];
         mr_stored_to_tc = load_symbolic_memory(pt, vaddrs[stored_to_tc]);
         mr_stored_to_tc = mr_sds[mr_stored_to_tc];
         if (mr_stored_to_tc <= stored_to_tc) {
-          store_symbolic_memory(pt, vaddrs[stored_to_tc], value_v[0], VALUE_T, ast_ptr, tc, 0, (BoolectorNode*) 0, BVT);
+          store_symbolic_memory(pt, vaddrs[stored_to_tc], value_v[0], VALUE_T, ast_ptr, tc, 0, BVT);
+          is_assigned = true;
         }
+      }
+
+      if (is_assigned == false) {
+        store_input_record(ast_ptr, input_table.at(ast_nodes[involved_input].right_node), BVT);
       }
       input_table.at(ast_nodes[involved_input].right_node) = ast_ptr;
     }
   }
 
+  is_assigned = false;
+
   if (reg_symb_type[rs2] == SYMBOLIC) {
     for (size_t i = 0; i < involved_sym_inputs_cnts[reg_asts[rs2]]; i++) {
       involved_input = involved_sym_inputs_ast_tcs[reg_asts[rs2]][i];
       value_v[0] = std::stoull(false_input_assignments[ast_nodes[involved_input].right_node], 0, 2);
-      ast_ptr = add_ast_node(VAR, 0, ast_nodes[involved_input].right_node, 1, value_v, value_v, 1, 0, zero_v, BVT);
+      ast_ptr = add_ast_node(VAR, 0, ast_nodes[involved_input].right_node, 1, value_v, value_v, 1, 0, zero_v, BVT, smt_exprs[involved_input]);
       for (size_t k = 0; k < store_trace_ptrs[involved_input].size(); k++) {
         stored_to_tc    = store_trace_ptrs[involved_input][k];
         mr_stored_to_tc = load_symbolic_memory(pt, vaddrs[stored_to_tc]);
         mr_stored_to_tc = mr_sds[mr_stored_to_tc];
         if (mr_stored_to_tc <= stored_to_tc) {
-          store_symbolic_memory(pt, vaddrs[stored_to_tc], value_v[0], VALUE_T, ast_ptr, tc, 0, (BoolectorNode*) 0, BVT);
+          store_symbolic_memory(pt, vaddrs[stored_to_tc], value_v[0], VALUE_T, ast_ptr, tc, 0, BVT);
+          is_assigned = true;
         }
+      }
+
+      if (is_assigned == false) {
+        store_input_record(ast_ptr, input_table.at(ast_nodes[involved_input].right_node), BVT);
       }
       input_table.at(ast_nodes[involved_input].right_node) = ast_ptr;
     }
@@ -2168,6 +2360,8 @@ void create_mconstraints(std::vector<uint64_t>& lo1_p, std::vector<uint64_t>& up
     if (apply_under_approximate_analysis(lo1_p, up1_p, lo2_p, up2_p))
       return;
 
+    assert_smt_path_condition();
+    check_operands_smt_expressions();
     false_reachable = check_sat_false_branch_bvt(boolector_ugte(btor, sase_regs[rs1], sase_regs[rs2]));
     true_reachable  = check_sat_true_branch_bvt (boolector_ult (btor, sase_regs[rs1], sase_regs[rs2]));
 
@@ -2178,7 +2372,8 @@ void create_mconstraints(std::vector<uint64_t>& lo1_p, std::vector<uint64_t>& up
           create_input_variable_constraints_true_branch_bvt();
           dump_all_input_variables_on_trace_true_branch_bvt_pure();
           take_branch(1, 1);
-          sase_false_branchs[tc-2] = boolector_ult(btor, sase_regs[rs1], sase_regs[rs2]); // carefull
+          asts[tc-2]               = 0; // important for backtracking
+          sase_false_branchs[tc-2] = boolector_ult(btor, sase_regs[rs1], sase_regs[rs2]); // careful
 
           // true
           boolector_push(btor, 1);
@@ -2191,6 +2386,7 @@ void create_mconstraints(std::vector<uint64_t>& lo1_p, std::vector<uint64_t>& up
           create_input_variable_constraints_false_branch_bvt();
           dump_all_input_variables_on_trace_false_branch_bvt_pure();
           take_branch(0, 1);
+          asts[tc-2]               = 0; // important for backtracking
           sase_false_branchs[tc-2] = boolector_ugte(btor, sase_regs[rs1], sase_regs[rs2]); // carefull
 
           // true
@@ -2229,24 +2425,28 @@ void create_mconstraints(std::vector<uint64_t>& lo1_p, std::vector<uint64_t>& up
       if (check_conditional_type_lte_or_gte() == LGTE) {
         constrain_memory(rs1, true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, true_branch_rs1_minterval_cnt, trb, false);
         constrain_memory(rs2, true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, true_branch_rs2_minterval_cnt, trb, false);
+        uint64_t false_ast_ptr   = add_ast_node(ILT, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 0, 0, zero_v, MIT, boolector_null);
         take_branch(1, 1);
-        sase_false_branchs[tc-2] = boolector_ult(btor, sase_regs[rs1], sase_regs[rs2]); // important place be careful
+        asts[tc-2]               = false_ast_ptr;
+        sase_false_branchs[tc-2] = boolector_null; // important place be careful
+
+        path_condition.push_back(add_ast_node(IGTE, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 1, 0, zero_v, MIT, boolector_null));
 
         constrain_memory(rs1, false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups,false_branch_rs1_minterval_cnt, trb, false);
         constrain_memory(rs2, false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups,false_branch_rs2_minterval_cnt, trb, false);
-        boolector_push(btor, 1);
-        boolector_assert(btor, boolector_ugte(btor, sase_regs[rs1], sase_regs[rs2]));
         take_branch(0, 0);
       } else {
         constrain_memory(rs1, false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups,false_branch_rs1_minterval_cnt, trb, false);
         constrain_memory(rs2, false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups,false_branch_rs2_minterval_cnt, trb, false);
+        uint64_t false_ast_ptr   = add_ast_node(IGTE, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 0, 0, zero_v, MIT, boolector_null);
         take_branch(0, 1);
-        sase_false_branchs[tc-2] = boolector_ugte(btor, sase_regs[rs1], sase_regs[rs2]); // carefull
+        asts[tc-2]               = false_ast_ptr;
+        sase_false_branchs[tc-2] = boolector_null; // careful
+
+        path_condition.push_back(add_ast_node(ILT, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 1, 0, zero_v, MIT, boolector_null));
 
         constrain_memory(rs1, true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, true_branch_rs1_minterval_cnt, trb, false);
         constrain_memory(rs2, true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, true_branch_rs2_minterval_cnt, trb, false);
-        boolector_push(btor, 1);
-        boolector_assert(btor, boolector_ult(btor, sase_regs[rs1], sase_regs[rs2]));
         take_branch(1, 0);
       }
     } else {
@@ -2289,6 +2489,8 @@ void create_mconstraints_lptr(uint64_t lo1, uint64_t up1, std::vector<uint64_t>&
   }
 
   if (cannot_handle) {
+    assert_smt_path_condition();
+    check_operands_smt_expressions();
     false_reachable = check_sat_false_branch_bvt(boolector_ugte(btor, sase_regs[rs1], sase_regs[rs2]));
     true_reachable  = check_sat_true_branch_bvt (boolector_ult (btor, sase_regs[rs1], sase_regs[rs2]));
 
@@ -2297,32 +2499,40 @@ void create_mconstraints_lptr(uint64_t lo1, uint64_t up1, std::vector<uint64_t>&
         if (check_conditional_type_lte_or_gte() == LGTE) {
           // false
           create_input_variable_constraints_true_branch_bvt();
+          dump_all_input_variables_on_trace_true_branch_bvt_pure();
           take_branch(1, 1);
-          sase_false_branchs[tc-2] = boolector_ult(btor, sase_regs[rs1], sase_regs[rs2]); // carefull
+          asts[tc-2]               = 0; // important for backtracking
+          sase_false_branchs[tc-2] = boolector_ult(btor, sase_regs[rs1], sase_regs[rs2]); // careful
 
           // true
           boolector_push(btor, 1);
           boolector_assert(btor, boolector_ugte(btor, sase_regs[rs1], sase_regs[rs2]));
           create_input_variable_constraints_false_branch_bvt();
+          dump_all_input_variables_on_trace_false_branch_bvt_pure();
           take_branch(0, 0);
         } else {
           // false
           create_input_variable_constraints_false_branch_bvt();
+          dump_all_input_variables_on_trace_false_branch_bvt_pure();
           take_branch(0, 1);
-          sase_false_branchs[tc-2] = boolector_ugte(btor, sase_regs[rs1], sase_regs[rs2]); // carefull
+          asts[tc-2]               = 0; // important for backtracking
+          sase_false_branchs[tc-2] = boolector_ugte(btor, sase_regs[rs1], sase_regs[rs2]); // careful
 
           // true
           boolector_push(btor, 1);
           boolector_assert(btor, boolector_ult(btor, sase_regs[rs1], sase_regs[rs2]));
           create_input_variable_constraints_true_branch_bvt();
+          dump_all_input_variables_on_trace_true_branch_bvt_pure();
           take_branch(1, 0);
         }
       } else {
         create_input_variable_constraints_true_branch_bvt();
+        dump_all_input_variables_on_trace_true_branch_bvt_pure();
         take_branch(1, 0);
       }
     } else if (false_reachable) {
       create_input_variable_constraints_false_branch_bvt();
+      dump_all_input_variables_on_trace_false_branch_bvt_pure();
       take_branch(0, 0);
     } else {
       printf("OUTPUT: both branches unreachable!!! 2 %x\n", pc - entry_point);
@@ -2344,24 +2554,28 @@ void create_mconstraints_lptr(uint64_t lo1, uint64_t up1, std::vector<uint64_t>&
       if (check_conditional_type_lte_or_gte() == LGTE) {
         constrain_memory(rs1, true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, true_branch_rs1_minterval_cnt, trb, false);
         constrain_memory(rs2, true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, true_branch_rs2_minterval_cnt, trb, false);
+        uint64_t false_ast_ptr   = add_ast_node(ILT, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 0, 0, zero_v, MIT, boolector_null);
         take_branch(1, 1);
-        sase_false_branchs[tc-2] = boolector_ult(btor, sase_regs[rs1], sase_regs[rs2]); // important place be careful
+        asts[tc-2]               = false_ast_ptr;
+        sase_false_branchs[tc-2] = boolector_null; // important place be careful
+
+        path_condition.push_back(add_ast_node(IGTE, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 1, 0, zero_v, MIT, boolector_null));
 
         constrain_memory(rs1, false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups,false_branch_rs1_minterval_cnt, trb, false);
         constrain_memory(rs2, false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups,false_branch_rs2_minterval_cnt, trb, false);
-        boolector_push(btor, 1);
-        boolector_assert(btor, boolector_ugte(btor, sase_regs[rs1], sase_regs[rs2]));
         take_branch(0, 0);
       } else {
         constrain_memory(rs1, false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups,false_branch_rs1_minterval_cnt, trb, false);
         constrain_memory(rs2, false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups,false_branch_rs2_minterval_cnt, trb, false);
+        uint64_t false_ast_ptr   = add_ast_node(IGTE, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 0, 0, zero_v, MIT, boolector_null);
         take_branch(0, 1);
-        sase_false_branchs[tc-2] = boolector_ugte(btor, sase_regs[rs1], sase_regs[rs2]); // carefull
+        asts[tc-2]               = false_ast_ptr;
+        sase_false_branchs[tc-2] = boolector_null; // careful
+
+        path_condition.push_back(add_ast_node(ILT, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 1, 0, zero_v, MIT, boolector_null));
 
         constrain_memory(rs1, true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, true_branch_rs1_minterval_cnt, trb, false);
         constrain_memory(rs2, true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, true_branch_rs2_minterval_cnt, trb, false);
-        boolector_push(btor, 1);
-        boolector_assert(btor, boolector_ult(btor, sase_regs[rs1], sase_regs[rs2]));
         take_branch(1, 0);
       }
     } else {
@@ -2404,6 +2618,8 @@ void create_mconstraints_rptr(std::vector<uint64_t>& lo1_p, std::vector<uint64_t
   }
 
   if (cannot_handle) {
+    assert_smt_path_condition();
+    check_operands_smt_expressions();
     false_reachable = check_sat_false_branch_bvt(boolector_ugte(btor, sase_regs[rs1], sase_regs[rs2]));
     true_reachable  = check_sat_true_branch_bvt (boolector_ult (btor, sase_regs[rs1], sase_regs[rs2]));
 
@@ -2412,32 +2628,40 @@ void create_mconstraints_rptr(std::vector<uint64_t>& lo1_p, std::vector<uint64_t
         if (check_conditional_type_lte_or_gte() == LGTE) {
           // false
           create_input_variable_constraints_true_branch_bvt();
+          dump_all_input_variables_on_trace_true_branch_bvt_pure();
           take_branch(1, 1);
-          sase_false_branchs[tc-2] = boolector_ult(btor, sase_regs[rs1], sase_regs[rs2]); // carefull
+          asts[tc-2]               = 0; // important for backtracking
+          sase_false_branchs[tc-2] = boolector_ult(btor, sase_regs[rs1], sase_regs[rs2]); // careful
 
           // true
           boolector_push(btor, 1);
           boolector_assert(btor, boolector_ugte(btor, sase_regs[rs1], sase_regs[rs2]));
           create_input_variable_constraints_false_branch_bvt();
+          dump_all_input_variables_on_trace_false_branch_bvt_pure();
           take_branch(0, 0);
         } else {
           // false
           create_input_variable_constraints_false_branch_bvt();
+          dump_all_input_variables_on_trace_false_branch_bvt_pure();
           take_branch(0, 1);
-          sase_false_branchs[tc-2] = boolector_ugte(btor, sase_regs[rs1], sase_regs[rs2]); // carefull
+          asts[tc-2]               = 0; // important for backtracking
+          sase_false_branchs[tc-2] = boolector_ugte(btor, sase_regs[rs1], sase_regs[rs2]); // careful
 
           // true
           boolector_push(btor, 1);
           boolector_assert(btor, boolector_ult(btor, sase_regs[rs1], sase_regs[rs2]));
           create_input_variable_constraints_true_branch_bvt();
+          dump_all_input_variables_on_trace_true_branch_bvt_pure();
           take_branch(1, 0);
         }
       } else {
         create_input_variable_constraints_true_branch_bvt();
+        dump_all_input_variables_on_trace_true_branch_bvt_pure();
         take_branch(1, 0);
       }
     } else if (false_reachable) {
       create_input_variable_constraints_false_branch_bvt();
+      dump_all_input_variables_on_trace_false_branch_bvt_pure();
       take_branch(0, 0);
     } else {
       printf("OUTPUT: both branches unreachable!!! 2 %x\n", pc - entry_point);
@@ -2459,24 +2683,28 @@ void create_mconstraints_rptr(std::vector<uint64_t>& lo1_p, std::vector<uint64_t
       if (check_conditional_type_lte_or_gte() == LGTE) {
         constrain_memory(rs1, true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, true_branch_rs1_minterval_cnt, trb, false);
         constrain_memory(rs2, true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, true_branch_rs2_minterval_cnt, trb, false);
+        uint64_t false_ast_ptr   = add_ast_node(ILT, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 0, 0, zero_v, MIT, boolector_null);
         take_branch(1, 1);
-        sase_false_branchs[tc-2] = boolector_ult(btor, sase_regs[rs1], sase_regs[rs2]); // important place be careful
+        asts[tc-2]               = false_ast_ptr;
+        sase_false_branchs[tc-2] = boolector_null; // important place be careful
+
+        path_condition.push_back(add_ast_node(IGTE, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 1, 0, zero_v, MIT, boolector_null));
 
         constrain_memory(rs1, false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups,false_branch_rs1_minterval_cnt, trb, false);
         constrain_memory(rs2, false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups,false_branch_rs2_minterval_cnt, trb, false);
-        boolector_push(btor, 1);
-        boolector_assert(btor, boolector_ugte(btor, sase_regs[rs1], sase_regs[rs2]));
         take_branch(0, 0);
       } else {
         constrain_memory(rs1, false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups,false_branch_rs1_minterval_cnt, trb, false);
         constrain_memory(rs2, false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups,false_branch_rs2_minterval_cnt, trb, false);
+        uint64_t false_ast_ptr   = add_ast_node(IGTE, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 0, 0, zero_v, MIT, boolector_null);
         take_branch(0, 1);
-        sase_false_branchs[tc-2] = boolector_ugte(btor, sase_regs[rs1], sase_regs[rs2]); // carefull
+        asts[tc-2]               = false_ast_ptr;
+        sase_false_branchs[tc-2] = boolector_null; // careful
+
+        path_condition.push_back(add_ast_node(ILT, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 1, 0, zero_v, MIT, boolector_null));
 
         constrain_memory(rs1, true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, true_branch_rs1_minterval_cnt, trb, false);
         constrain_memory(rs2, true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, true_branch_rs2_minterval_cnt, trb, false);
-        boolector_push(btor, 1);
-        boolector_assert(btor, boolector_ult(btor, sase_regs[rs1], sase_regs[rs2]));
         take_branch(1, 0);
       }
     } else {
@@ -2687,6 +2915,8 @@ void create_xor_mconstraints(std::vector<uint64_t>& lo1_p, std::vector<uint64_t>
 
   if (cannot_handle) {
     // xor result:
+    assert_smt_path_condition();
+    check_operands_smt_expressions();
     false_reachable = check_sat_false_branch_bvt(boolector_eq(btor, sase_regs[rs1], sase_regs[rs2]));
     true_reachable  = check_sat_true_branch_bvt (boolector_ne(btor, sase_regs[rs1], sase_regs[rs2]));
 
@@ -2695,32 +2925,40 @@ void create_xor_mconstraints(std::vector<uint64_t>& lo1_p, std::vector<uint64_t>
         if (check_conditional_type_equality_or_disequality() == EQ) {
           // false
           create_input_variable_constraints_true_branch_bvt();
+          dump_all_input_variables_on_trace_true_branch_bvt_pure();
           take_branch(1, 1);
+          asts[tc-2]               = 0; // important for backtracking
           sase_false_branchs[tc-2] = boolector_ne(btor, sase_regs[rs1], sase_regs[rs2]); // carefull
 
           // true
           boolector_push(btor, 1);
           boolector_assert(btor, boolector_eq(btor, sase_regs[rs1], sase_regs[rs2]));
           create_input_variable_constraints_false_branch_bvt();
+          dump_all_input_variables_on_trace_false_branch_bvt_pure();
           take_branch(0, 0);
         } else {
           // false
           create_input_variable_constraints_false_branch_bvt();
+          dump_all_input_variables_on_trace_false_branch_bvt_pure();
           take_branch(0, 1);
+          asts[tc-2]               = 0; // important for backtracking
           sase_false_branchs[tc-2] = boolector_eq(btor, sase_regs[rs1], sase_regs[rs2]); // carefull
 
           // true
           boolector_push(btor, 1);
           boolector_assert(btor, boolector_ne(btor, sase_regs[rs1], sase_regs[rs2]));
           create_input_variable_constraints_true_branch_bvt();
+          dump_all_input_variables_on_trace_true_branch_bvt_pure();
           take_branch(1, 0);
         }
       } else {
         create_input_variable_constraints_true_branch_bvt();
+        dump_all_input_variables_on_trace_true_branch_bvt_pure();
         take_branch(1, 0);
       }
     } else if (false_reachable) {
       create_input_variable_constraints_false_branch_bvt();
+      dump_all_input_variables_on_trace_false_branch_bvt_pure();
       take_branch(0, 0);
     } else {
       printf("OUTPUT: both branches unreachable!!! 2 %x\n", pc - entry_point);
@@ -2742,24 +2980,28 @@ void create_xor_mconstraints(std::vector<uint64_t>& lo1_p, std::vector<uint64_t>
       if (check_conditional_type_equality_or_disequality() == EQ) {
         constrain_memory(rs1, true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, true_branch_rs1_minterval_cnt, trb, false);
         constrain_memory(rs2, true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, true_branch_rs2_minterval_cnt, trb, false);
+        uint64_t false_ast_ptr   = add_ast_node(INEQ, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 0, 0, zero_v, MIT, boolector_null);
         take_branch(1, 1);
-        sase_false_branchs[tc-2] = boolector_ne(btor, sase_regs[rs1], sase_regs[rs2]); // carefull
+        asts[tc-2]               = false_ast_ptr;
+        sase_false_branchs[tc-2] = boolector_null; // careful
+
+        path_condition.push_back(add_ast_node(IEQ, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 1, 0, zero_v, MIT, boolector_null));
 
         constrain_memory(rs1, false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups,false_branch_rs1_minterval_cnt, trb, false);
         constrain_memory(rs2, false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups,false_branch_rs2_minterval_cnt, trb, false);
-        boolector_push(btor, 1);
-        boolector_assert(btor, boolector_eq(btor, sase_regs[rs1], sase_regs[rs2]));
         take_branch(0, 0);
       } else {
         constrain_memory(rs1, false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups,false_branch_rs1_minterval_cnt, trb, false);
         constrain_memory(rs2, false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups,false_branch_rs2_minterval_cnt, trb, false);
+        uint64_t false_ast_ptr   = add_ast_node(IEQ, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 0, 0, zero_v, MIT, boolector_null);
         take_branch(0, 1);
-        sase_false_branchs[tc-2] = boolector_eq(btor, sase_regs[rs1], sase_regs[rs2]); // carefull
+        asts[tc-2]               = false_ast_ptr;
+        sase_false_branchs[tc-2] = boolector_null; // carful
+
+        path_condition.push_back(add_ast_node(INEQ, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 1, 0, zero_v, MIT, boolector_null));
 
         constrain_memory(rs1, true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, true_branch_rs1_minterval_cnt, trb, false);
         constrain_memory(rs2, true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, true_branch_rs2_minterval_cnt, trb, false);
-        boolector_push(btor, 1);
-        boolector_assert(btor, boolector_ne(btor, sase_regs[rs1], sase_regs[rs2]));
         take_branch(1, 0);
       }
     } else {
@@ -2803,6 +3045,8 @@ void create_xor_mconstraints_lptr(uint64_t lo1, uint64_t up1, std::vector<uint64
 
   if (cannot_handle) {
     // xor result:
+    assert_smt_path_condition();
+    check_operands_smt_expressions();
     false_reachable = check_sat_false_branch_bvt(boolector_eq(btor, sase_regs[rs1], sase_regs[rs2]));
     true_reachable  = check_sat_true_branch_bvt (boolector_ne(btor, sase_regs[rs1], sase_regs[rs2]));
 
@@ -2811,32 +3055,40 @@ void create_xor_mconstraints_lptr(uint64_t lo1, uint64_t up1, std::vector<uint64
         if (check_conditional_type_equality_or_disequality() == EQ) {
           // false
           create_input_variable_constraints_true_branch_bvt();
+          dump_all_input_variables_on_trace_true_branch_bvt_pure();
           take_branch(1, 1);
+          asts[tc-2]               = 0; // important for backtracking
           sase_false_branchs[tc-2] = boolector_ne(btor, sase_regs[rs1], sase_regs[rs2]); // carefull
 
           // true
           boolector_push(btor, 1);
           boolector_assert(btor, boolector_eq(btor, sase_regs[rs1], sase_regs[rs2]));
           create_input_variable_constraints_false_branch_bvt();
+          dump_all_input_variables_on_trace_false_branch_bvt_pure();
           take_branch(0, 0);
         } else {
           // false
           create_input_variable_constraints_false_branch_bvt();
+          dump_all_input_variables_on_trace_false_branch_bvt_pure();
           take_branch(0, 1);
+          asts[tc-2]               = 0; // important for backtracking
           sase_false_branchs[tc-2] = boolector_eq(btor, sase_regs[rs1], sase_regs[rs2]); // carefull
 
           // true
           boolector_push(btor, 1);
           boolector_assert(btor, boolector_ne(btor, sase_regs[rs1], sase_regs[rs2]));
           create_input_variable_constraints_true_branch_bvt();
+          dump_all_input_variables_on_trace_true_branch_bvt_pure();
           take_branch(1, 0);
         }
       } else {
         create_input_variable_constraints_true_branch_bvt();
+        dump_all_input_variables_on_trace_true_branch_bvt_pure();
         take_branch(1, 0);
       }
     } else if (false_reachable) {
       create_input_variable_constraints_false_branch_bvt();
+      dump_all_input_variables_on_trace_false_branch_bvt_pure();
       take_branch(0, 0);
     } else {
       printf("OUTPUT: both branches unreachable!!! 2 %x\n", pc - entry_point);
@@ -2858,24 +3110,28 @@ void create_xor_mconstraints_lptr(uint64_t lo1, uint64_t up1, std::vector<uint64
       if (check_conditional_type_equality_or_disequality() == EQ) {
         constrain_memory(rs1, true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, true_branch_rs1_minterval_cnt, trb, false);
         constrain_memory(rs2, true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, true_branch_rs2_minterval_cnt, trb, false);
+        uint64_t false_ast_ptr   = add_ast_node(INEQ, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 0, 0, zero_v, MIT, boolector_null);
         take_branch(1, 1);
-        sase_false_branchs[tc-2] = boolector_ne(btor, sase_regs[rs1], sase_regs[rs2]); // carefull
+        asts[tc-2]               = false_ast_ptr;
+        sase_false_branchs[tc-2] = boolector_null; // careful
+
+        path_condition.push_back(add_ast_node(IEQ, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 1, 0, zero_v, MIT, boolector_null));
 
         constrain_memory(rs1, false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups,false_branch_rs1_minterval_cnt, trb, false);
         constrain_memory(rs2, false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups,false_branch_rs2_minterval_cnt, trb, false);
-        boolector_push(btor, 1);
-        boolector_assert(btor, boolector_eq(btor, sase_regs[rs1], sase_regs[rs2]));
         take_branch(0, 0);
       } else {
         constrain_memory(rs1, false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups,false_branch_rs1_minterval_cnt, trb, false);
         constrain_memory(rs2, false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups,false_branch_rs2_minterval_cnt, trb, false);
+        uint64_t false_ast_ptr   = add_ast_node(IEQ, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 0, 0, zero_v, MIT, boolector_null);
         take_branch(0, 1);
-        sase_false_branchs[tc-2] = boolector_eq(btor, sase_regs[rs1], sase_regs[rs2]); // carefull
+        asts[tc-2]               = false_ast_ptr;
+        sase_false_branchs[tc-2] = boolector_null; // carful
+
+        path_condition.push_back(add_ast_node(INEQ, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 1, 0, zero_v, MIT, boolector_null));
 
         constrain_memory(rs1, true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, true_branch_rs1_minterval_cnt, trb, false);
         constrain_memory(rs2, true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, true_branch_rs2_minterval_cnt, trb, false);
-        boolector_push(btor, 1);
-        boolector_assert(btor, boolector_ne(btor, sase_regs[rs1], sase_regs[rs2]));
         take_branch(1, 0);
       }
     } else {
@@ -2919,6 +3175,8 @@ void create_xor_mconstraints_rptr(std::vector<uint64_t>& lo1_p, std::vector<uint
 
   if (cannot_handle) {
     // xor result:
+    assert_smt_path_condition();
+    check_operands_smt_expressions();
     false_reachable = check_sat_false_branch_bvt(boolector_eq(btor, sase_regs[rs1], sase_regs[rs2]));
     true_reachable  = check_sat_true_branch_bvt (boolector_ne(btor, sase_regs[rs1], sase_regs[rs2]));
 
@@ -2927,32 +3185,40 @@ void create_xor_mconstraints_rptr(std::vector<uint64_t>& lo1_p, std::vector<uint
         if (check_conditional_type_equality_or_disequality() == EQ) {
           // false
           create_input_variable_constraints_true_branch_bvt();
+          dump_all_input_variables_on_trace_true_branch_bvt_pure();
           take_branch(1, 1);
+          asts[tc-2]               = 0; // important for backtracking
           sase_false_branchs[tc-2] = boolector_ne(btor, sase_regs[rs1], sase_regs[rs2]); // carefull
 
           // true
           boolector_push(btor, 1);
           boolector_assert(btor, boolector_eq(btor, sase_regs[rs1], sase_regs[rs2]));
           create_input_variable_constraints_false_branch_bvt();
+          dump_all_input_variables_on_trace_false_branch_bvt_pure();
           take_branch(0, 0);
         } else {
           // false
           create_input_variable_constraints_false_branch_bvt();
+          dump_all_input_variables_on_trace_false_branch_bvt_pure();
           take_branch(0, 1);
+          asts[tc-2]               = 0; // important for backtracking
           sase_false_branchs[tc-2] = boolector_eq(btor, sase_regs[rs1], sase_regs[rs2]); // carefull
 
           // true
           boolector_push(btor, 1);
           boolector_assert(btor, boolector_ne(btor, sase_regs[rs1], sase_regs[rs2]));
           create_input_variable_constraints_true_branch_bvt();
+          dump_all_input_variables_on_trace_true_branch_bvt_pure();
           take_branch(1, 0);
         }
       } else {
         create_input_variable_constraints_true_branch_bvt();
+        dump_all_input_variables_on_trace_true_branch_bvt_pure();
         take_branch(1, 0);
       }
     } else if (false_reachable) {
       create_input_variable_constraints_false_branch_bvt();
+      dump_all_input_variables_on_trace_false_branch_bvt_pure();
       take_branch(0, 0);
     } else {
       printf("OUTPUT: both branches unreachable!!! 2 %x\n", pc - entry_point);
@@ -2974,24 +3240,28 @@ void create_xor_mconstraints_rptr(std::vector<uint64_t>& lo1_p, std::vector<uint
       if (check_conditional_type_equality_or_disequality() == EQ) {
         constrain_memory(rs1, true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, true_branch_rs1_minterval_cnt, trb, false);
         constrain_memory(rs2, true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, true_branch_rs2_minterval_cnt, trb, false);
+        uint64_t false_ast_ptr   = add_ast_node(INEQ, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 0, 0, zero_v, MIT, boolector_null);
         take_branch(1, 1);
-        sase_false_branchs[tc-2] = boolector_ne(btor, sase_regs[rs1], sase_regs[rs2]); // carefull
+        asts[tc-2]               = false_ast_ptr;
+        sase_false_branchs[tc-2] = boolector_null; // careful
+
+        path_condition.push_back(add_ast_node(IEQ, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 1, 0, zero_v, MIT, boolector_null));
 
         constrain_memory(rs1, false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups,false_branch_rs1_minterval_cnt, trb, false);
         constrain_memory(rs2, false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups,false_branch_rs2_minterval_cnt, trb, false);
-        boolector_push(btor, 1);
-        boolector_assert(btor, boolector_eq(btor, sase_regs[rs1], sase_regs[rs2]));
         take_branch(0, 0);
       } else {
         constrain_memory(rs1, false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups,false_branch_rs1_minterval_cnt, trb, false);
         constrain_memory(rs2, false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups,false_branch_rs2_minterval_cnt, trb, false);
+        uint64_t false_ast_ptr   = add_ast_node(IEQ, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 0, 0, zero_v, MIT, boolector_null);
         take_branch(0, 1);
-        sase_false_branchs[tc-2] = boolector_eq(btor, sase_regs[rs1], sase_regs[rs2]); // carefull
+        asts[tc-2]               = false_ast_ptr;
+        sase_false_branchs[tc-2] = boolector_null; // carful
+
+        path_condition.push_back(add_ast_node(INEQ, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 1, 0, zero_v, MIT, boolector_null));
 
         constrain_memory(rs1, true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, true_branch_rs1_minterval_cnt, trb, false);
         constrain_memory(rs2, true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, true_branch_rs2_minterval_cnt, trb, false);
-        boolector_push(btor, 1);
-        boolector_assert(btor, boolector_ne(btor, sase_regs[rs1], sase_regs[rs2]));
         take_branch(1, 0);
       }
     } else {
@@ -3029,13 +3299,15 @@ void backtrack_sltu() {
       reg_vaddrs_cnts[vaddr]       = 0;
       reg_asts[vaddr]              = 0;
 
-      sase_regs[vaddr]             = (BoolectorNode*) 0;
+      sase_regs[vaddr]             = boolector_null;
       reg_theory_types[vaddr]      = MIT;
+
+      set_correction(vaddr, 0, 0, 0);
 
       // restoring mrcc
       mrcc = tcs[tc];
 
-      if (vaddr != REG_FP)
+      if (vaddr != REG_FP) {
         if (vaddr != REG_SP) {
           // stop backtracking and try next case
           pc = pc + INSTRUCTIONSIZE;
@@ -3043,15 +3315,41 @@ void backtrack_sltu() {
 
           reg_asts[vaddr]  = (registers[vaddr] == 0) ? zero_node : one_node;
 
-          sase_regs[vaddr] = (registers[vaddr] == 0) ? zero_bv : one_bv;
-          boolector_pop(btor, 1);
-          boolector_assert(btor, sase_false_branchs[tc]);
-          if (sase_false_branchs[tc] == (BoolectorNode*) 0) {
-            printf("OUTPUT: 000000 at %x", pc - entry_point);
-            exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
+          sase_regs[vaddr] = (registers[vaddr] == 0) ? smt_exprs[zero_node] : smt_exprs[one_node]; //zero_bv : one_bv;
+
+          // there are two cases when (sase_false_branchs[tc] == boolector_null)
+          // 1. when theory is MIT; may happen that we have to pop more than one constraint (when was going through false branches)
+          // 2. when theory was MIT and then we needed BVT so we dumped path_condition, and now we backtrack.
+          if (sase_false_branchs[tc] == boolector_null) {
+            while (path_condition.size() > 0 && path_condition.back() > asts[tc]) {
+              path_condition.pop_back();
+            }
+
+            if (theory_type_ast_nodes[asts[tc]] == BVT) {
+              boolector_pop(btor, 1);
+              path_condition.clear();
+            }
+
+            path_condition.push_back(asts[tc]);
+          } else {
+            // when asts[tc] == 0 means theory of bvt take care of everything.
+            /* when sase_false_branchs[tc] != boolector_null && theory_type_ast_nodes[asts[tc]] == BVT then points to box theory,
+               for when box can decide true-case and not false. In that case true may not be evaluated as a smt expr so no pop */
+            if (asts[tc] == 0 || theory_type_ast_nodes[asts[tc]] == BVT)
+              boolector_pop(btor, 1);
+            boolector_assert(btor, sase_false_branchs[tc]);
+            path_condition.clear();
           }
         }
+      } else {
+        if (ast_trace_cnt > most_recent_if_on_ast_trace) {
+          ast_trace_cnt = most_recent_if_on_ast_trace;
+        }
+        most_recent_if_on_ast_trace = asts[tc];
+      }
     }
+  } else if (vaddr == NUMBEROFREGISTERS) {
+    input_table.at(ast_nodes[asts[tc]].right_node) = values[tc];
   } else {
     if (ast_nodes[asts[tc]].type == VAR) {
       if (store_trace_ptrs[asts[tc]].size() > 1) {
@@ -3105,12 +3403,6 @@ void backtrack_sd() {
         exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
       }
     }
-
-    if (asts[tc] != 0 && ast_trace_cnt > asts[tc] && store_trace_ptrs[asts[tc]].size() == 0) {
-      if (asts[tc] != zero_node && asts[tc] != one_node) {
-        ast_trace_cnt = asts[tc];
-      }
-    }
   } else if (theory_types[tc] == BVT && asts[tc] != 0) {
     if (ast_nodes[asts[tc]].type == VAR) {
       if (store_trace_ptrs[asts[tc]].size() > 1) {
@@ -3143,28 +3435,25 @@ void backtrack_sd() {
 }
 
 void backtrack_ld() {
-  // if (theory_types[tc] == MIT)
-  {
-    if (ast_nodes[asts[tc]].type == VAR) {
-      if (store_trace_ptrs[asts[tc]].size() > 1) {
-        store_trace_ptrs[asts[tc]].pop_back();
-      } else if (store_trace_ptrs[asts[tc]].size() == 1) {
-        input_table.at(ast_nodes[asts[tc]].right_node) = asts[tcs[tc]];
-        store_trace_ptrs[asts[tc]].pop_back();
-      } else {
-        printf("OUTPUT: ld backtracking error at %x", pc - entry_point);
-        exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
-      }
+  if (ast_nodes[asts[tc]].type == VAR) {
+    if (store_trace_ptrs[asts[tc]].size() > 1) {
+      store_trace_ptrs[asts[tc]].pop_back();
+    } else if (store_trace_ptrs[asts[tc]].size() == 1) {
+      input_table.at(ast_nodes[asts[tc]].right_node) = asts[tcs[tc]];
+      store_trace_ptrs[asts[tc]].pop_back();
+    } else {
+      printf("OUTPUT: ld backtracking error at %x", pc - entry_point);
+      exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
     }
-    else {
-      if (store_trace_ptrs[asts[tc]].size() > 1) {
-        store_trace_ptrs[asts[tc]].pop_back();
-      } else if (store_trace_ptrs[asts[tc]].size() == 1) {
-        store_trace_ptrs[asts[tc]].pop_back();
-      } else {
-        printf("OUTPUT: ld backtracking error at %x", pc - entry_point);
-        exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
-      }
+  }
+  else {
+    if (store_trace_ptrs[asts[tc]].size() > 1) {
+      store_trace_ptrs[asts[tc]].pop_back();
+    } else if (store_trace_ptrs[asts[tc]].size() == 1) {
+      store_trace_ptrs[asts[tc]].pop_back();
+    } else {
+      printf("OUTPUT: ld backtracking error at %x", pc - entry_point);
+      exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
     }
   }
 
@@ -3407,14 +3696,14 @@ uint64_t compute_add(uint64_t left_operand_ast_tc, uint64_t right_operand_ast_tc
     propagated_minterval_up[i] = mintervals_ups[sym_operand_ast_tc][i] + addend;
   }
 
-  uint64_t ast_ptr = add_ast_node(ADD, sym_operand_ast_tc, crt_operand_ast_tc, mintervals_los[sym_operand_ast_tc].size(), propagated_minterval_lo, propagated_minterval_up, steps[old_ast_tc], involved_sym_inputs_cnts[sym_operand_ast_tc], involved_sym_inputs_ast_tcs[sym_operand_ast_tc], theory_type);
+  uint64_t ast_ptr = add_ast_node(ADD, sym_operand_ast_tc, crt_operand_ast_tc, mintervals_los[sym_operand_ast_tc].size(), propagated_minterval_lo, propagated_minterval_up, steps[old_ast_tc], involved_sym_inputs_cnts[sym_operand_ast_tc], involved_sym_inputs_ast_tcs[sym_operand_ast_tc], theory_type, smt_exprs[old_ast_tc]);
 
   for (size_t i = 0; i < store_trace_ptrs[old_ast_tc].size(); i++) {
     stored_to_tc    = store_trace_ptrs[old_ast_tc][i];
     mr_stored_to_tc = load_symbolic_memory(pt, vaddrs[stored_to_tc]);
     mr_stored_to_tc = mr_sds[mr_stored_to_tc];
     if (mr_stored_to_tc <= store_trace_ptrs[old_ast_tc][i])
-      store_symbolic_memory(pt, vaddrs[store_trace_ptrs[old_ast_tc][i]], propagated_minterval_lo[0], VALUE_T, ast_ptr, tc, 0, (BoolectorNode*) 0, theory_type);
+      store_symbolic_memory(pt, vaddrs[store_trace_ptrs[old_ast_tc][i]], propagated_minterval_lo[0], VALUE_T, ast_ptr, tc, 0, theory_type);
   }
 
   return ast_ptr;
@@ -3433,14 +3722,14 @@ uint64_t compute_sub(uint64_t left_operand_ast_tc, uint64_t right_operand_ast_tc
       propagated_minterval_up[i] = mintervals_ups[left_operand_ast_tc][i] - sub_lo;
     }
 
-    uint64_t ast_ptr = add_ast_node(SUB, left_operand_ast_tc, right_operand_ast_tc, mintervals_los[left_operand_ast_tc].size(), propagated_minterval_lo, propagated_minterval_up, steps[old_ast_tc], involved_sym_inputs_cnts[left_operand_ast_tc], involved_sym_inputs_ast_tcs[left_operand_ast_tc], theory_type);
+    uint64_t ast_ptr = add_ast_node(SUB, left_operand_ast_tc, right_operand_ast_tc, mintervals_los[left_operand_ast_tc].size(), propagated_minterval_lo, propagated_minterval_up, steps[old_ast_tc], involved_sym_inputs_cnts[left_operand_ast_tc], involved_sym_inputs_ast_tcs[left_operand_ast_tc], theory_type, smt_exprs[old_ast_tc]);
 
     for (size_t i = 0; i < store_trace_ptrs[old_ast_tc].size(); i++) {
       stored_to_tc    = store_trace_ptrs[old_ast_tc][i];
       mr_stored_to_tc = load_symbolic_memory(pt, vaddrs[stored_to_tc]);
       mr_stored_to_tc = mr_sds[mr_stored_to_tc];
       if (mr_stored_to_tc <= store_trace_ptrs[old_ast_tc][i])
-        store_symbolic_memory(pt, vaddrs[store_trace_ptrs[old_ast_tc][i]], propagated_minterval_lo[0], VALUE_T, ast_ptr, tc, 0, (BoolectorNode*) 0, theory_type);
+        store_symbolic_memory(pt, vaddrs[store_trace_ptrs[old_ast_tc][i]], propagated_minterval_lo[0], VALUE_T, ast_ptr, tc, 0, theory_type);
     }
 
     return ast_ptr;
@@ -3453,14 +3742,14 @@ uint64_t compute_sub(uint64_t left_operand_ast_tc, uint64_t right_operand_ast_tc
       propagated_minterval_lo[i] = sub_tmp;
     }
 
-    uint64_t ast_ptr = add_ast_node(SUB, left_operand_ast_tc, right_operand_ast_tc, mintervals_los[right_operand_ast_tc].size(), propagated_minterval_lo, propagated_minterval_up, steps[old_ast_tc], involved_sym_inputs_cnts[right_operand_ast_tc], involved_sym_inputs_ast_tcs[right_operand_ast_tc], theory_type);
+    uint64_t ast_ptr = add_ast_node(SUB, left_operand_ast_tc, right_operand_ast_tc, mintervals_los[right_operand_ast_tc].size(), propagated_minterval_lo, propagated_minterval_up, steps[old_ast_tc], involved_sym_inputs_cnts[right_operand_ast_tc], involved_sym_inputs_ast_tcs[right_operand_ast_tc], theory_type, smt_exprs[old_ast_tc]);
 
     for (size_t i = 0; i < store_trace_ptrs[old_ast_tc].size(); i++) {
       stored_to_tc    = store_trace_ptrs[old_ast_tc][i];
       mr_stored_to_tc = load_symbolic_memory(pt, vaddrs[stored_to_tc]);
       mr_stored_to_tc = mr_sds[mr_stored_to_tc];
       if (mr_stored_to_tc <= store_trace_ptrs[old_ast_tc][i])
-        store_symbolic_memory(pt, vaddrs[store_trace_ptrs[old_ast_tc][i]], propagated_minterval_lo[0], VALUE_T, ast_ptr, tc, 0, (BoolectorNode*) 0, theory_type);
+        store_symbolic_memory(pt, vaddrs[store_trace_ptrs[old_ast_tc][i]], propagated_minterval_lo[0], VALUE_T, ast_ptr, tc, 0, theory_type);
     }
 
     return ast_ptr;
@@ -3492,14 +3781,14 @@ uint64_t compute_mul(uint64_t left_operand_ast_tc, uint64_t right_operand_ast_tc
     }
   }
 
-  uint64_t ast_ptr = add_ast_node(MUL, sym_operand_ast_tc, crt_operand_ast_tc, mintervals_los[sym_operand_ast_tc].size(), propagated_minterval_lo, propagated_minterval_up, steps[old_ast_tc], involved_sym_inputs_cnts[sym_operand_ast_tc], involved_sym_inputs_ast_tcs[sym_operand_ast_tc], theory_type);
+  uint64_t ast_ptr = add_ast_node(MUL, sym_operand_ast_tc, crt_operand_ast_tc, mintervals_los[sym_operand_ast_tc].size(), propagated_minterval_lo, propagated_minterval_up, steps[old_ast_tc], involved_sym_inputs_cnts[sym_operand_ast_tc], involved_sym_inputs_ast_tcs[sym_operand_ast_tc], theory_type, smt_exprs[old_ast_tc]);
 
   for (size_t i = 0; i < store_trace_ptrs[old_ast_tc].size(); i++) {
     stored_to_tc    = store_trace_ptrs[old_ast_tc][i];
     mr_stored_to_tc = load_symbolic_memory(pt, vaddrs[stored_to_tc]);
     mr_stored_to_tc = mr_sds[mr_stored_to_tc];
     if (mr_stored_to_tc <= store_trace_ptrs[old_ast_tc][i])
-      store_symbolic_memory(pt, vaddrs[store_trace_ptrs[old_ast_tc][i]], propagated_minterval_lo[0], VALUE_T, ast_ptr, tc, 0, (BoolectorNode*) 0, theory_type);
+      store_symbolic_memory(pt, vaddrs[store_trace_ptrs[old_ast_tc][i]], propagated_minterval_lo[0], VALUE_T, ast_ptr, tc, 0, theory_type);
   }
 
   return ast_ptr;
@@ -3533,14 +3822,14 @@ uint64_t compute_divu(uint64_t left_operand_ast_tc, uint64_t right_operand_ast_t
     }
   }
 
-  uint64_t ast_ptr = add_ast_node(DIVU, left_operand_ast_tc, right_operand_ast_tc, mintervals_los[left_operand_ast_tc].size(), propagated_minterval_lo, propagated_minterval_up, steps[old_ast_tc], involved_sym_inputs_cnts[left_operand_ast_tc], involved_sym_inputs_ast_tcs[left_operand_ast_tc], theory_type);
+  uint64_t ast_ptr = add_ast_node(DIVU, left_operand_ast_tc, right_operand_ast_tc, mintervals_los[left_operand_ast_tc].size(), propagated_minterval_lo, propagated_minterval_up, steps[old_ast_tc], involved_sym_inputs_cnts[left_operand_ast_tc], involved_sym_inputs_ast_tcs[left_operand_ast_tc], theory_type, smt_exprs[old_ast_tc]);
 
   for (size_t i = 0; i < store_trace_ptrs[old_ast_tc].size(); i++) {
     stored_to_tc    = store_trace_ptrs[old_ast_tc][i];
     mr_stored_to_tc = load_symbolic_memory(pt, vaddrs[stored_to_tc]);
     mr_stored_to_tc = mr_sds[mr_stored_to_tc];
     if (mr_stored_to_tc <= store_trace_ptrs[old_ast_tc][i])
-      store_symbolic_memory(pt, vaddrs[store_trace_ptrs[old_ast_tc][i]], propagated_minterval_lo[0], VALUE_T, ast_ptr, tc, 0, (BoolectorNode*) 0, theory_type);
+      store_symbolic_memory(pt, vaddrs[store_trace_ptrs[old_ast_tc][i]], propagated_minterval_lo[0], VALUE_T, ast_ptr, tc, 0, theory_type);
   }
 
   return ast_ptr;
@@ -3597,14 +3886,14 @@ uint64_t compute_remu(uint64_t left_operand_ast_tc, uint64_t right_operand_ast_t
     }
   }
 
-  uint64_t ast_ptr = add_ast_node(REMU, left_operand_ast_tc, right_operand_ast_tc, mintervals_los[left_operand_ast_tc].size(), propagated_minterval_lo, propagated_minterval_up, step, involved_sym_inputs_cnts[left_operand_ast_tc], involved_sym_inputs_ast_tcs[left_operand_ast_tc], theory_type);
+  uint64_t ast_ptr = add_ast_node(REMU, left_operand_ast_tc, right_operand_ast_tc, mintervals_los[left_operand_ast_tc].size(), propagated_minterval_lo, propagated_minterval_up, step, involved_sym_inputs_cnts[left_operand_ast_tc], involved_sym_inputs_ast_tcs[left_operand_ast_tc], theory_type, smt_exprs[old_ast_tc]);
 
   for (size_t i = 0; i < store_trace_ptrs[old_ast_tc].size(); i++) {
     stored_to_tc    = store_trace_ptrs[old_ast_tc][i];
     mr_stored_to_tc = load_symbolic_memory(pt, vaddrs[stored_to_tc]);
     mr_stored_to_tc = mr_sds[mr_stored_to_tc];
     if (mr_stored_to_tc <= store_trace_ptrs[old_ast_tc][i])
-      store_symbolic_memory(pt, vaddrs[store_trace_ptrs[old_ast_tc][i]], propagated_minterval_lo[0], VALUE_T, ast_ptr, tc, 0, (BoolectorNode*) 0, theory_type);
+      store_symbolic_memory(pt, vaddrs[store_trace_ptrs[old_ast_tc][i]], propagated_minterval_lo[0], VALUE_T, ast_ptr, tc, 0, theory_type);
   }
 
   return ast_ptr;
@@ -3625,21 +3914,24 @@ uint64_t recompute_operation(uint8_t op, uint64_t left_operand_ast_tc, uint64_t 
   }
 }
 
-uint64_t recompute_expression(uint64_t ast_tc, uint8_t theory_type) {
+uint64_t recompute_expression(uint64_t ast_tc) {
   uint64_t left_operand_ast_tc;
   uint64_t right_operand_ast_tc;
   uint64_t ast_ptr;
+  uint8_t theory_type;
 
   if (ast_nodes[ast_tc].type == VAR)
     return input_table[ast_nodes[ast_tc].right_node];
 
   if (detect_sym_operand(ast_tc) == LEFT) {
-    left_operand_ast_tc  = recompute_expression(ast_nodes[ast_tc].left_node, theory_type);
+    left_operand_ast_tc  = recompute_expression(ast_nodes[ast_tc].left_node);
     right_operand_ast_tc = ast_nodes[ast_tc].right_node;
+    theory_type = theory_type_ast_nodes[left_operand_ast_tc];
     return recompute_operation(ast_nodes[ast_tc].type, left_operand_ast_tc, right_operand_ast_tc, ast_tc, theory_type); //ast_nodes[ast_tc].left_node
   } else {
-    right_operand_ast_tc = recompute_expression(ast_nodes[ast_tc].right_node, theory_type);
+    right_operand_ast_tc = recompute_expression(ast_nodes[ast_tc].right_node);
     left_operand_ast_tc  = ast_nodes[ast_tc].left_node;
+    theory_type = theory_type_ast_nodes[right_operand_ast_tc];
     return recompute_operation(ast_nodes[ast_tc].type, left_operand_ast_tc, right_operand_ast_tc, ast_tc, theory_type); //ast_nodes[ast_tc].right_node
   }
 }
@@ -3764,24 +4056,23 @@ uint64_t backward_under_approximate(uint64_t ast_tc, std::vector<uint64_t>& lo, 
   }
 
   if (ast_nodes[ast_tc].type == VAR) {
-    ast_ptr = add_ast_node(VAR, 0, ast_nodes[ast_tc].right_node, mints_num, propagated_minterval_lo, propagated_minterval_up, steps[ast_tc], 0, zero_v, BOX);
+    ast_ptr = add_ast_node(VAR, 0, ast_nodes[ast_tc].right_node, mints_num, propagated_minterval_lo, propagated_minterval_up, steps[ast_tc], 0, zero_v, BOX, smt_exprs[ast_tc]);
     boxes[ast_trace_cnt] = input_box; // careful
-
-    input_table.at(ast_nodes[ast_tc].right_node) = ast_ptr;
 
     for (size_t i = 0; i < store_trace_ptrs[ast_tc].size(); i++) {
       stored_to_tc    = store_trace_ptrs[ast_tc][i];
       mr_stored_to_tc = load_symbolic_memory(pt, vaddrs[stored_to_tc]);
       mr_stored_to_tc = mr_sds[mr_stored_to_tc];
       if (mr_stored_to_tc <= store_trace_ptrs[ast_tc][i]) {
-        store_symbolic_memory(pt, vaddrs[store_trace_ptrs[ast_tc][i]], propagated_minterval_lo[0], VALUE_T, ast_ptr, tc, 0, (BoolectorNode*) 0, BOX);
+        store_symbolic_memory(pt, vaddrs[store_trace_ptrs[ast_tc][i]], propagated_minterval_lo[0], VALUE_T, ast_ptr, tc, 0, BOX);
         is_assigned = true;
       }
     }
+
     if (is_assigned == false) {
-      printf("OUTPUT: +++++++++++++++++++ at %x\n", pc - entry_point);
-      exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
+      store_input_record(ast_ptr, input_table.at(ast_nodes[ast_tc].right_node), BOX);
     }
+    input_table.at(ast_nodes[ast_tc].right_node) = ast_ptr;
 
     return ast_ptr;
   }
@@ -3873,9 +4164,9 @@ uint64_t backward_under_approximate(uint64_t ast_tc, std::vector<uint64_t>& lo, 
   uint64_t sym_operand_ptr = backward_under_approximate(sym_operand_ast_tc, propagated_minterval_lo, propagated_minterval_up, mints_num, input_box);
 
   if (left_or_right_is_sym == LEFT)
-    ast_ptr = add_ast_node(ast_nodes[ast_tc].type, sym_operand_ptr, ast_nodes[ast_tc].right_node, mints_num, saved_lo, saved_up, steps[ast_tc], involved_sym_inputs_cnts[sym_operand_ptr], involved_sym_inputs_ast_tcs[sym_operand_ptr], BOX);
+    ast_ptr = add_ast_node(ast_nodes[ast_tc].type, sym_operand_ptr, ast_nodes[ast_tc].right_node, mints_num, saved_lo, saved_up, steps[ast_tc], involved_sym_inputs_cnts[sym_operand_ptr], involved_sym_inputs_ast_tcs[sym_operand_ptr], BOX, smt_exprs[ast_tc]);
   else
-    ast_ptr = add_ast_node(ast_nodes[ast_tc].type, ast_nodes[ast_tc].left_node, sym_operand_ptr, mints_num, saved_lo, saved_up, steps[ast_tc], involved_sym_inputs_cnts[sym_operand_ptr], involved_sym_inputs_ast_tcs[sym_operand_ptr], BOX);
+    ast_ptr = add_ast_node(ast_nodes[ast_tc].type, ast_nodes[ast_tc].left_node, sym_operand_ptr, mints_num, saved_lo, saved_up, steps[ast_tc], involved_sym_inputs_cnts[sym_operand_ptr], involved_sym_inputs_ast_tcs[sym_operand_ptr], BOX, smt_exprs[ast_tc]);
 
   boxes[ast_trace_cnt] = input_box; // careful
 
@@ -3884,7 +4175,7 @@ uint64_t backward_under_approximate(uint64_t ast_tc, std::vector<uint64_t>& lo, 
     mr_stored_to_tc = load_symbolic_memory(pt, vaddrs[stored_to_tc]);
     mr_stored_to_tc = mr_sds[mr_stored_to_tc];
     if (mr_stored_to_tc <= store_trace_ptrs[ast_tc][i]) {
-      store_symbolic_memory(pt, vaddrs[store_trace_ptrs[ast_tc][i]], saved_lo[0], VALUE_T, ast_ptr, tc, 0, (BoolectorNode*) 0, BOX);
+      store_symbolic_memory(pt, vaddrs[store_trace_ptrs[ast_tc][i]], saved_lo[0], VALUE_T, ast_ptr, tc, 0, BOX);
     }
   }
 
@@ -3922,25 +4213,6 @@ void under_approximate_true(uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t u
 
   constrain_backward_under_approximate(rs1, reg_asts[rs1], true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, 2, involved_sym_inputs_ast_tcs[reg_asts[rs2]][0]);
   constrain_backward_under_approximate(rs2, reg_asts[rs2], true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, 2, involved_sym_inputs_ast_tcs[reg_asts[rs1]][0]);
-
-  // if (lo1 >= lo2) {
-  //   // printf("-1bua: %llu\n", reg_asts[rs1]);
-  //   // printf("-6bua: %u. [%llu, %llu], %u. [%llu, %llu]\n", reg_symb_type[rs1], lo1, lo1, reg_symb_type[rs2], lo1+1, up2);
-  //   propagated_minterval_lo[0] = lo1;
-  //   propagated_minterval_up[0] = lo1;
-  //   constrain_backward_under_approximate(rs1, reg_asts[rs1], propagated_minterval_lo, propagated_minterval_up, 1);
-  //   propagated_minterval_lo[0] = lo1+1;
-  //   propagated_minterval_up[0] = up2;
-  //   constrain_backward_under_approximate(rs2, reg_asts[rs2], propagated_minterval_lo, propagated_minterval_up, 1);
-  // } else {
-  //   // printf("-6bua: %u. [%llu, %llu], %u. [%llu, %llu]\n", reg_symb_type[rs1], lo1, lo2-1, reg_symb_type[rs2], lo2, up2);
-  //   propagated_minterval_lo[0] = lo1;
-  //   propagated_minterval_up[0] = lo2-1;
-  //   constrain_backward_under_approximate(rs1, reg_asts[rs1], propagated_minterval_lo, propagated_minterval_up, 1);
-  //   propagated_minterval_lo[0] = lo2;
-  //   propagated_minterval_up[0] = up2;
-  //   constrain_backward_under_approximate(rs2, reg_asts[rs2], propagated_minterval_lo, propagated_minterval_up, 1);
-  // }
 }
 
 void under_approximate_false(uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t up2) {
@@ -3970,63 +4242,7 @@ void under_approximate_false(uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t 
 
   constrain_backward_under_approximate(rs1, reg_asts[rs1], false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups, 2, involved_sym_inputs_ast_tcs[reg_asts[rs2]][0]);
   constrain_backward_under_approximate(rs2, reg_asts[rs2], false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups, 2, involved_sym_inputs_ast_tcs[reg_asts[rs1]][0]);
-
-
-  // if (lo1 <= lo2) {
-  //   // printf("-2bua: %llu\n", reg_asts[rs1]);
-  //   // printf("%----- [%llu, %llu], [%llu, %llu]\n", lo1, up1, lo2, up2);
-  //   // printf("-5bua: %u. [%llu, %llu], %u. [%llu, %llu]\n", reg_symb_type[rs1], lo2, up1, reg_symb_type[rs2], lo2, lo2);
-  //   propagated_minterval_lo[0] = lo2;
-  //   propagated_minterval_up[0] = up1;
-  //   constrain_backward_under_approximate(rs1, reg_asts[rs1], propagated_minterval_lo, propagated_minterval_up, 1);
-  //   propagated_minterval_lo[0] = lo2;
-  //   propagated_minterval_up[0] = lo2;
-  //   constrain_backward_under_approximate(rs2, reg_asts[rs2], propagated_minterval_lo, propagated_minterval_up, 1);
-  //
-  //
-  // } else {
-  //   // printf("%----- [%llu, %llu], [%llu, %llu]\n", lo1, up1, lo2, up2);
-  //   // printf("-5bua: %u. [%llu, %llu], %u. [%llu, %llu]\n", reg_symb_type[rs1], lo1, up1, reg_symb_type[rs2], lo2, lo1);
-  //   propagated_minterval_lo[0] = lo1;
-  //   propagated_minterval_up[0] = up1;
-  //   constrain_backward_under_approximate(rs1, reg_asts[rs1], propagated_minterval_lo, propagated_minterval_up, 1);
-  //   propagated_minterval_lo[0] = lo2;
-  //   propagated_minterval_up[0] = lo1;
-  //   constrain_backward_under_approximate(rs2, reg_asts[rs2], propagated_minterval_lo, propagated_minterval_up, 1);
-  //
-  //
-  // }
 }
-
-// void under_approximate_true(uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t up2) {
-//   if (up2 <= up1) {
-//     // printf("-1bua: %llu\n", reg_asts[rs1]);
-//     // printf("-6bua: %u. [%llu, %llu], %u. [%llu, %llu]\n", reg_symb_type[rs1], lo1, lo1, reg_symb_type[rs2], lo1+1, up2);
-//     constrain_backward_under_approximate(rs1, reg_asts[rs1], lo1, up2-1);
-//     constrain_backward_under_approximate(rs2, reg_asts[rs2], up2, up2);
-//   } else {
-//     // printf("-6bua: %u. [%llu, %llu], %u. [%llu, %llu]\n", reg_symb_type[rs1], lo1, lo2-1, reg_symb_type[rs2], lo2, up2);
-//     constrain_backward_under_approximate(rs1, reg_asts[rs1], lo1, up1);
-//     constrain_backward_under_approximate(rs2, reg_asts[rs2], up2, up2);
-//   }
-// }
-//
-// void under_approximate_false(uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t up2) {
-//   if (up2 >= up1) {
-//     // printf("-2bua: %llu\n", reg_asts[rs1]);
-//     // printf("%----- [%llu, %llu], [%llu, %llu]\n", lo1, up1, lo2, up2);
-//     // printf("-5bua: %u. [%llu, %llu], %u. [%llu, %llu]\n", reg_symb_type[rs1], lo2, up1, reg_symb_type[rs2], lo2, lo2);
-//     constrain_backward_under_approximate(rs1, reg_asts[rs1], up1, up1);
-//     constrain_backward_under_approximate(rs2, reg_asts[rs2], lo2, up1);
-//     // constrain_backward_under_approximate(rs1, reg_asts[rs1], lo2, up1);
-//     // constrain_backward_under_approximate(rs2, reg_asts[rs2], lo2, up2);
-//   } else {
-//     // printf("%----- [%llu, %llu], [%llu, %llu]\n", lo1, up1, lo2, up2);
-//     // printf("-5bua: %u. [%llu, %llu], %u. [%llu, %llu]\n", reg_symb_type[rs1], lo1, up1, reg_symb_type[rs2], lo2, lo1);
-//     constrain_backward_under_approximate(rs1, reg_asts[rs1], up1, up1);
-//     constrain_backward_under_approximate(rs2, reg_asts[rs2], lo2, up2);
-//   }
-// }
 
 void dump_all_input_variables_on_trace_true_branch_bvt_pure() {
   uint64_t ast_ptr, involved_input, stored_to_tc, mr_stored_to_tc;
@@ -4048,19 +4264,18 @@ void dump_all_input_variables_on_trace_true_branch_bvt_pure() {
     involved_input = input_table_ast_tcs_before_branch_evaluation[i];
     if (theory_type_ast_nodes[involved_input] == MIT) continue;
     value_v[0] = std::stoull(true_input_assignments[ast_nodes[involved_input].right_node], 0, 2);
-    ast_ptr = add_ast_node(VAR, 0, ast_nodes[involved_input].right_node, 1, value_v, value_v, 1, 0, zero_v, BVT);
+    ast_ptr = add_ast_node(VAR, 0, ast_nodes[involved_input].right_node, 1, value_v, value_v, 1, 0, zero_v, BVT, smt_exprs[involved_input]);
     for (size_t k = 0; k < store_trace_ptrs[involved_input].size(); k++) {
       stored_to_tc    = store_trace_ptrs[involved_input][k];
       mr_stored_to_tc = load_symbolic_memory(pt, vaddrs[stored_to_tc]);
       mr_stored_to_tc = mr_sds[mr_stored_to_tc];
       if (mr_stored_to_tc <= stored_to_tc) {
-        store_symbolic_memory(pt, vaddrs[stored_to_tc], value_v[0], VALUE_T, ast_ptr, tc, 0, (BoolectorNode*) 0, BVT);
+        store_symbolic_memory(pt, vaddrs[stored_to_tc], value_v[0], VALUE_T, ast_ptr, tc, 0, BVT);
         is_assigned = true;
       }
     }
     if (is_assigned == false) {
-      printf("OUTPUT: OH NO 1 !!! %x\n", pc - entry_point);
-      exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
+      store_input_record(ast_ptr, input_table.at(ast_nodes[involved_input].right_node), BVT);
     }
     input_table.at(ast_nodes[involved_input].right_node) = ast_ptr;
   }
@@ -4087,19 +4302,18 @@ void dump_all_input_variables_on_trace_false_branch_bvt_pure() {
     involved_input = input_table_ast_tcs_before_branch_evaluation[i];
     if (theory_type_ast_nodes[involved_input] == MIT) continue;
     value_v[0] = std::stoull(false_input_assignments[ast_nodes[involved_input].right_node], 0, 2);
-    ast_ptr = add_ast_node(VAR, 0, ast_nodes[involved_input].right_node, 1, value_v, value_v, 1, 0, zero_v, BVT);
+    ast_ptr = add_ast_node(VAR, 0, ast_nodes[involved_input].right_node, 1, value_v, value_v, 1, 0, zero_v, BVT, smt_exprs[involved_input]);
     for (size_t k = 0; k < store_trace_ptrs[involved_input].size(); k++) {
       stored_to_tc    = store_trace_ptrs[involved_input][k];
       mr_stored_to_tc = load_symbolic_memory(pt, vaddrs[stored_to_tc]);
       mr_stored_to_tc = mr_sds[mr_stored_to_tc];
       if (mr_stored_to_tc <= stored_to_tc) {
-        store_symbolic_memory(pt, vaddrs[stored_to_tc], value_v[0], VALUE_T, ast_ptr, tc, 0, (BoolectorNode*) 0, BVT);
+        store_symbolic_memory(pt, vaddrs[stored_to_tc], value_v[0], VALUE_T, ast_ptr, tc, 0, BVT);
         is_assigned = true;
       }
     }
     if (is_assigned == false) {
-      printf("OUTPUT: OH NO 1 !!! %x\n", pc - entry_point);
-      exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
+      store_input_record(ast_ptr, input_table.at(ast_nodes[involved_input].right_node), BVT);
     }
     input_table.at(ast_nodes[involved_input].right_node) = ast_ptr;
   }
@@ -4114,13 +4328,13 @@ void choose_best_local_choice_between_boxes(size_t index_true_i, size_t index_tr
     involved_input = input_table.at(ast_nodes[involved_input].right_node);
     propagated_minterval_lo[0] = mintervals_los[involved_input][index_true_i];
     propagated_minterval_up[0] = mintervals_ups[involved_input][index_true_i];
-    ast_ptr = add_ast_node(VAR, 0, ast_nodes[involved_input].right_node, 1, propagated_minterval_lo, propagated_minterval_up, 1, 0, zero_v, BOX);
+    ast_ptr = add_ast_node(VAR, 0, ast_nodes[involved_input].right_node, 1, propagated_minterval_lo, propagated_minterval_up, 1, 0, zero_v, BOX, smt_exprs[involved_input]);
     for (size_t k = 0; k < store_trace_ptrs[involved_input].size(); k++) {
       stored_to_tc    = store_trace_ptrs[involved_input][k];
       mr_stored_to_tc = load_symbolic_memory(pt, vaddrs[stored_to_tc]);
       mr_stored_to_tc = mr_sds[mr_stored_to_tc];
       if (mr_stored_to_tc <= stored_to_tc) {
-        store_symbolic_memory(pt, vaddrs[stored_to_tc], propagated_minterval_lo[0], VALUE_T, ast_ptr, tc, 0, (BoolectorNode*) 0, BOX);
+        store_symbolic_memory(pt, vaddrs[stored_to_tc], propagated_minterval_lo[0], VALUE_T, ast_ptr, tc, 0, BOX);
       }
     }
     input_table.at(ast_nodes[involved_input].right_node) = ast_ptr;
@@ -4132,13 +4346,13 @@ void choose_best_local_choice_between_boxes(size_t index_true_i, size_t index_tr
     involved_input = input_table.at(ast_nodes[involved_input].right_node);
     propagated_minterval_lo[0] = mintervals_los[involved_input][index_true_j];
     propagated_minterval_up[0] = mintervals_ups[involved_input][index_true_j];
-    ast_ptr = add_ast_node(VAR, 0, ast_nodes[involved_input].right_node, 1, propagated_minterval_lo, propagated_minterval_up, 1, 0, zero_v, BOX);
+    ast_ptr = add_ast_node(VAR, 0, ast_nodes[involved_input].right_node, 1, propagated_minterval_lo, propagated_minterval_up, 1, 0, zero_v, BOX, smt_exprs[involved_input]);
     for (size_t k = 0; k < store_trace_ptrs[involved_input].size(); k++) {
       stored_to_tc    = store_trace_ptrs[involved_input][k];
       mr_stored_to_tc = load_symbolic_memory(pt, vaddrs[stored_to_tc]);
       mr_stored_to_tc = mr_sds[mr_stored_to_tc];
       if (mr_stored_to_tc <= stored_to_tc) {
-        store_symbolic_memory(pt, vaddrs[stored_to_tc], propagated_minterval_lo[0], VALUE_T, ast_ptr, tc, 0, (BoolectorNode*) 0, BOX);
+        store_symbolic_memory(pt, vaddrs[stored_to_tc], propagated_minterval_lo[0], VALUE_T, ast_ptr, tc, 0, BOX);
       }
     }
     input_table.at(ast_nodes[involved_input].right_node) = ast_ptr;
@@ -4162,6 +4376,14 @@ bool apply_under_approximate_analysis(std::vector<uint64_t>& lo1, std::vector<ui
     return false;
   }
 
+  for (size_t i = 0; i < reg_vaddrs_cnts[rs1]; i++) {
+    for (size_t j = 0; j < reg_vaddrs_cnts[rs2]; j++) {
+      if (reg_vaddrs[rs1][i] == reg_vaddrs[rs2][j]) {
+        return false;
+      }
+    }
+  }
+
   uint8_t conditional_type = check_conditional_type_lte_or_gte();
 
   if (reg_theory_types[rs1] == MIT && reg_theory_types[rs2] == MIT) {
@@ -4172,20 +4394,24 @@ bool apply_under_approximate_analysis(std::vector<uint64_t>& lo1, std::vector<ui
 
     if (conditional_type == LGTE) {
       under_approximate_true(lo1[0], up1[0], lo2[0], up2[0]);
+      uint64_t false_ast_ptr   = add_ast_node(ILT, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 0, 0, zero_v, BOX, boolector_null);
       take_branch(1, 1);
-      sase_false_branchs[tc-2] = boolector_ult(btor, sase_regs[rs1], sase_regs[rs2]); // careful
+      asts[tc-2]               = false_ast_ptr;
+      sase_false_branchs[tc-2] = boolector_null; // careful
 
-      boolector_push(btor, 1);
-      boolector_assert(btor, boolector_ugte(btor, sase_regs[rs1], sase_regs[rs2]));
+      path_condition.push_back(add_ast_node(IGTE, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 1, 0, zero_v, BOX, boolector_null));
+
       under_approximate_false(lo1[0], up1[0], lo2[0], up2[0]);
       take_branch(0, 0);
     } else {
       under_approximate_false(lo1[0], up1[0], lo2[0], up2[0]);
+      uint64_t false_ast_ptr   = add_ast_node(IGTE, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 0, 0, zero_v, BOX, boolector_null);
       take_branch(0, 1);
-      sase_false_branchs[tc-2] = boolector_ugte(btor, sase_regs[rs1], sase_regs[rs2]); // careful
+      asts[tc-2]               = false_ast_ptr;
+      sase_false_branchs[tc-2] = boolector_null; // carefull
 
-      boolector_push(btor, 1);
-      boolector_assert(btor, boolector_ult(btor, sase_regs[rs1], sase_regs[rs2]));
+      path_condition.push_back(add_ast_node(ILT, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 1, 0, zero_v, BOX, boolector_null));
+
       under_approximate_true(lo1[0], up1[0], lo2[0], up2[0]);
       take_branch(1, 0);
     }
@@ -4193,6 +4419,7 @@ bool apply_under_approximate_analysis(std::vector<uint64_t>& lo1, std::vector<ui
     // will be (reg_mintervals_cnts[rs1] > 1 && reg_theory_types[rs1] == BOX)
     // will be (reg_mintervals_cnts[rs2] > 1 && reg_theory_types[rs2] == BOX)
 
+    queries_reasoned_by_box+=2;
     return true;
 
   } else {
@@ -4300,75 +4527,76 @@ bool apply_under_approximate_analysis(std::vector<uint64_t>& lo1, std::vector<ui
 
     if (true_reachable) {
       if (false_reachable) {
+        // return false;
         if (conditional_type == LGTE) {
           constrain_backward_under_approximate(rs1, reg_asts[rs1], true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, 1, 0);
           constrain_backward_under_approximate(rs2, reg_asts[rs2], true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, 1, 0);
-          // constrain_backward_under_approximate(rs1, reg_asts[rs1], true_branch_rs1_minterval_los[0], true_branch_rs1_minterval_ups[0]);
-          // constrain_backward_under_approximate(rs2, reg_asts[rs2], true_branch_rs2_minterval_los[0], true_branch_rs2_minterval_ups[0]);
+          uint64_t false_ast_ptr   = add_ast_node(ILT, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 0, 0, zero_v, BOX, boolector_null);
           take_branch(1, 1);
-          sase_false_branchs[tc-2] = boolector_ult(btor, sase_regs[rs1], sase_regs[rs2]); // careful
+          asts[tc-2]               = false_ast_ptr;
+          sase_false_branchs[tc-2] = boolector_null; // careful
+
+          path_condition.push_back(add_ast_node(IGTE, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 1, 0, zero_v, BOX, boolector_null));
 
           constrain_backward_under_approximate(rs1, reg_asts[rs1], false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups, 1, 0);
           constrain_backward_under_approximate(rs2, reg_asts[rs2], false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups, 1, 0);
-          // constrain_backward_under_approximate(rs1, reg_asts[rs1], false_branch_rs1_minterval_los[0], false_branch_rs1_minterval_ups[0]);
-          // constrain_backward_under_approximate(rs2, reg_asts[rs2], false_branch_rs2_minterval_los[0], false_branch_rs2_minterval_ups[0]);
-          boolector_push(btor, 1);
-          boolector_assert(btor, boolector_ugte(btor, sase_regs[rs1], sase_regs[rs2]));
           take_branch(0, 0);
         } else {
           constrain_backward_under_approximate(rs1, reg_asts[rs1], false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups, 1, 0);
           constrain_backward_under_approximate(rs2, reg_asts[rs2], false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups, 1, 0);
-          // constrain_backward_under_approximate(rs1, reg_asts[rs1], false_branch_rs1_minterval_los[0], false_branch_rs1_minterval_ups[0]);
-          // constrain_backward_under_approximate(rs2, reg_asts[rs2], false_branch_rs2_minterval_los[0], false_branch_rs2_minterval_ups[0]);
+          uint64_t false_ast_ptr   = add_ast_node(IGTE, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 0, 0, zero_v, BOX, boolector_null);
           take_branch(0, 1);
-          sase_false_branchs[tc-2] = boolector_ugte(btor, sase_regs[rs1], sase_regs[rs2]); // carefull
+          asts[tc-2]               = false_ast_ptr;
+          sase_false_branchs[tc-2] = boolector_null; // carefull
+
+          path_condition.push_back(add_ast_node(ILT, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 1, 0, zero_v, BOX, boolector_null));
 
           constrain_backward_under_approximate(rs1, reg_asts[rs1], true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, 1, 0);
           constrain_backward_under_approximate(rs2, reg_asts[rs2], true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, 1, 0);
-          // constrain_backward_under_approximate(rs1, reg_asts[rs1], true_branch_rs1_minterval_los[0], true_branch_rs1_minterval_ups[0]);
-          // constrain_backward_under_approximate(rs2, reg_asts[rs2], true_branch_rs2_minterval_los[0], true_branch_rs2_minterval_ups[0]);
-          boolector_push(btor, 1);
-          boolector_assert(btor, boolector_ult(btor, sase_regs[rs1], sase_regs[rs2]));
           take_branch(1, 0);
         }
 
+        queries_reasoned_by_box+=2;
         return true;
       } else {
         // false query to smt
+        assert_smt_path_condition();
+        check_operands_smt_expressions();
         false_reachable = check_sat_false_branch_bvt(boolector_ugte(btor, sase_regs[rs1], sase_regs[rs2]));
 
         if (false_reachable) {
           create_input_variable_constraints_false_branch_bvt();
           dump_all_input_variables_on_trace_false_branch_bvt_pure();
+          uint64_t false_ast_ptr   = add_ast_node(IGTE, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 0, 0, zero_v, BOX, boolector_null);
           take_branch(0, 1);
-          sase_false_branchs[tc-2] = boolector_ugte(btor, sase_regs[rs1], sase_regs[rs2]); // carefull
+          asts[tc-2]               = false_ast_ptr;
+          sase_false_branchs[tc-2] = boolector_ugte(btor, sase_regs[rs1], sase_regs[rs2]); // careful
+
+          path_condition.push_back(add_ast_node(ILT, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 1, 0, zero_v, BOX, boolector_null));
         }
 
         // true under_approximate
         constrain_backward_under_approximate(rs1, reg_asts[rs1], true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, 1, 0);
         constrain_backward_under_approximate(rs2, reg_asts[rs2], true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, 1, 0);
-        // constrain_backward_under_approximate(rs1, reg_asts[rs1], true_branch_rs1_minterval_los[0], true_branch_rs1_minterval_ups[0]);
-        // constrain_backward_under_approximate(rs2, reg_asts[rs2], true_branch_rs2_minterval_los[0], true_branch_rs2_minterval_ups[0]);
-        if (false_reachable) {
-          boolector_push(btor, 1);
-          boolector_assert(btor, boolector_ult(btor, sase_regs[rs1], sase_regs[rs2]));
-        }
         take_branch(1, 0);
 
+        queries_reasoned_by_box++;
         return true;
       }
     } else if (false_reachable) {
       // true query to smt
+      assert_smt_path_condition();
+      check_operands_smt_expressions();
       true_reachable = check_sat_true_branch_bvt(boolector_ult(btor, sase_regs[rs1], sase_regs[rs2]));
 
       if (true_reachable) {
         // false under_approximate
         constrain_backward_under_approximate(rs1, reg_asts[rs1], false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups, 1, 0);
         constrain_backward_under_approximate(rs2, reg_asts[rs2], false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups, 1, 0);
-        // constrain_backward_under_approximate(rs1, reg_asts[rs1], false_branch_rs1_minterval_los[0], false_branch_rs1_minterval_ups[0]);
-        // constrain_backward_under_approximate(rs2, reg_asts[rs2], false_branch_rs2_minterval_los[0], false_branch_rs2_minterval_ups[0]);
+        uint64_t false_ast_ptr   = add_ast_node(IGTE, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 0, 0, zero_v, BVT, boolector_null);
         take_branch(0, 1);
-        sase_false_branchs[tc-2] = boolector_ugte(btor, sase_regs[rs1], sase_regs[rs2]); // carefull
+        asts[tc-2]               = false_ast_ptr;
+        sase_false_branchs[tc-2] = boolector_null; // careful
 
         // true
         boolector_push(btor, 1);
@@ -4381,15 +4609,133 @@ bool apply_under_approximate_analysis(std::vector<uint64_t>& lo1, std::vector<ui
         // false under_approximate
         constrain_backward_under_approximate(rs1, reg_asts[rs1], false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups, 1, 0);
         constrain_backward_under_approximate(rs2, reg_asts[rs2], false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups, 1, 0);
-        // constrain_backward_under_approximate(rs1, reg_asts[rs1], false_branch_rs1_minterval_los[0], false_branch_rs1_minterval_ups[0]);
-        // constrain_backward_under_approximate(rs2, reg_asts[rs2], false_branch_rs2_minterval_los[0], false_branch_rs2_minterval_ups[0]);
         take_branch(0, 0);
       }
 
+      queries_reasoned_by_box++;
       return true;
     } else {
       // cannot decide
       return false;
     }
   }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+//                         on-demand bvt layer
+////////////////////////////////////////////////////////////////////////////////
+
+BoolectorNode* boolector_op(uint8_t op, uint64_t ast_tc) {
+  switch (op) {
+    case CONST: {
+      return smt_exprs[ast_tc] = (mintervals_los[ast_tc][0] < two_to_the_power_of_32) ? boolector_unsigned_int(btor, mintervals_los[ast_tc][0], bv_sort) : boolector_unsigned_int_64(mintervals_los[ast_tc][0]);
+    }
+    case ADD: {
+      return smt_exprs[ast_tc] = boolector_add(btor, smt_exprs[ast_nodes[ast_tc].left_node], smt_exprs[ast_nodes[ast_tc].right_node]);
+    }
+    case SUB: {
+      return smt_exprs[ast_tc] = boolector_sub(btor, smt_exprs[ast_nodes[ast_tc].left_node], smt_exprs[ast_nodes[ast_tc].right_node]);
+    }
+    case MUL: {
+      return smt_exprs[ast_tc] = boolector_mul(btor, smt_exprs[ast_nodes[ast_tc].left_node], smt_exprs[ast_nodes[ast_tc].right_node]);
+    }
+    case DIVU: {
+      return smt_exprs[ast_tc] = boolector_udiv(btor, smt_exprs[ast_nodes[ast_tc].left_node], smt_exprs[ast_nodes[ast_tc].right_node]);
+    }
+    case REMU: {
+      return smt_exprs[ast_tc] = boolector_urem(btor, smt_exprs[ast_nodes[ast_tc].left_node], smt_exprs[ast_nodes[ast_tc].right_node]);
+    }
+    case ILT: {
+      return smt_exprs[ast_tc] = boolector_ult(btor, smt_exprs[ast_nodes[ast_tc].left_node], smt_exprs[ast_nodes[ast_tc].right_node]);
+    }
+    case IGTE: {
+      return smt_exprs[ast_tc] = boolector_ugte(btor, smt_exprs[ast_nodes[ast_tc].left_node], smt_exprs[ast_nodes[ast_tc].right_node]);
+    }
+    case IEQ: {
+      return smt_exprs[ast_tc] = boolector_eq(btor, smt_exprs[ast_nodes[ast_tc].left_node], smt_exprs[ast_nodes[ast_tc].right_node]);
+    }
+    case INEQ: {
+      return smt_exprs[ast_tc] = boolector_ne(btor, smt_exprs[ast_nodes[ast_tc].left_node], smt_exprs[ast_nodes[ast_tc].right_node]);
+    }
+  }
+}
+
+BoolectorNode* boolector_op_reg(uint8_t op) {
+  switch (op) {
+    case ADD: {
+      return boolector_add(btor, smt_exprs[reg_asts[rs1]], smt_exprs[reg_asts[rs2]]);
+    }
+    case SUB: {
+      return boolector_sub(btor, smt_exprs[reg_asts[rs1]], smt_exprs[reg_asts[rs2]]);
+    }
+    case MUL: {
+      return boolector_mul(btor, smt_exprs[reg_asts[rs1]], smt_exprs[reg_asts[rs2]]);
+    }
+    case DIVU: {
+      return boolector_udiv(btor, smt_exprs[reg_asts[rs1]], smt_exprs[reg_asts[rs2]]);
+    }
+    case REMU: {
+      return boolector_urem(btor, smt_exprs[reg_asts[rs1]], smt_exprs[reg_asts[rs2]]);
+    }
+  }
+}
+
+BoolectorNode* create_smt_expression(uint64_t ast_tc) {
+  if (ast_tc == 0) {
+    printf("OUTPUT: ast_tc = 0 in create_smt_expression at %x \n", pc - entry_point);
+    exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
+  }
+
+  if (smt_exprs[ast_tc] != boolector_null)
+    return smt_exprs[ast_tc];
+
+  // VAR always has a smt_expr
+
+  if (ast_nodes[ast_tc].type == CONST)
+    return boolector_op(CONST, ast_tc);
+
+  create_smt_expression(ast_nodes[ast_tc].left_node);
+  create_smt_expression(ast_nodes[ast_tc].right_node);
+
+  return boolector_op(ast_nodes[ast_tc].type, ast_tc);
+}
+
+BoolectorNode* check_smt_expression(uint8_t op) {
+  bool is_null_rs1, is_null_rs2;
+  if (sase_regs[rs1] == boolector_null && sase_regs[rs2] == boolector_null) {
+    return boolector_null;
+  } else {
+    if (sase_regs[rs1] == boolector_null) {
+      create_smt_expression(reg_asts[rs1]);
+    }
+
+    if (sase_regs[rs2] == boolector_null) {
+      create_smt_expression(reg_asts[rs2]);
+    }
+
+    return boolector_op_reg(op);
+  }
+}
+
+void check_operands_smt_expressions() {
+  sase_regs[rs1] = create_smt_expression(reg_asts[rs1]);
+  sase_regs[rs2] = create_smt_expression(reg_asts[rs2]);
+}
+
+BoolectorNode* check_conditional_expr_for_operands_smt_expressions(uint64_t ast_tc) {
+  create_smt_expression(ast_nodes[ast_tc].left_node);
+  create_smt_expression(ast_nodes[ast_tc].right_node);
+
+  return boolector_op(ast_nodes[ast_tc].type, ast_tc);
+}
+
+void assert_smt_path_condition() {
+  for (size_t i = 0; i < path_condition.size(); i++) {
+    if (steps[path_condition[i]] == 1) {
+      theory_type_ast_nodes[path_condition[i] - 1] = BVT;
+      boolector_push(btor, 1);
+    }
+    boolector_assert(btor, check_conditional_expr_for_operands_smt_expressions(path_condition[i]));
+  }
+  path_condition.clear();
 }

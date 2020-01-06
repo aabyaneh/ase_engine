@@ -2335,12 +2335,12 @@ void implement_read(uint64_t* context) {
               if (mrcc == 0) {
                 // no branching yet, we may overwrite symbolic memory
                 // store_symbolic_memory(get_pt(context), vbuffer, value, 0, val_ptr_1, val_ptr_2, 1, 1, zero_v, 0, 0, 0, 0, 0, 0, 0, 0, 0);
-                uint64_t ast_ptr = add_ast_node(CONST, 0, 0, 1, val_ptr_1, val_ptr_2, 1, 0, zero_v, MIT);
-                store_symbolic_memory(get_pt(context), vbuffer, value, 0, 0, tc, 1, (BoolectorNode*) 0, MIT);
+                uint64_t ast_ptr = add_ast_node(CONST, 0, 0, 1, val_ptr_1, val_ptr_2, 1, 0, zero_v, MIT, (BoolectorNode*) 0);
+                store_symbolic_memory(get_pt(context), vbuffer, value, 0, 0, tc, 1, MIT);
               } else {
                 // store_symbolic_memory(get_pt(context), vbuffer, value, 0, val_ptr_1, val_ptr_2, 1, 1, zero_v, 0, 0, 0, 0, 0, tc, 0, 0, 0);
-                uint64_t ast_ptr = add_ast_node(CONST, 0, 0, 1, val_ptr_1, val_ptr_2, 1, 0, zero_v, MIT);
-                store_symbolic_memory(get_pt(context), vbuffer, value, 0, 0, tc, 1, (BoolectorNode*) 0, MIT);
+                uint64_t ast_ptr = add_ast_node(CONST, 0, 0, 1, val_ptr_1, val_ptr_2, 1, 0, zero_v, MIT, (BoolectorNode*) 0);
+                store_symbolic_memory(get_pt(context), vbuffer, value, 0, 0, tc, 1, MIT);
               }
             } else {
               actually_read = 0;
@@ -2568,7 +2568,7 @@ void implement_symbolic_input(uint64_t* context) {
 
       val_ptr_1[0] = lo;
       val_ptr_2[0] = compute_upper_bound(lo, step, up);
-      ast_ptr = add_ast_node(VAR, 0, symbolic_input_cnt, 1, val_ptr_1, val_ptr_2, step, 0, zero_v, MIT);
+      ast_ptr = add_ast_node(VAR, 0, symbolic_input_cnt, 1, val_ptr_1, val_ptr_2, step, 0, zero_v, MIT, in);
 
       if (is_valid_virtual_address(addr)) {
         if (is_virtual_address_mapped(get_pt(context), addr) == 0)
@@ -2576,7 +2576,7 @@ void implement_symbolic_input(uint64_t* context) {
       } else
         throw_exception(EXCEPTION_INVALIDADDRESS, addr);
 
-      store_symbolic_memory(pt, addr, lo, VALUE_T, ast_ptr, tc, 1, in, MIT);
+      store_symbolic_memory(pt, addr, lo, VALUE_T, ast_ptr, tc, 1, MIT);
 
       input_table.push_back(ast_ptr);
 
@@ -2917,8 +2917,8 @@ void implement_brk(uint64_t* context) {
             val_ptr_1[0] = previous_program_break;
             val_ptr_2[0] = size;
             // store_symbolic_memory(get_pt(context), 0, previous_program_break, 1, val_ptr_1, val_ptr_2, 1, 1, zero_v, 0, 0, 0, 0, 0, tc, 0, 0, 0);
-            uint64_t ast_ptr = add_ast_node(CONST, 0, 0, 1, val_ptr_1, val_ptr_2, 1, 0, zero_v, MIT);
-            store_symbolic_memory(get_pt(context), 0, previous_program_break, POINTER_T, ast_ptr, tc, 1, sase_regs[REG_A0], MIT);
+            uint64_t ast_ptr = add_ast_node(CONST, 0, 0, 1, val_ptr_1, val_ptr_2, 1, 0, zero_v, MIT, sase_regs[REG_A0]);
+            store_symbolic_memory(get_pt(context), 0, previous_program_break, POINTER_T, ast_ptr, tc, 1, MIT);
           } else {
             throw_exception(EXCEPTION_MAXTRACE, 0);
 
@@ -2961,7 +2961,7 @@ void implement_brk(uint64_t* context) {
         reg_symb_type[REG_A0]         = CONCRETE;
         reg_asts[REG_A0]              = 0;
 
-        sase_regs[REG_A0]             = boolector_unsigned_int(btor, 0, bv_sort); // careful
+        sase_regs[REG_A0]             = (BoolectorNode*) 0;
         reg_theory_types[REG_A0]      = MIT;
       }
     }
@@ -4147,12 +4147,13 @@ void map_and_store(uint64_t* context, uint64_t vaddr, uint64_t data) {
       if (is_trace_space_available()) {
         // always track initialized memory by using tc as most recent branch
         val_ptr_1[0] = data;
-        uint64_t ast_ptr = add_ast_node(CONST, 0, 0, 1, val_ptr_1, val_ptr_1, 1, 0, zero_v, MIT);
+        uint64_t ast_ptr = add_ast_node(CONST, 0, 0, 1, val_ptr_1, val_ptr_1, 1, 0, zero_v, MIT, (BoolectorNode*) 0);
 
-        if (data < two_to_the_power_of_32)
-          store_symbolic_memory(get_pt(context), vaddr, data, 0, ast_ptr, tc, 1, boolector_unsigned_int(btor, data, bv_sort), MIT);
-        else
-          store_symbolic_memory(get_pt(context), vaddr, data, 0, ast_ptr, tc, 1, boolector_unsigned_int_64(data), MIT);
+        store_symbolic_memory(get_pt(context), vaddr, data, 0, ast_ptr, tc, 1, MIT);
+        // if (data < two_to_the_power_of_32)
+        //   store_symbolic_memory(get_pt(context), vaddr, data, 0, ast_ptr, tc, 1, boolector_unsigned_int(btor, data, bv_sort), MIT);
+        // else
+        //   store_symbolic_memory(get_pt(context), vaddr, data, 0, ast_ptr, tc, 1, boolector_unsigned_int_64(data), MIT);
 
       } else {
         printf1((uint64_t*) "%s: ealloc out of memory\n", exe_name);
@@ -4491,7 +4492,7 @@ uint64_t engine(uint64_t* to_context) {
           println();
 
           std::cout << YELLOW "backtracking: " << b << RESET << '\n';
-          std::cout << GREEN "number of queries:= mit: " << mit_cnt << ", bvt: " << number_of_queries << RESET << "\n\n";
+          std::cout << GREEN "number of queries:= mit: " << mit_cnt << ", box: " << queries_reasoned_by_box << ", bvt: " << number_of_queries << RESET << "\n\n";
 
           return EXITCODE_NOERROR;
         }

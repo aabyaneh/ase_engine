@@ -91,7 +91,6 @@ extern uint64_t MAX_TRACE_LENGTH;
 extern uint64_t debug_symbolic;
 extern uint64_t backtrack;
 extern bool     is_only_one_branch_reachable;
-extern bool     assert_zone;
 
 extern uint64_t  rc;
 extern uint64_t* read_values;
@@ -117,7 +116,6 @@ extern std::vector<std::vector<uint64_t> > mintervals_los;
 extern std::vector<std::vector<uint64_t> > mintervals_ups;
 extern std::vector<std::vector<uint64_t> > reg_mintervals_los;
 extern std::vector<std::vector<uint64_t> > reg_mintervals_ups;
-extern std::vector<std::vector<uint64_t> > ld_from_tcs;
 
 extern std::vector<uint64_t>  zero_v;
 
@@ -134,8 +132,9 @@ extern std::ofstream output_results;
 extern const uint8_t CONST, VAR;
 
 extern uint8_t* reg_theory_types;
-extern uint8_t  MIT, BVT;
+extern uint8_t  MIT, BOX, BVT;
 extern uint64_t mit_cnt;
+extern uint64_t queries_reasoned_by_box;
 
 // ------------------------ INSTRUCTIONS -----------------------
 
@@ -169,7 +168,7 @@ void ealloc();
 void efree();
 uint64_t get_current_tc();
 
-void store_symbolic_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, uint32_t data_type, uint64_t ast_ptr, uint64_t trb, uint64_t is_store, BoolectorNode* sym_value, uint8_t theory_type);
+void store_symbolic_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, uint32_t data_type, uint64_t ast_ptr, uint64_t trb, uint64_t is_store, uint8_t theory_type);
 void store_constrained_memory(uint64_t vaddr, std::vector<uint64_t>& lo, std::vector<uint64_t>& up, uint32_t mints_num, uint64_t step, std::vector<uint64_t>& ld_from, uint32_t ld_from_num, bool hasmn, uint64_t addsub_corr, uint64_t muldivrem_corr, uint64_t corr_validity, uint64_t to_tc, uint64_t is_input);
 void store_register_memory(uint64_t reg, std::vector<uint64_t>& value);
 
@@ -199,8 +198,8 @@ void handle_mul_cnd_failure(std::vector<uint64_t>& mul_lo_rd, std::vector<uint64
 
 uint64_t compute_upper_bound(uint64_t lo, uint64_t step, uint64_t value);
 
-uint64_t add_ast_node(uint8_t typ, uint64_t left_node, uint64_t right_node, uint32_t mints_num, std::vector<uint64_t>& lo, std::vector<uint64_t>& up, uint64_t step, uint64_t sym_input_num, std::vector<uint64_t>& sym_input_ast_tcs, uint8_t theory_type);
-uint64_t recompute_expression(uint64_t ast_tc, uint8_t theory_type);
+uint64_t add_ast_node(uint8_t typ, uint64_t left_node, uint64_t right_node, uint32_t mints_num, std::vector<uint64_t>& lo, std::vector<uint64_t>& up, uint64_t step, uint64_t sym_input_num, std::vector<uint64_t>& sym_input_ast_tcs, uint8_t theory_type, BoolectorNode* smt_expr);
+uint64_t recompute_expression(uint64_t ast_tc);
 
 uint64_t constrain_backward_under_approximate(uint64_t reg, uint64_t ast_tc, std::vector<uint64_t>& lo, std::vector<uint64_t>& up, size_t mints_num, uint64_t input_box);
 uint64_t backward_under_approximate(uint64_t ast_tc, std::vector<uint64_t>& lo, std::vector<uint64_t>& up, size_t mints_num, uint64_t input_box);
@@ -209,3 +208,9 @@ void under_approximate_false(uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t 
 void dump_all_input_variables_on_trace_true_branch_bvt_pure();
 void dump_all_input_variables_on_trace_false_branch_bvt_pure();
 bool apply_under_approximate_analysis(std::vector<uint64_t>& lo1, std::vector<uint64_t>& up1, std::vector<uint64_t>& lo2, std::vector<uint64_t>& up2);
+
+BoolectorNode* boolector_op(uint8_t op, uint64_t ast_tc);
+BoolectorNode* create_smt_expression(uint64_t ast_tc);
+BoolectorNode* check_smt_expression(uint8_t op);
+void check_operands_smt_expressions();
+void assert_smt_path_condition();
