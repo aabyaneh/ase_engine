@@ -1,3 +1,5 @@
+uint64_t* malloc(uint64_t size);
+
 void insertion_sort(uint64_t* arr, uint64_t n) {
    uint64_t i;
    uint64_t key;
@@ -33,24 +35,16 @@ uint64_t main(uint64_t argc, uint64_t* argv) {
   uint64_t cnt;
   uint64_t* arr;
 
-  cnt = 40;
+  cnt = 300;
   arr = malloc(cnt * 8);
 
   v1 = 0;
   while (v1 < cnt) {
-    if (v1 != cnt/2)
-      *(arr + v1) = cnt - v1;
+    *(arr + v1) = cnt - v1;
     v1 = v1 + 1;
   }
 
-  // input((arr + cnt/1), 0, 2*cnt-1, 1);
-  // input((arr + cnt/2), 0, 2*cnt-1, 1);
-  // input((arr + cnt/4), 0, 2*cnt-1, 1);
-  // input((arr + cnt/8), 0, 2*cnt-1, 1);
-
   input((arr + cnt/2), 0, 2*cnt-1, 1);
-  input((arr + cnt/2+1), 0, 2*cnt-1, 1);
-  input((arr + cnt/2+2), 0, 2*cnt-1, 1);
 
   insertion_sort(arr, cnt);
 

@@ -101,8 +101,8 @@ uint64_t main(uint64_t argc, uint64_t* argv) {
   }
 
   input((arr + cnt/2), 0, 2*cnt-1, 1);
-  input((arr + cnt/4), 0, 2*cnt-1, 1);
-  input((arr + cnt/8), 0, 2*cnt-1, 1);
+  input((arr + cnt/2+1), 0, 2*cnt-1, 1);
+  input((arr + cnt/2+2), 0, 2*cnt-1, 1);
   // input((arr + cnt/3), 0, 2*cnt-1, 1);
 
   // input((arr + 0), 0, 2*cnt-1, 1);

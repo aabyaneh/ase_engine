@@ -1,17 +1,17 @@
-uint64_t smallest(uint64_t* arr, uint64_t n) {
+uint64_t largest(uint64_t* arr, uint64_t n) {
   uint64_t i;
-  uint64_t min;
+  uint64_t max;
 
-  min = *arr;
+  max = *arr;
 
   i = 1;
   while (i < n) {
-    if (*(arr + i) < min)
-      min = *(arr + i);
+    if (*(arr + i) > max)
+      max = *(arr + i);
     i = i + 1;
   }
 
-  return min;
+  return max;
 }
 
 uint64_t main(uint64_t argc, uint64_t* argv) {
@@ -19,7 +19,7 @@ uint64_t main(uint64_t argc, uint64_t* argv) {
   uint64_t cnt;
   uint64_t* arr;
 
-  cnt = 4000;
+  cnt = 10000;
   arr = malloc(cnt * 8);
 
   v1 = 0;
@@ -29,10 +29,10 @@ uint64_t main(uint64_t argc, uint64_t* argv) {
   }
 
   input(arr + (cnt/2)  , 0, 2*cnt-1, 1);
-  input(arr + (cnt/2+1), 0, 2*cnt-1, 1);
+  // input(arr + (cnt/2+1), 0, 2*cnt-1, 1);
   // input(arr + (cnt/2+2), 0, 2*cnt-1, 1);
 
-  smallest(arr, cnt);
+  largest(arr, cnt);
 
   // v1 = 0;
   // while (v1 < cnt) {

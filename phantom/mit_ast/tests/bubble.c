@@ -35,7 +35,7 @@ uint64_t main(uint64_t argc, uint64_t* argv) {
   uint64_t cnt;
   uint64_t* arr;
 
-  cnt = 40;
+  cnt = 300;
   arr = malloc(cnt * 8);
 
   v1 = 0;
@@ -44,17 +44,9 @@ uint64_t main(uint64_t argc, uint64_t* argv) {
     v1 = v1 + 1;
   }
 
-  input(arr + (cnt/2)  , 0, 2*cnt-1, 1);
-  input(arr + (cnt/2+1), 0, 2*cnt-1, 1);
-  input(arr + (cnt/2+2), 0, 2*cnt-1, 1);
+  input((arr + cnt/2), 0, 2*cnt-1, 1);
 
   bubbleSort(arr, cnt);
-
-  // v1 = 0;
-  // while (v1 < cnt) {
-  //   printsv(v1, *(arr+v1));
-  //   v1 = v1 + 1;
-  // }
 
   return 0;
 }

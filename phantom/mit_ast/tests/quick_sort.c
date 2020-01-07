@@ -1,8 +1,3 @@
-/*
-  This file is a C* translation of the original implementation
-  done by Alireza Abyaneh.
-*/
-
 uint64_t* power_of_two_table;
 uint64_t  INT64_MIN_T;
 
@@ -79,23 +74,16 @@ uint64_t main(uint64_t argc, uint64_t* argv) {
   // init();
   INT64_MIN_T = 9223372036854775808; //two_to_the_power_of(63);
 
-  cnt = 40;
+  cnt = 300;
   arr = malloc(cnt * 8);
 
   v1 = 0;
   while (v1 < cnt) {
-    if (v1 != cnt/2)
-      *(arr + v1) = cnt - v1;
+    *(arr + v1) = cnt - v1;
     v1 = v1 + 1;
   }
 
   input((arr + cnt/2), 0, 2*cnt-1, 1);
-  input((arr + cnt/4), 0, 2*cnt-1, 1);
-  input((arr + cnt/8), 0, 2*cnt-1, 1);
-
-  // input((arr + cnt/2), 0, 2*cnt-1, 1);
-  // input((arr + cnt/2+1), 0, 2*cnt-1, 1);
-  // input((arr + cnt/2+2), 0, 2*cnt-1, 1);
 
   quick_sort(arr, 0, cnt - 1);
 

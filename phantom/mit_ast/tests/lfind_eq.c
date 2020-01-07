@@ -1,12 +1,5 @@
 uint64_t compar(uint64_t* op1, uint64_t* op2) {
-  // return (*op1 == *op2);
-
-  if (*op1 < *op2)
-    return 0;
-  else if (*op1 > *op2)
-    return 0;
-  else
-    return 1;
+  return (*op1 == *op2);
 }
 
 uint64_t* lfind(uint64_t* key, uint64_t* base, uint64_t* nmemb, uint64_t size) {
@@ -21,7 +14,6 @@ uint64_t* lfind(uint64_t* key, uint64_t* base, uint64_t* nmemb, uint64_t size) {
   while (loop) {
     if (cnt < *nmemb) {
       if (compar(key, result) == 0) {
-        // printsv(cnt, *key);
         result = result + size;
         cnt    = cnt + 1;
       } else
@@ -45,8 +37,8 @@ uint64_t main() {
   uint64_t  cnt;
   uint64_t  step;
 
-  cnt  = 700;
-  step = 1;
+  cnt  = 2000;
+  step = 2;
 
   arr = malloc(cnt * 8);
   i = 0;
@@ -55,10 +47,8 @@ uint64_t main() {
     i = i + 1;
   }
 
-  input(arr, 0, (cnt+1)*2, 1);
-
   element  = malloc(1 * 8);
-  input(element, 0, (cnt+1)*2, 1);
+  input(element, 0, (cnt+1)*step, 1);
 
   length   = malloc(1 * 8);
   *length  = cnt;
