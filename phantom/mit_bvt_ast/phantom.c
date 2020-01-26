@@ -704,6 +704,7 @@ uint64_t EXCEPTION_INVALIDADDRESS     = 4;
 uint64_t EXCEPTION_DIVISIONBYZERO     = 5;
 uint64_t EXCEPTION_UNKNOWNINSTRUCTION = 6;
 uint64_t EXCEPTION_MAXTRACE           = 7;
+uint64_t EXCEPTION_UNREACH_EXPLORE    = 8;
 
 uint64_t* EXCEPTIONS; // strings representing exceptions
 
@@ -754,7 +755,7 @@ uint64_t* stores_per_instruction = (uint64_t*) 0; // number of executed stores p
 // ------------------------- INITIALIZATION ------------------------
 
 void init_interpreter() {
-  EXCEPTIONS = smalloc((EXCEPTION_MAXTRACE + 1) * SIZEOFUINT64STAR);
+  EXCEPTIONS = smalloc((EXCEPTION_UNREACH_EXPLORE + 1) * SIZEOFUINT64STAR);
 
   *(EXCEPTIONS + EXCEPTION_NOEXCEPTION)        = (uint64_t) "no exception";
   *(EXCEPTIONS + EXCEPTION_PAGEFAULT)          = (uint64_t) "page fault";
@@ -764,6 +765,7 @@ void init_interpreter() {
   *(EXCEPTIONS + EXCEPTION_DIVISIONBYZERO)     = (uint64_t) "division by zero";
   *(EXCEPTIONS + EXCEPTION_UNKNOWNINSTRUCTION) = (uint64_t) "unknown instruction";
   *(EXCEPTIONS + EXCEPTION_MAXTRACE)           = (uint64_t) "trace length exceeded";
+  *(EXCEPTIONS + EXCEPTION_UNREACH_EXPLORE)    = (uint64_t) "unreachable exploration";
 }
 
 void reset_interpreter() {
@@ -940,8 +942,6 @@ uint64_t mobster(uint64_t* to_context);
 
 uint64_t engine(uint64_t* to_context);
 
-// uint64_t is_boot_level_zero();
-
 uint64_t selfie_run(uint64_t machine);
 
 // ------------------------ GLOBAL CONSTANTS -----------------------
@@ -966,6 +966,7 @@ uint64_t EXITCODE_MULTIPLEEXCEPTIONERROR = 11;
 uint64_t EXITCODE_SYMBOLICEXECUTIONERROR = 12;
 uint64_t EXITCODE_OUTOFTRACEMEMORY       = 13;
 uint64_t EXITCODE_UNCAUGHTEXCEPTION      = 14;
+uint64_t EXITCODE_UNREACH_EXPLORE        = 15;
 
 uint64_t SYSCALL_BITWIDTH = 32; // integer bit width for system calls
 
@@ -4403,6 +4404,14 @@ uint64_t handle_timer(uint64_t* context) {
   return DONOTEXIT;
 }
 
+uint64_t handle_unreachable_exploration(uint64_t* context) {
+  set_exception(context, EXCEPTION_NOEXCEPTION);
+
+  set_exit_code(context, EXITCODE_UNREACH_EXPLORE);
+
+  return EXIT;
+}
+
 uint64_t handle_exception(uint64_t* context) {
   uint64_t exception;
 
@@ -4418,6 +4427,8 @@ uint64_t handle_exception(uint64_t* context) {
     return handle_max_trace(context);
   else if (exception == EXCEPTION_TIMER)
     return handle_timer(context);
+  else if (exception == EXCEPTION_UNREACH_EXPLORE)
+    return handle_unreachable_exploration(context);
   else {
     printf2((uint64_t*) "%s: context %s throws uncaught ", exe_name, get_name(context));
     print_exception(exception, get_faulting_page(context));
@@ -4467,8 +4478,6 @@ uint64_t engine(uint64_t* to_context) {
         boolector_assert(btor, sase_false_branchs[sase_tc]);
 
       } else {
-        // printf("%\nbacktracking %llu\n", b+1);
-
         if (IS_TEST_MODE) {
           for (size_t j = 0; j < input_table.size(); j++) {
             for (uint32_t i = 0; i < mintervals_los[input_table[j]].size(); i++) {
@@ -4478,22 +4487,48 @@ uint64_t engine(uint64_t* to_context) {
           output_results << "B=" << b+1 << "\n";
         }
 
+        if (satisfiability_check_cnt == 0 && unreachable_path == false) {
+          // it is not an unreachable path, and last condition is reasoned exactly.
+
+          // for correctness check
+          // if (boolector_sat(btor) != BOOLECTOR_SAT) {
+          //   printf("OUTPUT: must not be unsat!!!\n");
+          // }
+
+          if (b == 0) printf1((uint64_t*) "%s: backtracking \n", exe_name); else unprint_integer(b);
+          b = b + 1;
+          print_integer(b);
+
+        } else if (unreachable_path == true) {
+          // unreachable path has been explored; backtrack
+          unreachable_path = false;
+        } else {
+          /*
+            an end-point is reached where the reasoning is yet not exact: satisfiability_check_cnt > 0;
+            so satisfiability must be checked: if sat then it is a real path dump the generated witness by smt
+            if not sat means unreachable path so backtrack;
+          */
+
+          /*
+            don't need to satisfiability_check_cnt = 0; because it will be managed in backtrack_sltu
+            here we have unreachable_path = false;
+          */
+          number_of_queries++;
+          if (boolector_sat(btor) == BOOLECTOR_SAT) {
+            if (b == 0) printf1((uint64_t*) "%s: backtracking \n", exe_name); else unprint_integer(b);
+            b = b + 1;
+            print_integer(b);
+
+            // dump inputs taken from smt, because this path was reasoned lazily so at end-point inputs should be updated with correct values
+            // for print and test generation purpose
+            dump_all_input_variables_on_trace_bvt();
+          }
+        }
+
         backtrack_trace(current_context);
-
-        if (b == 0)
-          printf1((uint64_t*) "%s: backtracking \n", exe_name);
-        else
-          unprint_integer(b);
-
-        b = b + 1;
-
-        print_integer(b);
 
         if (pc == 0) {
           println();
-
-          // printf1((uint64_t*) "%s: backtracking ", exe_name);
-          // print_integer(b);
           println();
 
           std::cout << YELLOW "backtracking: " << b << RESET << '\n';
@@ -4545,6 +4580,10 @@ uint64_t selfie_run(uint64_t machine) {
 
   printf3((uint64_t*) "%s: phantom executing %s with %dMB physical memory \n", exe_name, binary_name, (uint64_t*) (page_frame_memory / MEGABYTE));
   println();
+
+  if (satisfiability_check_step) { std::cout << YELLOW "two-layered with lazy SMT approach; "  RESET << "\n"; }
+  else                           { std::cout << YELLOW "two-layered with eager SMT approach; " RESET << "\n"; }
+  std::cout << YELLOW "branch reachability step is set to: " << satisfiability_check_step << RESET << "\n\n";
 
   exit_code = engine(current_context);
 
@@ -4604,12 +4643,14 @@ void set_argument(uint64_t* argv) {
 
 void print_usage() {
   printf("usage: \n");
-  printf("intervals: executable -l binary -i 0 \n");
-  printf("SMT:       executable -l binary -k 0 \n");
+  printf("two-layered, (interval + SMT):      executable -l binary -i 0 \n");
+  printf("two-layered, (interval + lazy SMT): executable -l binary -lazy number -i 0 \n");
+  printf("one-layered, (only SMT):            executable -l binary -k 0 \n");
 }
 
 int main(uint64_t argc, uint64_t* argv) {
   uint64_t* option;
+  uint64_t* arg;
 
   init_selfie((uint64_t) argc, (uint64_t*) argv);
 
@@ -4621,6 +4662,11 @@ int main(uint64_t argc, uint64_t* argv) {
     init_interpreter();
 
     option = get_argument();
+    if (string_compare(option, (uint64_t*) "-help")) {
+      print_usage();
+      return EXITCODE_BADARGUMENTS;
+    }
+
     if (string_compare(option, (uint64_t*) "-l")) {
       selfie_load();
     } else {
@@ -4629,6 +4675,12 @@ int main(uint64_t argc, uint64_t* argv) {
     }
 
     option = get_argument();
+    if (string_compare(option, (uint64_t*) "-lazy")) {
+      arg = get_argument();
+      satisfiability_check_step = atoi(arg);
+      option = get_argument();
+    }
+
     if (string_compare(option, (uint64_t*) "-k")) {
       return selfie_run(SASE);
     } else if (string_compare(option, (uint64_t*) "-i")) {

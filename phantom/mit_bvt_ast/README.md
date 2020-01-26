@@ -10,10 +10,15 @@ make
 make selfie
 ```
 #### How to execute:
-SE using "mit + bvt":
+SE using "mit + bvt" with eager approach to send queries to SMT:
 ```
 ./selfie -c code.c -o code
 ./phantom -l code -i 0
+```
+SE using "mit + bvt" with lazy approach to send queries to SMT:
+```
+./selfie -c code.c -o code
+./phantom -l code -lazy step -i 0
 ```
 SE using bvt (only SMT):
 ```

@@ -117,7 +117,6 @@ extern std::vector<std::vector<uint64_t> > mintervals_los;
 extern std::vector<std::vector<uint64_t> > mintervals_ups;
 extern std::vector<std::vector<uint64_t> > reg_mintervals_los;
 extern std::vector<std::vector<uint64_t> > reg_mintervals_ups;
-extern std::vector<std::vector<uint64_t> > ld_from_tcs;
 
 extern std::vector<uint64_t>  zero_v;
 
@@ -136,6 +135,11 @@ extern const uint8_t CONST, VAR;
 extern uint8_t* reg_theory_types;
 extern uint8_t  MIT, BVT;
 extern uint64_t mit_cnt;
+
+extern uint64_t satisfiability_check_step;
+extern uint64_t satisfiability_check_cnt;
+extern bool     unreachable_path;
+void dump_all_input_variables_on_trace_bvt();
 
 // ------------------------ INSTRUCTIONS -----------------------
 

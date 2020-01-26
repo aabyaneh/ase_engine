@@ -1,4 +1,5 @@
 #include "mit.h"
+#include <unordered_map>
 
 typedef unsigned __int128 uint128_t;
 
@@ -144,7 +145,7 @@ std::vector<uint64_t> propagated_minterval_up(MAX_NUM_OF_INTERVALS);
 // --------------- two level decision procedure
 // ---------------------------------------------
 
-uint8_t  MIT = 0, BVT = 2; // modular interval theory, bit vector theory
+uint8_t  MIT = 0, BVT = 2, ABVT = 3; // modular interval theory, bit vector theory
 uint8_t* theory_type_ast_nodes;
 uint8_t* reg_theory_types;
 uint8_t* theory_types;
@@ -164,9 +165,11 @@ extern BoolectorNode** sase_false_branchs;
 extern BoolectorNode** sase_regs;         // array of pointers to SMT expressions
 extern uint64_t        two_to_the_power_of_32;
 
-BoolectorNode*         boolector_null = (BoolectorNode*) 0;
+BoolectorNode*         boolector_null = boolector_null;
 std::vector<uint64_t>  path_condition;
 uint64_t               most_recent_if_on_ast_trace = 0;
+
+uint64_t sltu_instruction = -1;
 
 // ------------------------- INITIALIZATION ------------------------
 
@@ -678,7 +681,7 @@ bool constrain_sub_pointer() {
           reg_vaddrs_cnts[rd]       = 0;
           reg_asts[rd]              = 0;
 
-          sase_regs[rd]             = (BoolectorNode*) 0;
+          sase_regs[rd]             = boolector_null;
           reg_theory_types[rd]      = MIT;
 
           set_correction(rd, 0, 0, 0);
@@ -701,7 +704,7 @@ bool constrain_sub_pointer() {
       reg_vaddrs_cnts[rd]       = 0;
       reg_asts[rd]              = 0;
 
-      sase_regs[rd]             = (BoolectorNode*) 0;
+      sase_regs[rd]             = boolector_null;
       reg_theory_types[rd]      = MIT;
 
       set_correction(rd, 0, 0, 0);
@@ -718,7 +721,7 @@ bool constrain_sub_pointer() {
     reg_vaddrs_cnts[rd]       = 0;
     reg_asts[rd]              = 0;
 
-    sase_regs[rd]             = (BoolectorNode*) 0;
+    sase_regs[rd]             = boolector_null;
     reg_theory_types[rd]      = MIT;
 
     set_correction(rd, 0, 0, 0);
@@ -1346,6 +1349,7 @@ uint64_t check_whether_represents_most_recent_constraint(uint64_t mrvc) {
 uint64_t constrain_ld() {
   uint64_t vaddr;
   uint64_t mrvc;
+  uint64_t mrvc_;
   uint64_t a;
 
   // load double word
@@ -2215,61 +2219,83 @@ bool check_sat_false_branch_bvt(BoolectorNode* assert) {
   return result;
 }
 
-void create_input_variable_constraints_true_branch_bvt() {
+void create_input_variable_constraints_true_branch_bvt(bool is_branch_reasoned_based_on_guess) {
   uint64_t ast_ptr, involved_input, stored_to_tc, mr_stored_to_tc;
   bool is_assigned = false;
+  uint8_t abstraction;
 
   if (reg_symb_type[rs1] == SYMBOLIC) {
     for (size_t i = 0; i < involved_sym_inputs_cnts[reg_asts[rs1]]; i++) {
+      is_assigned = false;
       involved_input = involved_sym_inputs_ast_tcs[reg_asts[rs1]][i];
-      value_v[0] = std::stoull(true_input_assignments[ast_nodes[involved_input].right_node], 0, 2);
-      ast_ptr = add_ast_node(VAR, 0, ast_nodes[involved_input].right_node, 1, value_v, value_v, 1, 0, zero_v, BVT, smt_exprs[involved_input]);
+      // value_v[0] = std::stoull(true_input_assignments[ast_nodes[involved_input].right_node], 0, 2);
+      if (!is_branch_reasoned_based_on_guess) {
+        value_v[0]  = std::stoull(true_input_assignments[ast_nodes[involved_input].right_node], 0, 2);
+        abstraction = BVT;
+      } else {
+        value_v[0]  = 0;
+        abstraction = ABVT;
+      }
+      ast_ptr = add_ast_node(VAR, 0, ast_nodes[involved_input].right_node, 1, value_v, value_v, 1, 0, zero_v, abstraction, smt_exprs[involved_input]);
       for (size_t k = 0; k < store_trace_ptrs[involved_input].size(); k++) {
         stored_to_tc    = store_trace_ptrs[involved_input][k];
         mr_stored_to_tc = load_symbolic_memory(pt, vaddrs[stored_to_tc]);
         mr_stored_to_tc = mr_sds[mr_stored_to_tc];
         if (mr_stored_to_tc <= stored_to_tc) {
-          store_symbolic_memory(pt, vaddrs[stored_to_tc], value_v[0], VALUE_T, ast_ptr, tc, 0, BVT);
+          store_symbolic_memory(pt, vaddrs[stored_to_tc], value_v[0], VALUE_T, ast_ptr, tc, 0, abstraction);
           is_assigned = true;
         }
       }
 
       if (is_assigned == false) {
-        store_input_record(ast_ptr, input_table.at(ast_nodes[involved_input].right_node), BVT);
+        store_input_record(ast_ptr, input_table.at(ast_nodes[involved_input].right_node), abstraction);
       }
       input_table.at(ast_nodes[involved_input].right_node) = ast_ptr;
     }
+
+    // recompute_expression(reg_asts[rs1]);
   }
 
   is_assigned = false;
 
   if (reg_symb_type[rs2] == SYMBOLIC) {
     for (size_t i = 0; i < involved_sym_inputs_cnts[reg_asts[rs2]]; i++) {
+      is_assigned = false;
       involved_input = involved_sym_inputs_ast_tcs[reg_asts[rs2]][i];
-      value_v[0] = std::stoull(true_input_assignments[ast_nodes[involved_input].right_node], 0, 2);
-      ast_ptr = add_ast_node(VAR, 0, ast_nodes[involved_input].right_node, 1, value_v, value_v, 1, 0, zero_v, BVT, smt_exprs[involved_input]);
+      // value_v[0] = std::stoull(true_input_assignments[ast_nodes[involved_input].right_node], 0, 2);
+      if (!is_branch_reasoned_based_on_guess) {
+        value_v[0]  = std::stoull(true_input_assignments[ast_nodes[involved_input].right_node], 0, 2);
+        abstraction = BVT;
+      } else {
+        value_v[0]  = 0;
+        abstraction = ABVT;
+      }
+      ast_ptr = add_ast_node(VAR, 0, ast_nodes[involved_input].right_node, 1, value_v, value_v, 1, 0, zero_v, abstraction, smt_exprs[involved_input]);
       for (size_t k = 0; k < store_trace_ptrs[involved_input].size(); k++) {
         stored_to_tc    = store_trace_ptrs[involved_input][k];
         mr_stored_to_tc = load_symbolic_memory(pt, vaddrs[stored_to_tc]);
         mr_stored_to_tc = mr_sds[mr_stored_to_tc];
         if (mr_stored_to_tc <= stored_to_tc) {
-          store_symbolic_memory(pt, vaddrs[stored_to_tc], value_v[0], VALUE_T, ast_ptr, tc, 0, BVT);
+          store_symbolic_memory(pt, vaddrs[stored_to_tc], value_v[0], VALUE_T, ast_ptr, tc, 0, abstraction);
           is_assigned = true;
         }
       }
 
       if (is_assigned == false) {
-        store_input_record(ast_ptr, input_table.at(ast_nodes[involved_input].right_node), BVT);
+        store_input_record(ast_ptr, input_table.at(ast_nodes[involved_input].right_node), abstraction);
       }
       input_table.at(ast_nodes[involved_input].right_node) = ast_ptr;
     }
+
+    // recompute_expression(reg_asts[rs2]);
   }
 }
 
-void dump_all_input_variables_on_trace_true_branch_bvt_pure() {
+void dump_all_input_variables_on_trace_true_branch_bvt_pure(bool is_branch_reasoned_based_on_guess) {
   uint64_t ast_ptr, involved_input, stored_to_tc, mr_stored_to_tc;
   uint64_t involved_input_rs1, involved_input_rs2;
   bool is_assigned = false;
+  uint8_t abstraction;
 
   if (involved_sym_inputs_cnts[reg_asts[rs1]])
     involved_input_rs1 = ast_nodes[involved_sym_inputs_ast_tcs[reg_asts[rs1]][0]].right_node;
@@ -2285,80 +2311,110 @@ void dump_all_input_variables_on_trace_true_branch_bvt_pure() {
     if (i == involved_input_rs1 || i == involved_input_rs2) continue;
     involved_input = input_table_ast_tcs_before_branch_evaluation[i];
     if (theory_type_ast_nodes[involved_input] == MIT) continue;
-    value_v[0] = std::stoull(true_input_assignments[ast_nodes[involved_input].right_node], 0, 2);
-    ast_ptr = add_ast_node(VAR, 0, ast_nodes[involved_input].right_node, 1, value_v, value_v, 1, 0, zero_v, BVT, smt_exprs[involved_input]);
+    is_assigned = false;
+    // value_v[0] = std::stoull(true_input_assignments[ast_nodes[involved_input].right_node], 0, 2);
+    if (!is_branch_reasoned_based_on_guess) {
+      value_v[0]  = std::stoull(true_input_assignments[ast_nodes[involved_input].right_node], 0, 2);
+      abstraction = BVT;
+    } else {
+      value_v[0]  = 0;
+      abstraction = ABVT;
+    }
+    ast_ptr = add_ast_node(VAR, 0, ast_nodes[involved_input].right_node, 1, value_v, value_v, 1, 0, zero_v, abstraction, smt_exprs[involved_input]);
     for (size_t k = 0; k < store_trace_ptrs[involved_input].size(); k++) {
       stored_to_tc    = store_trace_ptrs[involved_input][k];
       mr_stored_to_tc = load_symbolic_memory(pt, vaddrs[stored_to_tc]);
       mr_stored_to_tc = mr_sds[mr_stored_to_tc];
       if (mr_stored_to_tc <= stored_to_tc) {
-        store_symbolic_memory(pt, vaddrs[stored_to_tc], value_v[0], VALUE_T, ast_ptr, tc, 0, BVT);
+        store_symbolic_memory(pt, vaddrs[stored_to_tc], value_v[0], VALUE_T, ast_ptr, tc, 0, abstraction);
         is_assigned = true;
       }
     }
     if (is_assigned == false) {
-      store_input_record(ast_ptr, input_table.at(ast_nodes[involved_input].right_node), BVT);
+      store_input_record(ast_ptr, input_table.at(ast_nodes[involved_input].right_node), abstraction);
     }
     input_table.at(ast_nodes[involved_input].right_node) = ast_ptr;
   }
 
 }
 
-void create_input_variable_constraints_false_branch_bvt() {
+void create_input_variable_constraints_false_branch_bvt(bool is_branch_reasoned_based_on_guess) {
   uint64_t ast_ptr, involved_input, stored_to_tc, mr_stored_to_tc;
   bool is_assigned = false;
+  uint8_t abstraction;
 
   if (reg_symb_type[rs1] == SYMBOLIC) {
     for (size_t i = 0; i < involved_sym_inputs_cnts[reg_asts[rs1]]; i++) {
+      is_assigned = false;
       involved_input = involved_sym_inputs_ast_tcs[reg_asts[rs1]][i];
-      value_v[0] = std::stoull(false_input_assignments[ast_nodes[involved_input].right_node], 0, 2);
-      ast_ptr = add_ast_node(VAR, 0, ast_nodes[involved_input].right_node, 1, value_v, value_v, 1, 0, zero_v, BVT, smt_exprs[involved_input]);
+      // value_v[0] = std::stoull(false_input_assignments[ast_nodes[involved_input].right_node], 0, 2);
+      if (!is_branch_reasoned_based_on_guess) {
+        value_v[0]  = std::stoull(false_input_assignments[ast_nodes[involved_input].right_node], 0, 2);
+        abstraction = BVT;
+      } else {
+        value_v[0]  = 0;
+        abstraction = ABVT;
+      }
+      ast_ptr = add_ast_node(VAR, 0, ast_nodes[involved_input].right_node, 1, value_v, value_v, 1, 0, zero_v, abstraction, smt_exprs[involved_input]);
       for (size_t k = 0; k < store_trace_ptrs[involved_input].size(); k++) {
         stored_to_tc    = store_trace_ptrs[involved_input][k];
         mr_stored_to_tc = load_symbolic_memory(pt, vaddrs[stored_to_tc]);
         mr_stored_to_tc = mr_sds[mr_stored_to_tc];
         if (mr_stored_to_tc <= stored_to_tc) {
-          store_symbolic_memory(pt, vaddrs[stored_to_tc], value_v[0], VALUE_T, ast_ptr, tc, 0, BVT);
+          store_symbolic_memory(pt, vaddrs[stored_to_tc], value_v[0], VALUE_T, ast_ptr, tc, 0, abstraction);
           is_assigned = true;
         }
       }
 
       if (is_assigned == false) {
-        store_input_record(ast_ptr, input_table.at(ast_nodes[involved_input].right_node), BVT);
+        store_input_record(ast_ptr, input_table.at(ast_nodes[involved_input].right_node), abstraction);
       }
       input_table.at(ast_nodes[involved_input].right_node) = ast_ptr;
     }
+
+    // recompute_expression(reg_asts[rs1]);
   }
 
   is_assigned = false;
 
   if (reg_symb_type[rs2] == SYMBOLIC) {
     for (size_t i = 0; i < involved_sym_inputs_cnts[reg_asts[rs2]]; i++) {
+      is_assigned = false;
       involved_input = involved_sym_inputs_ast_tcs[reg_asts[rs2]][i];
-      value_v[0] = std::stoull(false_input_assignments[ast_nodes[involved_input].right_node], 0, 2);
-      ast_ptr = add_ast_node(VAR, 0, ast_nodes[involved_input].right_node, 1, value_v, value_v, 1, 0, zero_v, BVT, smt_exprs[involved_input]);
+      // value_v[0] = std::stoull(false_input_assignments[ast_nodes[involved_input].right_node], 0, 2);
+      if (!is_branch_reasoned_based_on_guess) {
+        value_v[0]  = std::stoull(false_input_assignments[ast_nodes[involved_input].right_node], 0, 2);
+        abstraction = BVT;
+      } else {
+        value_v[0]  = 0;
+        abstraction = ABVT;
+      }
+      ast_ptr = add_ast_node(VAR, 0, ast_nodes[involved_input].right_node, 1, value_v, value_v, 1, 0, zero_v, abstraction, smt_exprs[involved_input]);
       for (size_t k = 0; k < store_trace_ptrs[involved_input].size(); k++) {
         stored_to_tc    = store_trace_ptrs[involved_input][k];
         mr_stored_to_tc = load_symbolic_memory(pt, vaddrs[stored_to_tc]);
         mr_stored_to_tc = mr_sds[mr_stored_to_tc];
         if (mr_stored_to_tc <= stored_to_tc) {
-          store_symbolic_memory(pt, vaddrs[stored_to_tc], value_v[0], VALUE_T, ast_ptr, tc, 0, BVT);
+          store_symbolic_memory(pt, vaddrs[stored_to_tc], value_v[0], VALUE_T, ast_ptr, tc, 0, abstraction);
           is_assigned = true;
         }
       }
 
       if (is_assigned == false) {
-        store_input_record(ast_ptr, input_table.at(ast_nodes[involved_input].right_node), BVT);
+        store_input_record(ast_ptr, input_table.at(ast_nodes[involved_input].right_node), abstraction);
       }
       input_table.at(ast_nodes[involved_input].right_node) = ast_ptr;
     }
+
+    // recompute_expression(reg_asts[rs2]);
   }
 }
 
-void dump_all_input_variables_on_trace_false_branch_bvt_pure() {
+void dump_all_input_variables_on_trace_false_branch_bvt_pure(bool is_branch_reasoned_based_on_guess) {
   uint64_t ast_ptr, involved_input, stored_to_tc, mr_stored_to_tc;
   uint64_t involved_input_rs1, involved_input_rs2;
   bool is_assigned = false;
+  uint8_t abstraction;
 
   if (involved_sym_inputs_cnts[reg_asts[rs1]])
     involved_input_rs1 = ast_nodes[involved_sym_inputs_ast_tcs[reg_asts[rs1]][0]].right_node;
@@ -2374,23 +2430,39 @@ void dump_all_input_variables_on_trace_false_branch_bvt_pure() {
     if (i == involved_input_rs1 || i == involved_input_rs2) continue;
     involved_input = input_table_ast_tcs_before_branch_evaluation[i];
     if (theory_type_ast_nodes[involved_input] == MIT) continue;
-    value_v[0] = std::stoull(false_input_assignments[ast_nodes[involved_input].right_node], 0, 2);
-    ast_ptr = add_ast_node(VAR, 0, ast_nodes[involved_input].right_node, 1, value_v, value_v, 1, 0, zero_v, BVT, smt_exprs[involved_input]);
+    is_assigned = false;
+    // value_v[0] = std::stoull(false_input_assignments[ast_nodes[involved_input].right_node], 0, 2);
+    if (!is_branch_reasoned_based_on_guess) {
+      value_v[0]  = std::stoull(false_input_assignments[ast_nodes[involved_input].right_node], 0, 2);
+      abstraction = BVT;
+    } else {
+      value_v[0]  = 0;
+      abstraction = ABVT;
+    }
+    ast_ptr = add_ast_node(VAR, 0, ast_nodes[involved_input].right_node, 1, value_v, value_v, 1, 0, zero_v, abstraction, smt_exprs[involved_input]);
     for (size_t k = 0; k < store_trace_ptrs[involved_input].size(); k++) {
       stored_to_tc    = store_trace_ptrs[involved_input][k];
       mr_stored_to_tc = load_symbolic_memory(pt, vaddrs[stored_to_tc]);
       mr_stored_to_tc = mr_sds[mr_stored_to_tc];
       if (mr_stored_to_tc <= stored_to_tc) {
-        store_symbolic_memory(pt, vaddrs[stored_to_tc], value_v[0], VALUE_T, ast_ptr, tc, 0, BVT);
+        store_symbolic_memory(pt, vaddrs[stored_to_tc], value_v[0], VALUE_T, ast_ptr, tc, 0, abstraction);
         is_assigned = true;
       }
     }
     if (is_assigned == false) {
-      store_input_record(ast_ptr, input_table.at(ast_nodes[involved_input].right_node), BVT);
+      store_input_record(ast_ptr, input_table.at(ast_nodes[involved_input].right_node), abstraction);
     }
     input_table.at(ast_nodes[involved_input].right_node) = ast_ptr;
   }
 }
+
+uint64_t satisfiability_check_step  = 0;
+uint64_t satisfiability_check_cnt   = 0;
+bool     unreachable_path           = false;
+bool     false_reachable_prediction = false;
+bool     true_reachable_prediction  = false;
+std::unordered_map<uint64_t, uint8_t> taken_branch_cache;
+std::unordered_map<uint64_t, uint8_t>::const_iterator found_if_pc;
 
 void create_mconstraints(std::vector<uint64_t>& lo1_p, std::vector<uint64_t>& up1_p, std::vector<uint64_t>& lo2_p, std::vector<uint64_t>& up2_p, uint64_t trb) {
   bool cannot_handle   = false;
@@ -2400,6 +2472,9 @@ void create_mconstraints(std::vector<uint64_t>& lo1_p, std::vector<uint64_t>& up
   uint64_t up1;
   uint64_t lo2;
   uint64_t up2;
+  uint64_t is_guess   = 0;
+  bool is_true_guess  = false;
+  bool is_false_guess = false;
 
   true_branch_rs1_minterval_cnt  = 0;
   true_branch_rs2_minterval_cnt  = 0;
@@ -2423,50 +2498,110 @@ void create_mconstraints(std::vector<uint64_t>& lo1_p, std::vector<uint64_t>& up
   if (cannot_handle) {
     assert_smt_path_condition();
     check_operands_smt_expressions();
-    false_reachable = check_sat_false_branch_bvt(boolector_ugte(btor, sase_regs[rs1], sase_regs[rs2]));
-    true_reachable  = check_sat_true_branch_bvt (boolector_ult (btor, sase_regs[rs1], sase_regs[rs2]));
+    // false_reachable = check_sat_false_branch_bvt(boolector_ugte(btor, sase_regs[rs1], sase_regs[rs2]));
+    // true_reachable  = check_sat_true_branch_bvt (boolector_ult (btor, sase_regs[rs1], sase_regs[rs2]));
+
+    ////////////////////////////////////////////////////////////////////////////
+    // lazy decision, once a while
+    // lazy reachability check
+    ////////////////////////////////////////////////////////////////////////////
+
+    // restore the cached previous decision value for reachability of branches at pc
+    found_if_pc = taken_branch_cache.find(pc);
+    if (found_if_pc != taken_branch_cache.end()) {
+      false_reachable_prediction = found_if_pc->second & 1;
+      true_reachable_prediction  = found_if_pc->second & 2;
+    }
+
+    if (satisfiability_check_cnt >= satisfiability_check_step) {
+      // check reachability using complete smt solver
+      false_reachable_prediction = false_reachable = check_sat_false_branch_bvt(boolector_ugte(btor, sase_regs[rs1], sase_regs[rs2]));
+      true_reachable_prediction  = true_reachable  = check_sat_true_branch_bvt (boolector_ult (btor, sase_regs[rs1], sase_regs[rs2]));
+
+      satisfiability_check_cnt = 0;
+
+    } else {
+      // check reachability using previous decision
+
+      sltu_instruction = pc; // this is because I need to change pc of the trace entry when dump inputs at end-point (don't want to be exit syscall)
+
+      if (false_reachable_prediction == false && true_reachable_prediction == false) {
+        // means both branches will be reasoned by queries to smt
+        satisfiability_check_cnt = 0;
+      } else {
+        /*
+          is_guess = (false_reachable_prediction == false) ? 0 : (satisfiability_check_cnt + 1);
+          satisfiability_check_cnt = (true_reachable_prediction == false) ? 0 : (satisfiability_check_cnt + 1);
+          -> this leads to wrong results because at end-point it may satisfiability_check_cnt == 0 && unreachable_path == false
+        */
+
+        satisfiability_check_cnt++;
+        is_guess = (false_reachable_prediction == false) ? 0 : satisfiability_check_cnt;
+      }
+
+      is_true_guess  = true_reachable_prediction;
+      is_false_guess = false_reachable_prediction;
+
+      // we must over-approximate
+      // so if the previous reachability was false it should be checked or set to true;
+      false_reachable_prediction = false_reachable = (false_reachable_prediction == false) ? check_sat_false_branch_bvt(boolector_ugte(btor, sase_regs[rs1], sase_regs[rs2])) : false_reachable_prediction;
+      true_reachable_prediction  = true_reachable  = (true_reachable_prediction  == false) ? check_sat_true_branch_bvt (boolector_ult (btor, sase_regs[rs1], sase_regs[rs2])) : true_reachable_prediction;
+    }
+
+    // cache the decision for if at pc
+    if (found_if_pc != taken_branch_cache.end()) {
+      taken_branch_cache[pc] = (true_reachable << 1) | false_reachable;
+    } else {
+      taken_branch_cache.insert(std::make_pair<uint64_t, uint8_t>(pc, (true_reachable << 1) | false_reachable) );
+    }
+
+    ////////////////////////////////////////////////////////////////////////////
 
     if (true_reachable) {
       if (false_reachable) {
         if (check_conditional_type_lte_or_gte() == LGTE) {
           // false
-          create_input_variable_constraints_true_branch_bvt();
-          dump_all_input_variables_on_trace_true_branch_bvt_pure();
+          create_input_variable_constraints_true_branch_bvt(is_true_guess);
+          dump_all_input_variables_on_trace_true_branch_bvt_pure(is_true_guess);
           take_branch(1, 1);
-          sase_false_branchs[tc-2] = boolector_ult(btor, sase_regs[rs1], sase_regs[rs2]); // carefull
+          sase_false_branchs[tc-2] = boolector_ult(btor, sase_regs[rs1], sase_regs[rs2]); // careful
+          mr_sds[tc-2]             = is_guess; // for backtracking restores the value of satisfiability_check_cnt
 
           // true
           boolector_push(btor, 1);
           boolector_assert(btor, boolector_ugte(btor, sase_regs[rs1], sase_regs[rs2]));
-          create_input_variable_constraints_false_branch_bvt();
-          dump_all_input_variables_on_trace_false_branch_bvt_pure();
+          create_input_variable_constraints_false_branch_bvt(is_false_guess);
+          dump_all_input_variables_on_trace_false_branch_bvt_pure(is_false_guess);
           take_branch(0, 0);
         } else {
           // false
-          create_input_variable_constraints_false_branch_bvt();
-          dump_all_input_variables_on_trace_false_branch_bvt_pure();
+          create_input_variable_constraints_false_branch_bvt(is_false_guess);
+          dump_all_input_variables_on_trace_false_branch_bvt_pure(is_false_guess);
           take_branch(0, 1);
-          sase_false_branchs[tc-2] = boolector_ugte(btor, sase_regs[rs1], sase_regs[rs2]); // carefull
+          sase_false_branchs[tc-2] = boolector_ugte(btor, sase_regs[rs1], sase_regs[rs2]); // careful
+          mr_sds[tc-2]             = is_guess;
 
           // true
           boolector_push(btor, 1);
           boolector_assert(btor, boolector_ult(btor, sase_regs[rs1], sase_regs[rs2]));
-          create_input_variable_constraints_true_branch_bvt();
-          dump_all_input_variables_on_trace_true_branch_bvt_pure();
+          create_input_variable_constraints_true_branch_bvt(is_true_guess);
+          dump_all_input_variables_on_trace_true_branch_bvt_pure(is_true_guess);
           take_branch(1, 0);
         }
       } else {
-        create_input_variable_constraints_true_branch_bvt();
-        dump_all_input_variables_on_trace_true_branch_bvt_pure();
+        create_input_variable_constraints_true_branch_bvt(is_true_guess);
+        dump_all_input_variables_on_trace_true_branch_bvt_pure(is_true_guess);
         take_branch(1, 0);
       }
     } else if (false_reachable) {
-      create_input_variable_constraints_false_branch_bvt();
-      dump_all_input_variables_on_trace_false_branch_bvt_pure();
+      create_input_variable_constraints_false_branch_bvt(is_false_guess);
+      dump_all_input_variables_on_trace_false_branch_bvt_pure(is_false_guess);
       take_branch(0, 0);
     } else {
-      printf("OUTPUT: both branches unreachable!!! 2 %x\n", pc - entry_point);
-      exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
+      unreachable_path = true;
+      throw_exception(EXCEPTION_UNREACH_EXPLORE, 0);
+      // printf("OUTPUT: both branches unreachable!!! 2 %x\n", pc - entry_point);
+      // exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
     }
 
     return;
@@ -2531,6 +2666,8 @@ void create_mconstraints_lptr(uint64_t lo1, uint64_t up1, std::vector<uint64_t>&
   bool false_reachable = false;
   uint64_t lo2;
   uint64_t up2;
+  bool is_true_guess  = false;
+  bool is_false_guess = false;
 
   true_branch_rs1_minterval_cnt  = 0;
   true_branch_rs2_minterval_cnt  = 0;
@@ -2557,39 +2694,39 @@ void create_mconstraints_lptr(uint64_t lo1, uint64_t up1, std::vector<uint64_t>&
       if (false_reachable) {
         if (check_conditional_type_lte_or_gte() == LGTE) {
           // false
-          create_input_variable_constraints_true_branch_bvt();
-          dump_all_input_variables_on_trace_true_branch_bvt_pure();
+          create_input_variable_constraints_true_branch_bvt(is_true_guess);
+          dump_all_input_variables_on_trace_true_branch_bvt_pure(is_true_guess);
           take_branch(1, 1);
           sase_false_branchs[tc-2] = boolector_ult(btor, sase_regs[rs1], sase_regs[rs2]); // careful
 
           // true
           boolector_push(btor, 1);
           boolector_assert(btor, boolector_ugte(btor, sase_regs[rs1], sase_regs[rs2]));
-          create_input_variable_constraints_false_branch_bvt();
-          dump_all_input_variables_on_trace_false_branch_bvt_pure();
+          create_input_variable_constraints_false_branch_bvt(is_false_guess);
+          dump_all_input_variables_on_trace_false_branch_bvt_pure(is_false_guess);
           take_branch(0, 0);
         } else {
           // false
-          create_input_variable_constraints_false_branch_bvt();
-          dump_all_input_variables_on_trace_false_branch_bvt_pure();
+          create_input_variable_constraints_false_branch_bvt(is_false_guess);
+          dump_all_input_variables_on_trace_false_branch_bvt_pure(is_false_guess);
           take_branch(0, 1);
           sase_false_branchs[tc-2] = boolector_ugte(btor, sase_regs[rs1], sase_regs[rs2]); // careful
 
           // true
           boolector_push(btor, 1);
           boolector_assert(btor, boolector_ult(btor, sase_regs[rs1], sase_regs[rs2]));
-          create_input_variable_constraints_true_branch_bvt();
-          dump_all_input_variables_on_trace_true_branch_bvt_pure();
+          create_input_variable_constraints_true_branch_bvt(is_true_guess);
+          dump_all_input_variables_on_trace_true_branch_bvt_pure(is_true_guess);
           take_branch(1, 0);
         }
       } else {
-        create_input_variable_constraints_true_branch_bvt();
-        dump_all_input_variables_on_trace_true_branch_bvt_pure();
+        create_input_variable_constraints_true_branch_bvt(is_true_guess);
+        dump_all_input_variables_on_trace_true_branch_bvt_pure(is_true_guess);
         take_branch(1, 0);
       }
     } else if (false_reachable) {
-      create_input_variable_constraints_false_branch_bvt();
-      dump_all_input_variables_on_trace_false_branch_bvt_pure();
+      create_input_variable_constraints_false_branch_bvt(is_false_guess);
+      dump_all_input_variables_on_trace_false_branch_bvt_pure(is_false_guess);
       take_branch(0, 0);
     } else {
       printf("OUTPUT: both branches unreachable!!! 2 %x\n", pc - entry_point);
@@ -2658,6 +2795,8 @@ void create_mconstraints_rptr(std::vector<uint64_t>& lo1_p, std::vector<uint64_t
   bool false_reachable = false;
   uint64_t lo1;
   uint64_t up1;
+  bool is_true_guess  = false;
+  bool is_false_guess = false;
 
   true_branch_rs1_minterval_cnt  = 0;
   true_branch_rs2_minterval_cnt  = 0;
@@ -2684,39 +2823,39 @@ void create_mconstraints_rptr(std::vector<uint64_t>& lo1_p, std::vector<uint64_t
       if (false_reachable) {
         if (check_conditional_type_lte_or_gte() == LGTE) {
           // false
-          create_input_variable_constraints_true_branch_bvt();
-          dump_all_input_variables_on_trace_true_branch_bvt_pure();
+          create_input_variable_constraints_true_branch_bvt(is_true_guess);
+          dump_all_input_variables_on_trace_true_branch_bvt_pure(is_true_guess);
           take_branch(1, 1);
           sase_false_branchs[tc-2] = boolector_ult(btor, sase_regs[rs1], sase_regs[rs2]); // carefull
 
           // true
           boolector_push(btor, 1);
           boolector_assert(btor, boolector_ugte(btor, sase_regs[rs1], sase_regs[rs2]));
-          create_input_variable_constraints_false_branch_bvt();
-          dump_all_input_variables_on_trace_false_branch_bvt_pure();
+          create_input_variable_constraints_false_branch_bvt(is_false_guess);
+          dump_all_input_variables_on_trace_false_branch_bvt_pure(is_false_guess);
           take_branch(0, 0);
         } else {
           // false
-          create_input_variable_constraints_false_branch_bvt();
-          dump_all_input_variables_on_trace_false_branch_bvt_pure();
+          create_input_variable_constraints_false_branch_bvt(is_false_guess);
+          dump_all_input_variables_on_trace_false_branch_bvt_pure(is_false_guess);
           take_branch(0, 1);
           sase_false_branchs[tc-2] = boolector_ugte(btor, sase_regs[rs1], sase_regs[rs2]); // carefull
 
           // true
           boolector_push(btor, 1);
           boolector_assert(btor, boolector_ult(btor, sase_regs[rs1], sase_regs[rs2]));
-          create_input_variable_constraints_true_branch_bvt();
-          dump_all_input_variables_on_trace_true_branch_bvt_pure();
+          create_input_variable_constraints_true_branch_bvt(is_true_guess);
+          dump_all_input_variables_on_trace_true_branch_bvt_pure(is_true_guess);
           take_branch(1, 0);
         }
       } else {
-        create_input_variable_constraints_true_branch_bvt();
-        dump_all_input_variables_on_trace_true_branch_bvt_pure();
+        create_input_variable_constraints_true_branch_bvt(is_true_guess);
+        dump_all_input_variables_on_trace_true_branch_bvt_pure(is_true_guess);
         take_branch(1, 0);
       }
     } else if (false_reachable) {
-      create_input_variable_constraints_false_branch_bvt();
-      dump_all_input_variables_on_trace_false_branch_bvt_pure();
+      create_input_variable_constraints_false_branch_bvt(is_false_guess);
+      dump_all_input_variables_on_trace_false_branch_bvt_pure(is_false_guess);
       take_branch(0, 0);
     } else {
       printf("OUTPUT: both branches unreachable!!! 2 %x\n", pc - entry_point);
@@ -2948,6 +3087,9 @@ void create_xor_mconstraints(std::vector<uint64_t>& lo1_p, std::vector<uint64_t>
   uint64_t up1;
   uint64_t lo2;
   uint64_t up2;
+  uint64_t is_guess   = 0;
+  bool is_true_guess  = false;
+  bool is_false_guess = false;
 
   true_branch_rs1_minterval_cnt  = 0;
   true_branch_rs2_minterval_cnt  = 0;
@@ -2972,50 +3114,110 @@ void create_xor_mconstraints(std::vector<uint64_t>& lo1_p, std::vector<uint64_t>
     // xor result:
     assert_smt_path_condition();
     check_operands_smt_expressions();
-    false_reachable = check_sat_false_branch_bvt(boolector_eq(btor, sase_regs[rs1], sase_regs[rs2]));
-    true_reachable  = check_sat_true_branch_bvt (boolector_ne(btor, sase_regs[rs1], sase_regs[rs2]));
+    // false_reachable = check_sat_false_branch_bvt(boolector_eq(btor, sase_regs[rs1], sase_regs[rs2]));
+    // true_reachable  = check_sat_true_branch_bvt (boolector_ne(btor, sase_regs[rs1], sase_regs[rs2]));
+
+    ////////////////////////////////////////////////////////////////////////////
+    // lazy decision, once a while
+    // lazy reachability check
+    ////////////////////////////////////////////////////////////////////////////
+
+    // restore the cached previous decision value for reachability of branches at pc
+    found_if_pc = taken_branch_cache.find(pc);
+    if (found_if_pc != taken_branch_cache.end()) {
+      false_reachable_prediction = found_if_pc->second & 1;
+      true_reachable_prediction  = found_if_pc->second & 2;
+    }
+
+    if (satisfiability_check_cnt >= satisfiability_check_step) {
+      // check reachability using complete smt solver
+      false_reachable_prediction = false_reachable = check_sat_false_branch_bvt(boolector_eq(btor, sase_regs[rs1], sase_regs[rs2]));
+      true_reachable_prediction  = true_reachable  = check_sat_true_branch_bvt (boolector_ne(btor, sase_regs[rs1], sase_regs[rs2]));
+
+      satisfiability_check_cnt = 0;
+
+    } else {
+      // check reachability using previous decision
+
+      sltu_instruction = pc; // this is because I need to change pc of the trace entry when dump inputs at end-point (don't want to be exit syscall)
+
+      if (false_reachable_prediction == false && true_reachable_prediction == false) {
+        // means both branches will be reasoned by queries to smt
+        satisfiability_check_cnt = 0;
+      } else {
+        /*
+          is_guess = (false_reachable_prediction == false) ? 0 : (satisfiability_check_cnt + 1);
+          satisfiability_check_cnt = (true_reachable_prediction == false) ? 0 : (satisfiability_check_cnt + 1);
+          -> this leads to wrong results because at end-point it may satisfiability_check_cnt == 0 && unreachable_path == false
+        */
+
+        satisfiability_check_cnt++;
+        is_guess = (false_reachable_prediction == false) ? 0 : satisfiability_check_cnt;
+      }
+
+      is_true_guess  = true_reachable_prediction;
+      is_false_guess = false_reachable_prediction;
+
+      // we must over-approximate
+      // so if the previous reachability was false it should be checked or set to true;
+      false_reachable_prediction = false_reachable = (false_reachable_prediction == false) ? check_sat_false_branch_bvt(boolector_eq(btor, sase_regs[rs1], sase_regs[rs2])) : false_reachable_prediction;
+      true_reachable_prediction  = true_reachable  = (true_reachable_prediction  == false) ? check_sat_true_branch_bvt (boolector_ne(btor, sase_regs[rs1], sase_regs[rs2])) : true_reachable_prediction;
+    }
+
+    // cache the decision for if at pc
+    if (found_if_pc != taken_branch_cache.end()) {
+      taken_branch_cache[pc] = (true_reachable << 1) | false_reachable;
+    } else {
+      taken_branch_cache.insert(std::make_pair<uint64_t, uint8_t>(pc, (true_reachable << 1) | false_reachable) );
+    }
+
+    ////////////////////////////////////////////////////////////////////////////
 
     if (true_reachable) {
       if (false_reachable) {
         if (check_conditional_type_equality_or_disequality() == EQ) {
           // false
-          create_input_variable_constraints_true_branch_bvt();
-          dump_all_input_variables_on_trace_true_branch_bvt_pure();
+          create_input_variable_constraints_true_branch_bvt(is_true_guess);
+          dump_all_input_variables_on_trace_true_branch_bvt_pure(is_true_guess);
           take_branch(1, 1);
-          sase_false_branchs[tc-2] = boolector_ne(btor, sase_regs[rs1], sase_regs[rs2]); // carefull
+          sase_false_branchs[tc-2] = boolector_ne(btor, sase_regs[rs1], sase_regs[rs2]); // careful
+          mr_sds[tc-2]             = is_guess; // for backtracking restores the value of satisfiability_check_cnt
 
           // true
           boolector_push(btor, 1);
           boolector_assert(btor, boolector_eq(btor, sase_regs[rs1], sase_regs[rs2]));
-          create_input_variable_constraints_false_branch_bvt();
-          dump_all_input_variables_on_trace_false_branch_bvt_pure();
+          create_input_variable_constraints_false_branch_bvt(is_false_guess);
+          dump_all_input_variables_on_trace_false_branch_bvt_pure(is_false_guess);
           take_branch(0, 0);
         } else {
           // false
-          create_input_variable_constraints_false_branch_bvt();
-          dump_all_input_variables_on_trace_false_branch_bvt_pure();
+          create_input_variable_constraints_false_branch_bvt(is_false_guess);
+          dump_all_input_variables_on_trace_false_branch_bvt_pure(is_false_guess);
           take_branch(0, 1);
-          sase_false_branchs[tc-2] = boolector_eq(btor, sase_regs[rs1], sase_regs[rs2]); // carefull
+          sase_false_branchs[tc-2] = boolector_eq(btor, sase_regs[rs1], sase_regs[rs2]); // careful
+          mr_sds[tc-2]             = is_guess; // for backtracking restores the value of satisfiability_check_cnt
 
           // true
           boolector_push(btor, 1);
           boolector_assert(btor, boolector_ne(btor, sase_regs[rs1], sase_regs[rs2]));
-          create_input_variable_constraints_true_branch_bvt();
-          dump_all_input_variables_on_trace_true_branch_bvt_pure();
+          create_input_variable_constraints_true_branch_bvt(is_true_guess);
+          dump_all_input_variables_on_trace_true_branch_bvt_pure(is_true_guess);
           take_branch(1, 0);
         }
       } else {
-        create_input_variable_constraints_true_branch_bvt();
-        dump_all_input_variables_on_trace_true_branch_bvt_pure();
+        create_input_variable_constraints_true_branch_bvt(is_true_guess);
+        dump_all_input_variables_on_trace_true_branch_bvt_pure(is_true_guess);
         take_branch(1, 0);
       }
     } else if (false_reachable) {
-      create_input_variable_constraints_false_branch_bvt();
-      dump_all_input_variables_on_trace_false_branch_bvt_pure();
+      create_input_variable_constraints_false_branch_bvt(is_false_guess);
+      dump_all_input_variables_on_trace_false_branch_bvt_pure(is_false_guess);
       take_branch(0, 0);
     } else {
-      printf("OUTPUT: both branches unreachable!!! 2 %x\n", pc - entry_point);
-      exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
+      unreachable_path = true;
+      throw_exception(EXCEPTION_UNREACH_EXPLORE, 0);
+      // printf("OUTPUT: both branches unreachable!!! 2 %x\n", pc - entry_point);
+      // exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
     }
 
     return;
@@ -3080,6 +3282,8 @@ void create_xor_mconstraints_lptr(uint64_t lo1, uint64_t up1, std::vector<uint64
   bool false_reachable = false;
   uint64_t lo2;
   uint64_t up2;
+  bool is_true_guess  = false;
+  bool is_false_guess = false;
 
   true_branch_rs1_minterval_cnt  = 0;
   true_branch_rs2_minterval_cnt  = 0;
@@ -3107,39 +3311,39 @@ void create_xor_mconstraints_lptr(uint64_t lo1, uint64_t up1, std::vector<uint64
       if (false_reachable) {
         if (check_conditional_type_equality_or_disequality() == EQ) {
           // false
-          create_input_variable_constraints_true_branch_bvt();
-          dump_all_input_variables_on_trace_true_branch_bvt_pure();
+          create_input_variable_constraints_true_branch_bvt(is_true_guess);
+          dump_all_input_variables_on_trace_true_branch_bvt_pure(is_true_guess);
           take_branch(1, 1);
           sase_false_branchs[tc-2] = boolector_ne(btor, sase_regs[rs1], sase_regs[rs2]); // carefull
 
           // true
           boolector_push(btor, 1);
           boolector_assert(btor, boolector_eq(btor, sase_regs[rs1], sase_regs[rs2]));
-          create_input_variable_constraints_false_branch_bvt();
-          dump_all_input_variables_on_trace_false_branch_bvt_pure();
+          create_input_variable_constraints_false_branch_bvt(is_false_guess);
+          dump_all_input_variables_on_trace_false_branch_bvt_pure(is_false_guess);
           take_branch(0, 0);
         } else {
           // false
-          create_input_variable_constraints_false_branch_bvt();
-          dump_all_input_variables_on_trace_false_branch_bvt_pure();
+          create_input_variable_constraints_false_branch_bvt(is_false_guess);
+          dump_all_input_variables_on_trace_false_branch_bvt_pure(is_false_guess);
           take_branch(0, 1);
           sase_false_branchs[tc-2] = boolector_eq(btor, sase_regs[rs1], sase_regs[rs2]); // carefull
 
           // true
           boolector_push(btor, 1);
           boolector_assert(btor, boolector_ne(btor, sase_regs[rs1], sase_regs[rs2]));
-          create_input_variable_constraints_true_branch_bvt();
-          dump_all_input_variables_on_trace_true_branch_bvt_pure();
+          create_input_variable_constraints_true_branch_bvt(is_true_guess);
+          dump_all_input_variables_on_trace_true_branch_bvt_pure(is_true_guess);
           take_branch(1, 0);
         }
       } else {
-        create_input_variable_constraints_true_branch_bvt();
-        dump_all_input_variables_on_trace_true_branch_bvt_pure();
+        create_input_variable_constraints_true_branch_bvt(is_true_guess);
+        dump_all_input_variables_on_trace_true_branch_bvt_pure(is_true_guess);
         take_branch(1, 0);
       }
     } else if (false_reachable) {
-      create_input_variable_constraints_false_branch_bvt();
-      dump_all_input_variables_on_trace_false_branch_bvt_pure();
+      create_input_variable_constraints_false_branch_bvt(is_false_guess);
+      dump_all_input_variables_on_trace_false_branch_bvt_pure(is_false_guess);
       take_branch(0, 0);
     } else {
       printf("OUTPUT: both branches unreachable!!! 2 %x\n", pc - entry_point);
@@ -3208,6 +3412,8 @@ void create_xor_mconstraints_rptr(std::vector<uint64_t>& lo1_p, std::vector<uint
   bool false_reachable = false;
   uint64_t lo1;
   uint64_t up1;
+  bool is_true_guess  = false;
+  bool is_false_guess = false;
 
   true_branch_rs1_minterval_cnt  = 0;
   true_branch_rs2_minterval_cnt  = 0;
@@ -3235,39 +3441,39 @@ void create_xor_mconstraints_rptr(std::vector<uint64_t>& lo1_p, std::vector<uint
       if (false_reachable) {
         if (check_conditional_type_equality_or_disequality() == EQ) {
           // false
-          create_input_variable_constraints_true_branch_bvt();
-          dump_all_input_variables_on_trace_true_branch_bvt_pure();
+          create_input_variable_constraints_true_branch_bvt(is_true_guess);
+          dump_all_input_variables_on_trace_true_branch_bvt_pure(is_true_guess);
           take_branch(1, 1);
           sase_false_branchs[tc-2] = boolector_ne(btor, sase_regs[rs1], sase_regs[rs2]); // carefull
 
           // true
           boolector_push(btor, 1);
           boolector_assert(btor, boolector_eq(btor, sase_regs[rs1], sase_regs[rs2]));
-          create_input_variable_constraints_false_branch_bvt();
-          dump_all_input_variables_on_trace_false_branch_bvt_pure();
+          create_input_variable_constraints_false_branch_bvt(is_false_guess);
+          dump_all_input_variables_on_trace_false_branch_bvt_pure(is_false_guess);
           take_branch(0, 0);
         } else {
           // false
-          create_input_variable_constraints_false_branch_bvt();
-          dump_all_input_variables_on_trace_false_branch_bvt_pure();
+          create_input_variable_constraints_false_branch_bvt(is_false_guess);
+          dump_all_input_variables_on_trace_false_branch_bvt_pure(is_false_guess);
           take_branch(0, 1);
           sase_false_branchs[tc-2] = boolector_eq(btor, sase_regs[rs1], sase_regs[rs2]); // carefull
 
           // true
           boolector_push(btor, 1);
           boolector_assert(btor, boolector_ne(btor, sase_regs[rs1], sase_regs[rs2]));
-          create_input_variable_constraints_true_branch_bvt();
-          dump_all_input_variables_on_trace_true_branch_bvt_pure();
+          create_input_variable_constraints_true_branch_bvt(is_true_guess);
+          dump_all_input_variables_on_trace_true_branch_bvt_pure(is_true_guess);
           take_branch(1, 0);
         }
       } else {
-        create_input_variable_constraints_true_branch_bvt();
-        dump_all_input_variables_on_trace_true_branch_bvt_pure();
+        create_input_variable_constraints_true_branch_bvt(is_true_guess);
+        dump_all_input_variables_on_trace_true_branch_bvt_pure(is_true_guess);
         take_branch(1, 0);
       }
     } else if (false_reachable) {
-      create_input_variable_constraints_false_branch_bvt();
-      dump_all_input_variables_on_trace_false_branch_bvt_pure();
+      create_input_variable_constraints_false_branch_bvt(is_false_guess);
+      dump_all_input_variables_on_trace_false_branch_bvt_pure(is_false_guess);
       take_branch(0, 0);
     } else {
       printf("OUTPUT: both branches unreachable!!! 2 %x\n", pc - entry_point);
@@ -3348,7 +3554,7 @@ void backtrack_sltu() {
       reg_vaddrs_cnts[vaddr]       = 0;
       reg_asts[vaddr]              = 0;
 
-      sase_regs[vaddr]             = (BoolectorNode*) 0;
+      sase_regs[vaddr]             = boolector_null;
       reg_theory_types[vaddr]      = MIT;
 
       set_correction(vaddr, 0, 0, 0);
@@ -3362,6 +3568,17 @@ void backtrack_sltu() {
           pc = pc + INSTRUCTIONSIZE;
           ic_sltu = ic_sltu + 1;
 
+          /////////////////////////
+          // lazy decision
+          /////////////////////////
+          if (mr_sds[tc] == 0) {
+            satisfiability_check_cnt = 0;
+          } else {
+            satisfiability_check_cnt = mr_sds[tc]; // restore the value of satisfiability_check_cnt
+            // satisfiability_check_cnt = satisfiability_check_step/2+1;
+          }
+          /////////////////////////
+
           reg_asts[vaddr]  = (registers[vaddr] == 0) ? zero_node : one_node;
 
           sase_regs[vaddr] = (registers[vaddr] == 0) ? smt_exprs[zero_node] : smt_exprs[one_node]; //zero_bv : one_bv;
@@ -3374,7 +3591,7 @@ void backtrack_sltu() {
               path_condition.pop_back();
             }
 
-            if (theory_type_ast_nodes[asts[tc]] == BVT) {
+            if (theory_type_ast_nodes[asts[tc]] >= BVT) {
               boolector_pop(btor, 1);
               path_condition.clear();
             }
@@ -3448,7 +3665,7 @@ void backtrack_sd() {
         exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
       }
     }
-  } else if (theory_types[tc] == BVT && asts[tc] != 0) {
+  } else if (theory_types[tc] >= BVT && asts[tc] != 0) {
     if (ast_nodes[asts[tc]].type == VAR) {
       if (store_trace_ptrs[asts[tc]].size() > 1) {
         store_trace_ptrs[asts[tc]].pop_back();
@@ -3963,7 +4180,7 @@ uint64_t recompute_expression(uint64_t ast_tc) {
   uint64_t left_operand_ast_tc;
   uint64_t right_operand_ast_tc;
   uint64_t ast_ptr;
-  uint8_t theory_type;
+  uint8_t  theory_type;
 
   if (ast_nodes[ast_tc].type == VAR)
     return input_table[ast_nodes[ast_tc].right_node];
@@ -4187,4 +4404,41 @@ void assert_smt_path_condition() {
     boolector_assert(btor, check_conditional_expr_for_operands_smt_expressions(path_condition[i]));
   }
   path_condition.clear();
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// lazy path reachability check; over-approximation of branches
+////////////////////////////////////////////////////////////////////////////////
+
+std::vector<const char*> input_assignments;
+
+void dump_all_input_variables_on_trace_bvt() {
+  uint64_t ast_ptr, involved_input, stored_to_tc, mr_stored_to_tc;
+  bool is_assigned;
+
+  input_assignments.clear();
+  for (size_t i = 0; i < input_table.size(); i++) {
+    input_assignments.push_back(boolector_bv_assignment(btor, smt_exprs[asts[input_table_store_trace_ptr[i]]] ) );
+  }
+
+  for (size_t i = 0; i < input_table.size(); i++) {
+    involved_input = input_table_ast_tcs_before_branch_evaluation[i];
+    if (theory_type_ast_nodes[involved_input] == MIT) continue;
+    is_assigned = false;
+    value_v[0] = std::stoull(input_assignments[ast_nodes[involved_input].right_node], 0, 2);
+    ast_ptr = add_ast_node(VAR, 0, ast_nodes[involved_input].right_node, 1, value_v, value_v, 1, 0, zero_v, BVT, smt_exprs[involved_input]);
+    for (size_t k = 0; k < store_trace_ptrs[involved_input].size(); k++) {
+      stored_to_tc    = store_trace_ptrs[involved_input][k];
+      mr_stored_to_tc = load_symbolic_memory(pt, vaddrs[stored_to_tc]);
+      mr_stored_to_tc = mr_sds[mr_stored_to_tc];
+      if (mr_stored_to_tc <= stored_to_tc) {
+        store_symbolic_memory(pt, vaddrs[stored_to_tc], value_v[0], VALUE_T, ast_ptr, tc, 0, BVT); pcs[tc] = sltu_instruction; // careful
+        is_assigned = true;
+      }
+    }
+    if (is_assigned == false) {
+      store_input_record(ast_ptr, input_table.at(ast_nodes[involved_input].right_node), BVT); pcs[tc] = sltu_instruction; // careful
+    }
+    input_table.at(ast_nodes[involved_input].right_node) = ast_ptr;
+  }
 }
