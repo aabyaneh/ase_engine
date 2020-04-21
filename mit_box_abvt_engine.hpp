@@ -32,6 +32,7 @@ class mit_box_abvt_engine : public mit_box_bvt_engine {
     void     create_sltu_constraints(std::vector<uint64_t>& lo1_p, std::vector<uint64_t>& up1_p, std::vector<uint64_t>& lo2_p, std::vector<uint64_t>& up2_p, uint64_t trb);
     void     create_xor_constraints(std::vector<uint64_t>& lo1_p, std::vector<uint64_t>& up1_p, std::vector<uint64_t>& lo2_p, std::vector<uint64_t>& up2_p, uint64_t trb);
     bool     apply_sltu_under_approximate_box_decision_procedure(std::vector<uint64_t>& lo1, std::vector<uint64_t>& up1, std::vector<uint64_t>& lo2, std::vector<uint64_t>& up2);
+    bool     apply_diseq_under_approximate_box_decision_procedure(std::vector<uint64_t>& lo1, std::vector<uint64_t>& up1, std::vector<uint64_t>& lo2, std::vector<uint64_t>& up2);
 
     // overloading functions
     void dump_involving_input_variables_true_branch_bvt(bool);

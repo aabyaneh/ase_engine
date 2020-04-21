@@ -106,6 +106,7 @@ class mit_bvt_engine : public engine {
     uint64_t one_node;
     uint64_t queries_reasoned_by_mit = 0; // number of queries handled by mit
     uint64_t queries_reasoned_by_bvt = 0; // number of queries handled by bvt
+    uint64_t queries_reasoned_by_bvt_sat = 0; // number of queries returned sat handled by bvt
     uint64_t paths = 0;
 
     // detection of symbolic operand in an expression
@@ -212,7 +213,8 @@ class mit_bvt_engine : public engine {
     // ---------------------------
     void set_correction(uint64_t reg, uint8_t hasmn, uint64_t addsub_corr, uint8_t corr_validity);
     void create_ast_node_entry_for_accumulated_corr(uint64_t sym_reg);
-    void create_crt_operand_ast_node_entry(uint64_t crt_reg);
+    void create_ast_node_entry_for_concrete_operand(uint64_t crt_reg);
+    void evaluate_correction(uint64_t reg);
 
     // ---------------------------
     // symbolic instructions
@@ -223,6 +225,7 @@ class mit_bvt_engine : public engine {
 
     bool apply_add_pointer();
     bool apply_sub_pointer();
+    void apply_mul_zero();
     void apply_lui();
     void apply_addi();
     void apply_add();
@@ -262,6 +265,7 @@ class mit_bvt_engine : public engine {
     virtual uint64_t add_ast_node(uint8_t typ, uint64_t left_node, uint64_t right_node, uint32_t mints_num, std::vector<uint64_t>& lo, std::vector<uint64_t>& up, uint64_t step, uint64_t sym_input_num, std::vector<uint64_t>& sym_input_ast_tcs, uint8_t theory_type, BoolectorNode* smt_expr);
     uint8_t  detect_symbolic_operand(uint64_t ast_tc);
     void     set_involved_inputs(uint64_t reg, std::vector<uint64_t>& involved_inputs, size_t vaddr_num);
+    void     set_involved_inputs_two_symbolic_operands();
     void     take_branch(uint64_t b, uint64_t how_many_more);
     uint64_t backward_propagation_of_value_intervals(uint64_t ast_tc, std::vector<uint64_t>& lo, std::vector<uint64_t>& up, size_t mints_num, uint8_t theory_type);
     void     constrain_memory_mit(uint64_t reg, std::vector<uint64_t>& lo, std::vector<uint64_t>& up, uint32_t mints_num, uint64_t trb, bool only_reachable_branch);

@@ -105,12 +105,14 @@ void bvt_engine::init_engine(uint64_t peek_argument) {
   // -------------------------
   zero_node        = add_ast_node(CONST, 0, 0, zero_v, zero_v, 0, zero_v, boolector_null, CONCRETE);
   one_node         = add_ast_node(CONST, 0, 0, one_v , one_v , 0, zero_v, boolector_null, CONCRETE);
+  smt_exprs[zero_node] = zero_bv;
+  smt_exprs[one_node]  = one_bv;
+
   reg_asts[REG_ZR] = zero_node;
 
   for (size_t i = 0; i < NUMBEROFREGISTERS; i++) {
     reg_mintervals_los[i].resize(MAX_NUM_OF_INTERVALS);
     reg_mintervals_ups[i].resize(MAX_NUM_OF_INTERVALS);
-
     reg_involved_inputs[i].resize(MAX_NUM_OF_INVOLVED_INPUTS);
   }
 
@@ -132,7 +134,7 @@ void bvt_engine::init_engine(uint64_t peek_argument) {
   TWO_TO_THE_POWER_OF_32 = 4294967296ULL;
 
   if (IS_TEST_MODE) {
-    std::string test_output = reinterpret_cast<const char*>(binary_name);
+    std::string test_output = binary_name;
     test_output += ".result";
     output_results.open(test_output, std::ofstream::trunc);
   }
@@ -227,14 +229,15 @@ void bvt_engine::set_SP(uint64_t* context) {
   SP = VIRTUALMEMORYSIZE - REGISTERSIZE;
 
   // set bounds to register value for symbolic execution
-  reg_data_type[REG_SP]            = 0;
   get_regs(context)[REG_SP]        = SP;
+  reg_data_type[REG_SP]            = VALUE_T;
+  reg_symb_type[REG_SP]            = CONCRETE;
   reg_mintervals_los[REG_SP][0]    = SP;
   reg_mintervals_ups[REG_SP][0]    = SP;
   reg_involved_inputs_cnts[REG_SP] = 0;
-  reg_symb_type[REG_SP]            = CONCRETE;
   reg_asts[REG_SP]                 = 0;
   reg_bvts[REG_SP]                 = boolector_null;
+  set_correction(REG_SP, 0, 0, 0);
 }
 
 void bvt_engine::up_load_binary(uint64_t* context) {
@@ -362,7 +365,7 @@ BoolectorNode* bvt_engine::boolector_unsigned_int_64(uint64_t value) {
 // -----------------------------------------------------------------
 
 void bvt_engine::implement_exit(uint64_t* context) {
-  set_exit_code(context, sign_shrink(*(get_regs(context) + REG_A0), SYSCALL_BITWIDTH));
+  set_exit_code(context, sign_shrink(get_regs(context)[REG_A0], SYSCALL_BITWIDTH));
 }
 
 void bvt_engine::implement_read(uint64_t* context) {
@@ -372,7 +375,7 @@ void bvt_engine::implement_read(uint64_t* context) {
 void bvt_engine::implement_printsv(uint64_t* context) {
   uint64_t id;
 
-  id   = *(get_regs(context) + REG_A0);
+  id = get_regs(context)[REG_A0];
 
   for (size_t i = 0; i < 1; i++) {
     std::cout << std::left << "PRINTSV :=) id: " << std::setw(3) << id << ", #: " << std::setw(2) << i <<
@@ -424,6 +427,10 @@ void bvt_engine::implement_symbolic_input(uint64_t* context) {
   boolector_assert(btor, boolector_ulte(btor, in, boolector_unsigned_int_64(up)));
   // >= lo
   boolector_assert(btor, boolector_ugte(btor, in, boolector_unsigned_int_64(lo)));
+
+  if (step > 1) {
+    std::cout << exe_name << ": engine doesn't support steps of more than 1 for bit-vector theory\n";
+  }
 
   // create AST node
   value_v_1[0] = lo; value_v_2[0] = lo;
@@ -505,17 +512,18 @@ void bvt_engine::implement_write(uint64_t* context) {
   }
 
   if (failed == 0)
-    *(get_regs(context) + REG_A0) = written_total;
+    get_regs(context)[REG_A0] = written_total;
   else
-    *(get_regs(context) + REG_A0) = sign_shrink(-1, SYSCALL_BITWIDTH);
+    get_regs(context)[REG_A0] = sign_shrink(-1, SYSCALL_BITWIDTH);
 
-  reg_data_type[REG_A0]            = 0;
-  reg_mintervals_los[REG_A0][0]    = *(get_regs(context) + REG_A0);
-  reg_mintervals_ups[REG_A0][0]    = *(get_regs(context) + REG_A0);
-  reg_involved_inputs_cnts[REG_A0] = 0;
+  reg_data_type[REG_A0]            = VALUE_T;
   reg_symb_type[REG_A0]            = CONCRETE;
+  reg_mintervals_los[REG_A0][0]    = get_regs(context)[REG_A0];
+  reg_mintervals_ups[REG_A0][0]    = get_regs(context)[REG_A0];
+  reg_involved_inputs_cnts[REG_A0] = 0;
   reg_asts[REG_A0]                 = 0;
   reg_bvts[REG_A0]                 = boolector_null;
+  set_correction(REG_A0, 0, 0, 0);
 
   set_pc(context, get_pc(context) + INSTRUCTIONSIZE);
 }
@@ -582,13 +590,14 @@ void bvt_engine::implement_open(uint64_t* context) {
     *(get_regs(context) + REG_A0) = sign_shrink(-1, SYSCALL_BITWIDTH);
   }
 
-  reg_data_type[REG_A0]            = 0;
-  reg_mintervals_los[REG_A0][0]    = *(get_regs(context) + REG_A0);
-  reg_mintervals_ups[REG_A0][0]    = *(get_regs(context) + REG_A0);
-  reg_involved_inputs_cnts[REG_A0] = 0;
+  reg_data_type[REG_A0]            = VALUE_T;
   reg_symb_type[REG_A0]            = CONCRETE;
+  reg_mintervals_los[REG_A0][0]    = get_regs(context)[REG_A0];
+  reg_mintervals_ups[REG_A0][0]    = get_regs(context)[REG_A0];
+  reg_involved_inputs_cnts[REG_A0] = 0;
   reg_asts[REG_A0]                 = 0;
   reg_bvts[REG_A0]                 = boolector_null;
+  set_correction(REG_A0, 0, 0, 0);
 
   set_pc(context, get_pc(context) + INSTRUCTIONSIZE);
 }
@@ -596,8 +605,6 @@ void bvt_engine::implement_open(uint64_t* context) {
 void bvt_engine::implement_brk(uint64_t* context) {
   // parameter
   uint64_t program_break;
-  std::vector<uint64_t> value_v_1(1);
-  std::vector<uint64_t> value_v_2(1);
 
   // local variables
   uint64_t previous_program_break;
@@ -622,19 +629,19 @@ void bvt_engine::implement_brk(uint64_t* context) {
 
 
     reg_data_type[REG_A0]            = POINTER_T;              // interval is memory range, not symbolic value
+    reg_symb_type[REG_A0]            = CONCRETE;
     get_regs(context)[REG_A0]        = previous_program_break;
     reg_mintervals_los[REG_A0][0]    = previous_program_break; // remember start and size of memory block for checking memory safety
     reg_mintervals_ups[REG_A0][0]    = size;                   // remember start and size of memory block for checking memory safety
     reg_involved_inputs_cnts[REG_A0] = 0;
-    reg_symb_type[REG_A0]            = CONCRETE;
     reg_asts[REG_A0]                 = 0;
     reg_bvts[REG_A0]                 = boolector_null;
+    set_correction(REG_A0, 0, 0, 0);
 
     if (mrcc > 0) {
       if (is_trace_space_available()) {
         // since there has been branching record brk using vaddr == 0
-        value_v_1[0] = previous_program_break; value_v_2[0] = size;
-        uint64_t ast_ptr = add_ast_node(CONST, 0, 0, value_v_1, value_v_2, 0, zero_v, reg_bvts[REG_A0], CONCRETE);
+        uint64_t ast_ptr = add_ast_node(CONST, 0, 0, reg_mintervals_los[REG_A0], reg_mintervals_ups[REG_A0], 0, zero_v, reg_bvts[REG_A0], CONCRETE);
         store_symbolic_memory(get_pt(context), 0, previous_program_break, POINTER_T, ast_ptr, tc, 1, CONCRETE);
       } else {
         throw_exception(EXCEPTION_MAXTRACE, 0);
@@ -647,13 +654,14 @@ void bvt_engine::implement_brk(uint64_t* context) {
     program_break = previous_program_break;
 
     reg_data_type[REG_A0]            = POINTER_T;
+    reg_symb_type[REG_A0]            = CONCRETE;
     get_regs(context)[REG_A0]        = program_break;
     reg_mintervals_los[REG_A0][0]    = 0;
     reg_mintervals_ups[REG_A0][0]    = 0;
     reg_involved_inputs_cnts[REG_A0] = 0;
-    reg_symb_type[REG_A0]            = CONCRETE;
     reg_asts[REG_A0]                 = 0;
     reg_bvts[REG_A0]                 = boolector_null;
+    set_correction(REG_A0, 0, 0, 0);
   }
 
   set_pc(context, get_pc(context) + INSTRUCTIONSIZE);
@@ -677,9 +685,15 @@ void bvt_engine::create_ast_node_entry_for_accumulated_corr(uint64_t sym_reg) {
   }
 }
 
-void bvt_engine::create_crt_operand_ast_node_entry(uint64_t crt_reg) {
+void bvt_engine::create_ast_node_entry_for_concrete_operand(uint64_t crt_reg) {
   value_v[0]        = reg_mintervals_los[crt_reg][0];
   reg_asts[crt_reg] = add_ast_node(CONST, 0, 0, value_v, value_v, 0, zero_v, reg_bvts[crt_reg], CONCRETE);
+}
+
+void bvt_engine::evaluate_correction(uint64_t reg) {
+  if (reg_addsub_corr[reg] || reg_hasmn[reg]) {
+    create_ast_node_entry_for_accumulated_corr(reg);
+  }
 }
 
 // -----------------------------------------------------------------
@@ -730,9 +744,9 @@ void bvt_engine::apply_addi() {
   if (reg_symb_type[rs1] == SYMBOLIC) {
     // rd inherits rs1 constraint
     reg_symb_type[rd]         = SYMBOLIC;
-    reg_bvts[rd]              = boolector_null;
     reg_mintervals_los[rd][0] = registers[rd];
     reg_mintervals_ups[rd][0] = registers[rd];
+    reg_bvts[rd]              = boolector_null;
     set_involved_inputs(rd, reg_involved_inputs[rs1], reg_involved_inputs_cnts[rs1]);
 
     if (reg_corr_validity[rs1] == 0) {
@@ -745,12 +759,11 @@ void bvt_engine::apply_addi() {
     }
 
   } else {
-    reg_bvts[rd] = boolector_null;
-
     reg_symb_type[rd]            = CONCRETE;
     reg_mintervals_los[rd][0]    = registers[rd];
     reg_mintervals_ups[rd][0]    = registers[rd];
     reg_involved_inputs_cnts[rd] = 0;
+    reg_bvts[rd]                 = boolector_null;
     reg_asts[rd]                 = 0;
 
     set_correction(rd, 0, 0, 0);
@@ -804,26 +817,17 @@ void bvt_engine::apply_add() {
       return;
 
     reg_data_type[rd] = VALUE_T;
-
-    reg_bvts[rd] = boolector_null;
+    reg_bvts[rd]      = boolector_null;
 
     // interval semantics of add
     if (reg_symb_type[rs1] == SYMBOLIC) {
       if (reg_symb_type[rs2] == SYMBOLIC) {
         reg_symb_type[rd] = SYMBOLIC;
 
-        merge_arrays(reg_involved_inputs[rs1], reg_involved_inputs[rs2], reg_involved_inputs_cnts[rs1], reg_involved_inputs_cnts[rs2]);
-        for (size_t i = 0; i < merged_array.size(); i++) {
-          reg_involved_inputs[rd][i] = merged_array[i];
-        }
-        reg_involved_inputs_cnts[rd] = merged_array.size();
+        set_involved_inputs_two_symbolic_operands();
 
-        if (reg_addsub_corr[rs1] || reg_hasmn[rs1]) {
-          create_ast_node_entry_for_accumulated_corr(rs1);
-        }
-        if (reg_addsub_corr[rs2] || reg_hasmn[rs2]) {
-          create_ast_node_entry_for_accumulated_corr(rs2);
-        }
+        evaluate_correction(rs1);
+        evaluate_correction(rs2);
         set_correction(rd, 0, 0, 1);
 
         // TODO: interval semantics of add
@@ -943,26 +947,17 @@ void bvt_engine::apply_sub() {
       return;
 
     reg_data_type[rd] = VALUE_T;
-
-    reg_bvts[rd] = boolector_null;
+    reg_bvts[rd]      = boolector_null;
 
     // interval semantics of sub
     if (reg_symb_type[rs1] == SYMBOLIC) {
       if (reg_symb_type[rs2] == SYMBOLIC) {
         reg_symb_type[rd] = SYMBOLIC;
 
-        merge_arrays(reg_involved_inputs[rs1], reg_involved_inputs[rs2], reg_involved_inputs_cnts[rs1], reg_involved_inputs_cnts[rs2]);
-        for (size_t i = 0; i < merged_array.size(); i++) {
-          reg_involved_inputs[rd][i] = merged_array[i];
-        }
-        reg_involved_inputs_cnts[rd] = merged_array.size();
+        set_involved_inputs_two_symbolic_operands();
 
-        if (reg_addsub_corr[rs1] || reg_hasmn[rs1]) {
-          create_ast_node_entry_for_accumulated_corr(rs1);
-        }
-        if (reg_addsub_corr[rs2] || reg_hasmn[rs2]) {
-          create_ast_node_entry_for_accumulated_corr(rs2);
-        }
+        evaluate_correction(rs1);
+        evaluate_correction(rs2);
         set_correction(rd, 0, 0, 1);
 
         reg_mintervals_los[rd][0] = registers[rd];
@@ -1024,11 +1019,6 @@ void bvt_engine::apply_sub() {
 }
 
 void bvt_engine::apply_mul() {
-  uint64_t mul_lo;
-  uint64_t mul_up;
-  uint64_t multiplier;
-  bool     cnd;
-
   do_mul();
 
   if (rd != REG_ZR) {
@@ -1046,21 +1036,13 @@ void bvt_engine::apply_mul() {
       } else {
         // rd inherits rs1 constraint since rs2 has none
         // assert: rs2 interval is singleton
-
-        if (reg_addsub_corr[rs1] || reg_hasmn[rs1]) {
-          create_ast_node_entry_for_accumulated_corr(rs1);
-          // now reg_asts[rs1] is updated
-        }
-        if (reg_asts[rs2] == 0) {
-          create_crt_operand_ast_node_entry(rs2);
-        }
-        set_correction(rd, 0, 0, 1);
-
         reg_symb_type[rd] = SYMBOLIC;
 
-        set_involved_inputs(rd, reg_involved_inputs[rs1], reg_involved_inputs_cnts[rs1]);
+        evaluate_correction(rs1);
+        if (reg_asts[rs2] == 0) { create_ast_node_entry_for_concrete_operand(rs2); }
+        set_correction(rd, 0, 0, 1);
 
-        multiplier = reg_mintervals_los[rs2][0];
+        set_involved_inputs(rd, reg_involved_inputs[rs1], reg_involved_inputs_cnts[rs1]);
 
         reg_mintervals_los[rd][0] = registers[rd];
         reg_mintervals_ups[rd][0] = registers[rd];
@@ -1071,21 +1053,13 @@ void bvt_engine::apply_mul() {
     } else if (reg_symb_type[rs2] == SYMBOLIC) {
       // rd inherits rs2 constraint since rs1 has none
       // assert: rs1 interval is singleton
-
-      if (reg_addsub_corr[rs2] || reg_hasmn[rs2]) {
-        create_ast_node_entry_for_accumulated_corr(rs2);
-        // now reg_asts[rs2] is updated
-      }
-      if (reg_asts[rs1] == 0) {
-        create_crt_operand_ast_node_entry(rs1);
-      }
-      set_correction(rd, 0, 0, 1);
-
       reg_symb_type[rd] = SYMBOLIC;
 
-      set_involved_inputs(rd, reg_involved_inputs[rs2], reg_involved_inputs_cnts[rs2]);
+      evaluate_correction(rs2);
+      if (reg_asts[rs1] == 0) { create_ast_node_entry_for_concrete_operand(rs1); }
+      set_correction(rd, 0, 0, 1);
 
-      multiplier = reg_mintervals_los[rs1][0];
+      set_involved_inputs(rd, reg_involved_inputs[rs2], reg_involved_inputs_cnts[rs2]);
 
       reg_mintervals_los[rd][0] = registers[rd];
       reg_mintervals_ups[rd][0] = registers[rd];
@@ -1106,15 +1080,11 @@ void bvt_engine::apply_mul() {
 }
 
 void bvt_engine::apply_divu() {
-  uint64_t div_lo;
-  uint64_t div_up;
-
   do_divu();
 
   if (rd != REG_ZR) {
     reg_data_type[rd] = VALUE_T;
-
-    reg_bvts[rd] = boolector_null;
+    reg_bvts[rd]      = boolector_null;
 
     if (reg_symb_type[rs1] == SYMBOLIC) {
       if (reg_symb_type[rs2] == SYMBOLIC) {
@@ -1125,17 +1095,11 @@ void bvt_engine::apply_divu() {
       } else {
         // rd inherits rs1 constraint since rs2 has none
         // assert: rs2 interval is singleton
-
-        if (reg_addsub_corr[rs1] || reg_hasmn[rs1]) {
-          create_ast_node_entry_for_accumulated_corr(rs1);
-          // now reg_asts[rs1] is updated
-        }
-        if (reg_asts[rs2] == 0) {
-          create_crt_operand_ast_node_entry(rs2);
-        }
-        set_correction(rd, 0, 0, 1);
-
         reg_symb_type[rd] = SYMBOLIC;
+
+        evaluate_correction(rs1);
+        if (reg_asts[rs2] == 0) { create_ast_node_entry_for_concrete_operand(rs2); }
+        set_correction(rd, 0, 0, 1);
 
         set_involved_inputs(rd, reg_involved_inputs[rs1], reg_involved_inputs_cnts[rs1]);
 
@@ -1146,17 +1110,11 @@ void bvt_engine::apply_divu() {
     } else if (reg_symb_type[rs2] == SYMBOLIC) {
       // rd inherits rs2 constraint since rs1 has none
       // assert: rs1 interval is singleton
-
-      if (reg_addsub_corr[rs2] || reg_hasmn[rs2]) {
-        create_ast_node_entry_for_accumulated_corr(rs2);
-        // now reg_asts[rs2] is updated
-      }
-      if (reg_asts[rs1] == 0) {
-        create_crt_operand_ast_node_entry(rs1);
-      }
-      set_correction(rd, 0, 0, 1);
-
       reg_symb_type[rd] = SYMBOLIC;
+
+      evaluate_correction(rs2);
+      if (reg_asts[rs1] == 0) { create_ast_node_entry_for_concrete_operand(rs1); }
+      set_correction(rd, 0, 0, 1);
 
       set_involved_inputs(rd, reg_involved_inputs[rs2], reg_involved_inputs_cnts[rs2]);
 
@@ -1166,7 +1124,6 @@ void bvt_engine::apply_divu() {
 
     } else {
       // rd has no constraint if both rs1 and rs2 have no constraints
-
       reg_symb_type[rd]            = CONCRETE;
       reg_mintervals_los[rd][0]    = registers[rd];
       reg_mintervals_ups[rd][0]    = registers[rd];
@@ -1183,8 +1140,7 @@ void bvt_engine::apply_remu() {
 
   if (rd != REG_ZR) {
     reg_data_type[rd] = VALUE_T;
-
-    reg_bvts[rd] = boolector_null;
+    reg_bvts[rd]      = boolector_null;
 
     if (reg_symb_type[rs1] == SYMBOLIC) {
       if (reg_symb_type[rs2] == SYMBOLIC) {
@@ -1195,17 +1151,11 @@ void bvt_engine::apply_remu() {
       } else {
         // rd inherits rs1 constraint since rs2 has none
         // assert: rs2 interval is singleton
-
-        if (reg_addsub_corr[rs1] || reg_hasmn[rs1]) {
-          create_ast_node_entry_for_accumulated_corr(rs1);
-          // now reg_asts[rs1] is updated
-        }
-        if (reg_asts[rs2] == 0) {
-          create_crt_operand_ast_node_entry(rs2);
-        }
-        set_correction(rd, 0, 0, 1);
-
         reg_symb_type[rd] = SYMBOLIC;
+
+        evaluate_correction(rs1);
+        if (reg_asts[rs2] == 0) { create_ast_node_entry_for_concrete_operand(rs2); }
+        set_correction(rd, 0, 0, 1);
 
         set_involved_inputs(rd, reg_involved_inputs[rs1], reg_involved_inputs_cnts[rs1]);
 
@@ -1216,17 +1166,11 @@ void bvt_engine::apply_remu() {
     } else if (reg_symb_type[rs2] == SYMBOLIC) {
       // rd inherits rs2 constraint since rs1 has none
       // assert: rs1 interval is singleton
-
-      if (reg_addsub_corr[rs2] || reg_hasmn[rs2]) {
-        create_ast_node_entry_for_accumulated_corr(rs2);
-        // now reg_asts[rs2] is updated
-      }
-      if (reg_asts[rs1] == 0) {
-        create_crt_operand_ast_node_entry(rs1);
-      }
-      set_correction(rd, 0, 0, 1);
-
       reg_symb_type[rd] = SYMBOLIC;
+
+      evaluate_correction(rs2);
+      if (reg_asts[rs1] == 0) { create_ast_node_entry_for_concrete_operand(rs1); }
+      set_correction(rd, 0, 0, 1);
 
       set_involved_inputs(rd, reg_involved_inputs[rs2], reg_involved_inputs_cnts[rs2]);
 
@@ -1263,25 +1207,37 @@ void bvt_engine::apply_sltu() {
       reg_asts[rd]                 = (registers[rd] == 0) ? zero_node : one_node;
       reg_bvts[rd]                 = (registers[rd] == 0) ? smt_exprs[zero_node] : smt_exprs[one_node];
 
+      set_correction(rd, 0, 0, 0);
+
       pc = pc + INSTRUCTIONSIZE;
       ic_sltu = ic_sltu + 1;
 
       return;
     }
 
+    // -------------------
+    // evaluate_correction
+    // -------------------
     if (reg_addsub_corr[rs1] || reg_hasmn[rs1]) {
       create_ast_node_entry_for_accumulated_corr(rs1);
       // now reg_asts[rs1] is updated
     } else if (reg_asts[rs1] == 0 && reg_symb_type[rs1] == CONCRETE) {
-      create_crt_operand_ast_node_entry(rs1);
+      create_ast_node_entry_for_concrete_operand(rs1);
+    } else if (reg_asts[rs1] == 0 && reg_symb_type[rs1] == SYMBOLIC) {
+      std::cout << exe_name << ": error in apply_sltu at 0x" << std::hex << pc - entry_point << std::dec << std::endl;
     }
     if (reg_addsub_corr[rs2] || reg_hasmn[rs2]) {
       create_ast_node_entry_for_accumulated_corr(rs2);
       // now reg_asts[rs1] is updated
     } else if (reg_asts[rs2] == 0 && reg_symb_type[rs2] == CONCRETE) {
-      create_crt_operand_ast_node_entry(rs2);
+      create_ast_node_entry_for_concrete_operand(rs2);
+    } else if (reg_asts[rs2] == 0 && reg_symb_type[rs2] == SYMBOLIC) {
+      std::cout << exe_name << ": error in apply_sltu at 0x" << std::hex << pc - entry_point << std::dec << std::endl;
     }
 
+    // -------------------
+    // save input_table
+    // -------------------
     input_table_ast_tcs_before_branch_evaluation.clear();
     for (size_t i = 0; i < input_table.size(); i++) {
       input_table_ast_tcs_before_branch_evaluation.push_back(input_table[i]);
@@ -1318,25 +1274,37 @@ void bvt_engine::apply_xor() {
     reg_asts[rd]                 = (registers[rd] == 0) ? zero_node : one_node;
     reg_bvts[rd]                 = (registers[rd] == 0) ? smt_exprs[zero_node] : smt_exprs[one_node];
 
+    set_correction(rd, 0, 0, 0);
+
     pc = pc + INSTRUCTIONSIZE;
     ic_xor = ic_xor + 1;
 
     return;
   }
 
+  // -------------------
+  // evaluate_correction
+  // -------------------
   if (reg_addsub_corr[rs1] || reg_hasmn[rs1]) {
     create_ast_node_entry_for_accumulated_corr(rs1);
     // now reg_asts[rs1] is updated
   } else if (reg_asts[rs1] == 0 && reg_symb_type[rs1] == CONCRETE) {
-    create_crt_operand_ast_node_entry(rs1);
+    create_ast_node_entry_for_concrete_operand(rs1);
+  } else if (reg_asts[rs1] == 0 && reg_symb_type[rs1] == SYMBOLIC) {
+    std::cout << exe_name << ": error in apply_xor at 0x" << std::hex << pc - entry_point << std::dec << std::endl;
   }
   if (reg_addsub_corr[rs2] || reg_hasmn[rs2]) {
     create_ast_node_entry_for_accumulated_corr(rs2);
     // now reg_asts[rs1] is updated
   } else if (reg_asts[rs2] == 0 && reg_symb_type[rs2] == CONCRETE) {
-    create_crt_operand_ast_node_entry(rs2);
+    create_ast_node_entry_for_concrete_operand(rs2);
+  } else if (reg_asts[rs2] == 0 && reg_symb_type[rs2] == SYMBOLIC) {
+    std::cout << exe_name << ": error in apply_xor at 0x" << std::hex << pc - entry_point << std::dec << std::endl;
   }
 
+  // -------------------
+  // save input_table
+  // -------------------
   input_table_ast_tcs_before_branch_evaluation.clear();
   for (size_t i = 0; i < input_table.size(); i++) {
     input_table_ast_tcs_before_branch_evaluation.push_back(input_table[i]);
@@ -1397,7 +1365,7 @@ uint64_t bvt_engine::apply_ld() {
         if (vaddr >= get_program_break(current_context))
           if (vaddr < registers[REG_SP]) {
             // free memory
-            std::cout << exe_name << ": loading an uninitialized memory " << vaddr << " at 0x" << std::hex << pc - entry_point << std::dec << std::endl;
+            std::cout << exe_name << ": loading a freed memory " << vaddr << " at 0x" << std::hex << pc - entry_point << std::dec << std::endl;
             exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
           }
 
@@ -1460,19 +1428,16 @@ uint64_t bvt_engine::apply_sd() {
   if (is_safe_address(vaddr, rs1)) {
     if (is_virtual_address_mapped(pt, vaddr)) {
       // interval semantics of sd
+
+      // evaluate corrections
       if (reg_addsub_corr[rs2] || reg_hasmn[rs2]) {
         create_ast_node_entry_for_accumulated_corr(rs2);
         // now reg_asts[rs2] is updated
-        set_correction(rs2, 0, 0, 1);
-      }
-
-      if (reg_asts[rs2] == 0) {
-        if (reg_symb_type[rs2] == CONCRETE)
-          reg_asts[rs2] = add_ast_node(CONST, 0, 0, reg_mintervals_los[rs2], reg_mintervals_ups[rs2], 0, zero_v, boolector_null, CONCRETE);
-        else {
-          std::cout << exe_name << ": detected symbolic value with reg_asts = 0 at 0x" << std::hex << pc - entry_point << std::dec << std::endl;
-          exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
-        }
+      } else if (reg_asts[rs2] == 0 && reg_symb_type[rs2] == CONCRETE) {
+        reg_asts[rs2] = add_ast_node(CONST, 0, 0, reg_mintervals_los[rs2], reg_mintervals_ups[rs2], 0, zero_v, boolector_null, CONCRETE);
+      } else if (reg_asts[rs2] == 0 && reg_symb_type[rs2] == SYMBOLIC) {
+        std::cout << exe_name << ": detected symbolic value with reg_asts = 0 in sd operation at 0x" << std::hex << pc - entry_point << std::dec << std::endl;
+        exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
       }
 
       store_symbolic_memory(pt, vaddr, registers[rs2], reg_data_type[rs2], reg_asts[rs2], mrcc, 1, reg_symb_type[rs2]);
@@ -1524,7 +1489,6 @@ void bvt_engine::apply_jalr() {
     reg_asts[rd]                 = 0;
     reg_bvts[rd]                 = boolector_null;
 
-
     set_correction(rd, 0, 0, 0);
   }
 }
@@ -1567,8 +1531,7 @@ void bvt_engine::backtrack_sltu() {
           pc = pc + INSTRUCTIONSIZE;
           ic_sltu = ic_sltu + 1;
 
-          reg_asts[vaddr]  = (registers[vaddr] == 0) ? zero_node : one_node;
-
+          reg_asts[vaddr] = (registers[vaddr] == 0) ? zero_node : one_node;
           reg_bvts[vaddr] = (registers[vaddr] == 0) ? smt_exprs[zero_node] : smt_exprs[one_node];
 
           boolector_pop(btor, 1);
@@ -1584,25 +1547,14 @@ void bvt_engine::backtrack_sltu() {
   } else if (vaddr == NUMBEROFREGISTERS) {
     input_table.at(ast_nodes[asts[tc]].right_node) = values[tc];
   } else {
-    if (ast_nodes[asts[tc]].type == VAR) {
-      if (store_trace_ptrs[asts[tc]].size() > 1) {
-        store_trace_ptrs[asts[tc]].pop_back();
-      } else if (store_trace_ptrs[asts[tc]].size() == 1) {
-        input_table.at(ast_nodes[asts[tc]].right_node) = asts[tcs[tc]];
-        store_trace_ptrs[asts[tc]].pop_back();
-      } else {
-        std::cout << exe_name << ": error occured during sltu backtracking at 0x" << std::hex << pc - entry_point << std::dec << std::endl;
-        exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
-      }
+    if (store_trace_ptrs[asts[tc]].size() > 1) {
+      store_trace_ptrs[asts[tc]].pop_back();
+    } else if (store_trace_ptrs[asts[tc]].size() == 1) {
+      if (ast_nodes[asts[tc]].type == VAR) input_table.at(ast_nodes[asts[tc]].right_node) = asts[tcs[tc]];
+      store_trace_ptrs[asts[tc]].pop_back();
     } else {
-      if (store_trace_ptrs[asts[tc]].size() > 1) {
-        store_trace_ptrs[asts[tc]].pop_back();
-      } else if (store_trace_ptrs[asts[tc]].size() == 1) {
-        store_trace_ptrs[asts[tc]].pop_back();
-      } else {
-        std::cout << exe_name << ": error occured during sltu backtracking at 0x" << std::hex << pc - entry_point << std::dec << std::endl;
-        exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
-      }
+      std::cout << exe_name << ": error occured during sltu backtracking at 0x" << std::hex << pc - entry_point << std::dec << std::endl;
+      exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
     }
 
     store_virtual_memory(pt, vaddr, tcs[tc]);
@@ -1613,26 +1565,11 @@ void bvt_engine::backtrack_sltu() {
 
 void bvt_engine::backtrack_sd() {
   if (asts[tc] != 0) {
-    if (ast_nodes[asts[tc]].type == VAR) {
-      if (store_trace_ptrs[asts[tc]].size() > 1) {
-        store_trace_ptrs[asts[tc]].pop_back();
-      } else if (store_trace_ptrs[asts[tc]].size() == 1) {
-        input_table.pop_back();
-        symbolic_input_cnt = input_table.size();
-        store_trace_ptrs[asts[tc]].pop_back();
-      } else {
-        std::cout << exe_name << ": error occured during sd backtracking at 0x" << std::hex << pc - entry_point << std::dec << std::endl;
-        exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
-      }
+    if (store_trace_ptrs[asts[tc]].size() >= 1) {
+      store_trace_ptrs[asts[tc]].pop_back();
     } else {
-      if (store_trace_ptrs[asts[tc]].size() > 1) {
-        store_trace_ptrs[asts[tc]].pop_back();
-      } else if (store_trace_ptrs[asts[tc]].size() == 1) {
-        store_trace_ptrs[asts[tc]].pop_back();
-      } else {
-        std::cout << exe_name << ": error occured during sd backtracking at 0x" << std::hex << pc - entry_point << std::dec << std::endl;
-        exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
-      }
+      std::cout << exe_name << ": error occured during sd backtracking at 0x" << std::hex << pc - entry_point << std::dec << std::endl;
+      exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
     }
   }
 
@@ -1642,25 +1579,14 @@ void bvt_engine::backtrack_sd() {
 }
 
 void bvt_engine::backtrack_ld() {
-  if (ast_nodes[asts[tc]].type == VAR) {
-    if (store_trace_ptrs[asts[tc]].size() > 1) {
-      store_trace_ptrs[asts[tc]].pop_back();
-    } else if (store_trace_ptrs[asts[tc]].size() == 1) {
-      input_table.at(ast_nodes[asts[tc]].right_node) = asts[tcs[tc]];
-      store_trace_ptrs[asts[tc]].pop_back();
-    } else {
-      std::cout << exe_name << ": error occured during ld backtracking at 0x" << std::hex << pc - entry_point << std::dec << std::endl;
-      exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
-    }
+  if (store_trace_ptrs[asts[tc]].size() > 1) {
+    store_trace_ptrs[asts[tc]].pop_back();
+  } else if (store_trace_ptrs[asts[tc]].size() == 1) {
+    if (ast_nodes[asts[tc]].type == VAR) input_table.at(ast_nodes[asts[tc]].right_node) = asts[tcs[tc]];
+    store_trace_ptrs[asts[tc]].pop_back();
   } else {
-    if (store_trace_ptrs[asts[tc]].size() > 1) {
-      store_trace_ptrs[asts[tc]].pop_back();
-    } else if (store_trace_ptrs[asts[tc]].size() == 1) {
-      store_trace_ptrs[asts[tc]].pop_back();
-    } else {
-      std::cout << exe_name << ": error occured during ld backtracking at 0x" << std::hex << pc - entry_point << std::dec << std::endl;
-      exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
-    }
+    std::cout << exe_name << ": error occured during ld backtracking at 0x" << std::hex << pc - entry_point << std::dec << std::endl;
+    exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
   }
 
   store_virtual_memory(pt, vaddrs[tc], tcs[tc]);
@@ -1681,7 +1607,6 @@ void bvt_engine::backtrack_ecall() {
     // backtracking input
     input_table.pop_back();
     symbolic_input_cnt = input_table.size();
-    // printf("OUT: *** input %llu is undone \n", symbolic_input_cnt);
     store_trace_ptrs[asts[tc]].pop_back();
     input_table_store_trace_ptr.pop_back();
 
@@ -1813,7 +1738,7 @@ void bvt_engine::store_symbolic_memory(uint64_t* pt, uint64_t vaddr, uint64_t va
           if (ast_ptr) { store_trace_ptrs[ast_ptr].push_back(mrvc); }
 
           if (is_store) {
-            mr_sds[mrvc]   = mrvc;
+            mr_sds[mrvc] = mrvc;
           }
 
           return;
@@ -1835,10 +1760,9 @@ void bvt_engine::store_symbolic_memory(uint64_t* pt, uint64_t vaddr, uint64_t va
     if (ast_ptr) store_trace_ptrs[ast_ptr].push_back(tc);
 
     if (is_store) {
-      mr_sds[tc]         = tc;
+      mr_sds[tc] = tc;
     } else {
-      mr_sds[tc]         = mr_sds[mrvc];
-      // if (smt_exprs[ast_ptr] == boolector_null) smt_exprs[ast_ptr] = smt_exprs[asts[mrvc]];
+      mr_sds[tc] = mr_sds[mrvc];
     }
 
     if (vaddr < NUMBEROFREGISTERS) {
@@ -1923,14 +1847,19 @@ void bvt_engine::set_involved_inputs(uint64_t reg, std::vector<uint64_t>& involv
   }
 }
 
+void bvt_engine::set_involved_inputs_two_symbolic_operands() {
+  merge_arrays(reg_involved_inputs[rs1], reg_involved_inputs[rs2], reg_involved_inputs_cnts[rs1], reg_involved_inputs_cnts[rs2]);
+  for (size_t i = 0; i < merged_array.size(); i++) {
+    reg_involved_inputs[rd][i] = merged_array[i];
+  }
+  reg_involved_inputs_cnts[rd] = merged_array.size();
+}
+
 void bvt_engine::take_branch(uint64_t b, uint64_t how_many_more) {
   if (how_many_more > 0) {
-    // record that we need to set rd to true
-    value_v[0] = b;
+    value_v[0] = b;                 // record that we need to set rd to true
     store_register_memory(rd, value_v);
-
-    // record frame and stack pointer
-    value_v[0] = registers[REG_FP];
+    value_v[0] = registers[REG_FP]; // record frame and stack pointer
     store_register_memory(REG_FP, value_v);
     value_v[0] = registers[REG_SP];
     store_register_memory(REG_SP, value_v);
@@ -2125,8 +2054,8 @@ void bvt_engine::dump_involving_input_variables_true_branch_bvt() {
   uint64_t ast_ptr, involved_input_ast_tc, stored_to_tc, mr_stored_to_tc;
   bool is_assigned;
 
+  involved_inputs_in_current_conditional_expression_rs1_operand.clear();
   if (reg_symb_type[rs1] == SYMBOLIC) {
-    involved_inputs_in_current_conditional_expression_rs1_operand.clear();
     for (size_t i = 0; i < involved_sym_inputs_cnts[reg_asts[rs1]]; i++) {
       involved_input_ast_tc = involved_sym_inputs_ast_tcs[reg_asts[rs1]][i];
       involved_inputs_in_current_conditional_expression_rs1_operand.push_back(ast_nodes[involved_input_ast_tc].right_node);
@@ -2150,8 +2079,8 @@ void bvt_engine::dump_involving_input_variables_true_branch_bvt() {
     }
   }
 
+  involved_inputs_in_current_conditional_expression_rs2_operand.clear();
   if (reg_symb_type[rs2] == SYMBOLIC) {
-    involved_inputs_in_current_conditional_expression_rs2_operand.clear();
     for (size_t i = 0; i < involved_sym_inputs_cnts[reg_asts[rs2]]; i++) {
       involved_input_ast_tc = involved_sym_inputs_ast_tcs[reg_asts[rs2]][i];
       involved_inputs_in_current_conditional_expression_rs2_operand.push_back(ast_nodes[involved_input_ast_tc].right_node);
@@ -2180,8 +2109,8 @@ void bvt_engine::dump_involving_input_variables_false_branch_bvt() {
   uint64_t ast_ptr, involved_input_ast_tc, stored_to_tc, mr_stored_to_tc;
   bool is_assigned;
 
+  involved_inputs_in_current_conditional_expression_rs1_operand.clear();
   if (reg_symb_type[rs1] == SYMBOLIC) {
-    involved_inputs_in_current_conditional_expression_rs1_operand.clear();
     for (size_t i = 0; i < involved_sym_inputs_cnts[reg_asts[rs1]]; i++) {
       involved_input_ast_tc = involved_sym_inputs_ast_tcs[reg_asts[rs1]][i];
       involved_inputs_in_current_conditional_expression_rs1_operand.push_back(ast_nodes[involved_input_ast_tc].right_node);
@@ -2205,8 +2134,8 @@ void bvt_engine::dump_involving_input_variables_false_branch_bvt() {
     }
   }
 
+  involved_inputs_in_current_conditional_expression_rs2_operand.clear();
   if (reg_symb_type[rs2] == SYMBOLIC) {
-    involved_inputs_in_current_conditional_expression_rs2_operand.clear();
     for (size_t i = 0; i < involved_sym_inputs_cnts[reg_asts[rs2]]; i++) {
       involved_input_ast_tc = involved_sym_inputs_ast_tcs[reg_asts[rs2]][i];
       involved_inputs_in_current_conditional_expression_rs2_operand.push_back(ast_nodes[involved_input_ast_tc].right_node);
@@ -2382,7 +2311,7 @@ uint8_t bvt_engine::check_conditional_type_whether_is_strict_less_than_or_is_les
 BoolectorNode* bvt_engine::boolector_op(uint8_t op, uint64_t ast_tc) {
   switch (op) {
     case CONST: {
-      return smt_exprs[ast_tc] = (mintervals_los[ast_tc][0] < TWO_TO_THE_POWER_OF_32) ? boolector_unsigned_int(btor, mintervals_los[ast_tc][0], bv_sort) : boolector_unsigned_int_64(mintervals_los[ast_tc][0]);
+      return smt_exprs[ast_tc] = boolector_unsigned_int_64(mintervals_los[ast_tc][0]);
     }
     case ADD: {
       return smt_exprs[ast_tc] = boolector_add(btor, smt_exprs[ast_nodes[ast_tc].left_node], smt_exprs[ast_nodes[ast_tc].right_node]);
@@ -2462,8 +2391,8 @@ uint64_t bvt_engine::compute_add(uint64_t left_operand_ast_tc, uint64_t right_op
     stored_to_tc    = store_trace_ptrs[old_ast_tc][i];
     mr_stored_to_tc = load_symbolic_memory(pt, vaddrs[stored_to_tc]);
     mr_stored_to_tc = mr_sds[mr_stored_to_tc];
-    if (mr_stored_to_tc <= store_trace_ptrs[old_ast_tc][i])
-      store_symbolic_memory(pt, vaddrs[store_trace_ptrs[old_ast_tc][i]], propagated_minterval_lo[0], VALUE_T, ast_ptr, tc, 0, SYMBOLIC);
+    if (mr_stored_to_tc <= stored_to_tc)
+      store_symbolic_memory(pt, vaddrs[stored_to_tc], propagated_minterval_lo[0], VALUE_T, ast_ptr, tc, 0, SYMBOLIC);
   }
 
   return ast_ptr;
@@ -2488,8 +2417,8 @@ uint64_t bvt_engine::compute_sub(uint64_t left_operand_ast_tc, uint64_t right_op
     stored_to_tc    = store_trace_ptrs[old_ast_tc][i];
     mr_stored_to_tc = load_symbolic_memory(pt, vaddrs[stored_to_tc]);
     mr_stored_to_tc = mr_sds[mr_stored_to_tc];
-    if (mr_stored_to_tc <= store_trace_ptrs[old_ast_tc][i])
-      store_symbolic_memory(pt, vaddrs[store_trace_ptrs[old_ast_tc][i]], propagated_minterval_lo[0], VALUE_T, ast_ptr, tc, 0, SYMBOLIC);
+    if (mr_stored_to_tc <= stored_to_tc)
+      store_symbolic_memory(pt, vaddrs[stored_to_tc], propagated_minterval_lo[0], VALUE_T, ast_ptr, tc, 0, SYMBOLIC);
   }
 
   return ast_ptr;
@@ -2519,8 +2448,8 @@ uint64_t bvt_engine::compute_mul(uint64_t left_operand_ast_tc, uint64_t right_op
     stored_to_tc    = store_trace_ptrs[old_ast_tc][i];
     mr_stored_to_tc = load_symbolic_memory(pt, vaddrs[stored_to_tc]);
     mr_stored_to_tc = mr_sds[mr_stored_to_tc];
-    if (mr_stored_to_tc <= store_trace_ptrs[old_ast_tc][i])
-      store_symbolic_memory(pt, vaddrs[store_trace_ptrs[old_ast_tc][i]], propagated_minterval_lo[0], VALUE_T, ast_ptr, tc, 0, SYMBOLIC);
+    if (mr_stored_to_tc <= stored_to_tc)
+      store_symbolic_memory(pt, vaddrs[stored_to_tc], propagated_minterval_lo[0], VALUE_T, ast_ptr, tc, 0, SYMBOLIC);
   }
 
   return ast_ptr;
@@ -2544,7 +2473,7 @@ uint64_t bvt_engine::compute_divu(uint64_t left_operand_ast_tc, uint64_t right_o
   }
 
   dividend = mintervals_los[left_operand_ast_tc][0];
-  divisor  = mintervals_ups[right_operand_ast_tc][0];
+  divisor  = mintervals_los[right_operand_ast_tc][0];
   if (divisor == 0) throw_exception(EXCEPTION_DIVISIONBYZERO, 0);
   uint64_t resulting_witness = dividend / divisor;
   propagated_minterval_lo[0] = resulting_witness;
@@ -2558,8 +2487,8 @@ uint64_t bvt_engine::compute_divu(uint64_t left_operand_ast_tc, uint64_t right_o
     stored_to_tc    = store_trace_ptrs[old_ast_tc][i];
     mr_stored_to_tc = load_symbolic_memory(pt, vaddrs[stored_to_tc]);
     mr_stored_to_tc = mr_sds[mr_stored_to_tc];
-    if (mr_stored_to_tc <= store_trace_ptrs[old_ast_tc][i])
-      store_symbolic_memory(pt, vaddrs[store_trace_ptrs[old_ast_tc][i]], propagated_minterval_lo[0], VALUE_T, ast_ptr, tc, 0, SYMBOLIC);
+    if (mr_stored_to_tc <= stored_to_tc)
+      store_symbolic_memory(pt, vaddrs[stored_to_tc], propagated_minterval_lo[0], VALUE_T, ast_ptr, tc, 0, SYMBOLIC);
   }
 
   return ast_ptr;
@@ -2597,8 +2526,8 @@ uint64_t bvt_engine::compute_remu(uint64_t left_operand_ast_tc, uint64_t right_o
     stored_to_tc    = store_trace_ptrs[old_ast_tc][i];
     mr_stored_to_tc = load_symbolic_memory(pt, vaddrs[stored_to_tc]);
     mr_stored_to_tc = mr_sds[mr_stored_to_tc];
-    if (mr_stored_to_tc <= store_trace_ptrs[old_ast_tc][i])
-      store_symbolic_memory(pt, vaddrs[store_trace_ptrs[old_ast_tc][i]], propagated_minterval_lo[0], VALUE_T, ast_ptr, tc, 0, SYMBOLIC);
+    if (mr_stored_to_tc <= stored_to_tc)
+      store_symbolic_memory(pt, vaddrs[stored_to_tc], propagated_minterval_lo[0], VALUE_T, ast_ptr, tc, 0, SYMBOLIC);
   }
 
   return ast_ptr;

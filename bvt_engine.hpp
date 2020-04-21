@@ -193,7 +193,8 @@ class bvt_engine : public engine {
     // ---------------------------
     void set_correction(uint64_t reg, uint8_t hasmn, uint64_t addsub_corr, uint8_t corr_validity);
     void create_ast_node_entry_for_accumulated_corr(uint64_t sym_reg);
-    void create_crt_operand_ast_node_entry(uint64_t crt_reg);
+    void create_ast_node_entry_for_concrete_operand(uint64_t crt_reg);
+    void evaluate_correction(uint64_t reg);
 
     // ---------------------------
     // symbolic instructions
@@ -243,6 +244,7 @@ class bvt_engine : public engine {
     virtual uint64_t add_ast_node(uint8_t typ, uint64_t left_node, uint64_t right_node, std::vector<uint64_t>& lo, std::vector<uint64_t>& up, uint64_t sym_input_num, std::vector<uint64_t>& sym_input_ast_tcs, BoolectorNode* smt_expr, uint8_t symbolic_type);
     uint8_t  detect_symbolic_operand(uint64_t ast_tc);
     void     set_involved_inputs(uint64_t reg, std::vector<uint64_t>& involved_inputs, size_t vaddr_num);
+    void     set_involved_inputs_two_symbolic_operands();
     void     take_branch(uint64_t b, uint64_t how_many_more);
     virtual  void create_sltu_constraints();
     void     create_xor_constraints();

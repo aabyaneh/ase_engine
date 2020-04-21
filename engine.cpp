@@ -1176,7 +1176,7 @@ void engine::print_profile() {
   std::cout << exe_name << ": summary: " <<
     (int64_t) get_total_number_of_instructions() << " executed instructions and " <<
     std::fixed << std::setprecision(2) << (double) pused() / MEGABYTE << "MB(" <<
-    ((double) page_frame_memory / pused()) * 100 << "%) mapped memory\n";
+    ((double) pused() / page_frame_memory) * 100 << "%) mapped memory\n";
 
   if (get_total_number_of_instructions() > 0) {
     print_instruction_counters();

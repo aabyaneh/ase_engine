@@ -74,6 +74,8 @@ uint64_t mit_box_abvt_engine::run_engine(uint64_t* to_context) {
           // dump inputs taken from smt, because this path was reasoned lazily so at end-point inputs should be updated with correct values
           // for print and test generation purpose
           refine_abvt_abstraction_by_dumping_all_input_variables_on_trace_bvt();
+
+          queries_reasoned_by_bvt_sat++;
         }
       }
 
@@ -84,7 +86,8 @@ uint64_t mit_box_abvt_engine::run_engine(uint64_t* to_context) {
       if (pc == 0) {
         std::cout << "\n\n";
         std::cout << YELLOW "backtracking: " << paths << RESET << '\n';
-        std::cout << GREEN "number of queries:= mit: " << queries_reasoned_by_mit << ", box: " << queries_reasoned_by_box << ", bvt: " << queries_reasoned_by_bvt << RESET << "\n\n";
+        std::cout << GREEN "number of queries:= mit: " << queries_reasoned_by_mit << ", box: " << queries_reasoned_by_box << ", bvt: " << queries_reasoned_by_bvt << RESET << "\n";
+        std::cout << GREEN "--- bvt queries:= #sat: " << queries_reasoned_by_bvt_sat << ", #unsat: " << queries_reasoned_by_bvt - queries_reasoned_by_bvt_sat << RESET << "\n\n";
 
         if (symbolic_input_cnt != 0)
           std::cout << "symbolic_input_cnt is not zero!\n";
@@ -198,8 +201,7 @@ void mit_box_abvt_engine::backtrack_sltu() {
           }
           // -------------------------------------------------------------------
 
-          reg_asts[vaddr]  = (registers[vaddr] == 0) ? zero_node : one_node;
-
+          reg_asts[vaddr] = (registers[vaddr] == 0) ? zero_node : one_node;
           reg_bvts[vaddr] = (registers[vaddr] == 0) ? smt_exprs[zero_node] : smt_exprs[one_node];
 
           // there are two cases when (bvt_false_branches[tc] == boolector_null)
@@ -236,25 +238,14 @@ void mit_box_abvt_engine::backtrack_sltu() {
   } else if (vaddr == NUMBEROFREGISTERS) {
     input_table.at(ast_nodes[asts[tc]].right_node) = values[tc];
   } else {
-    if (ast_nodes[asts[tc]].type == VAR) {
-      if (store_trace_ptrs[asts[tc]].size() > 1) {
-        store_trace_ptrs[asts[tc]].pop_back();
-      } else if (store_trace_ptrs[asts[tc]].size() == 1) {
-        input_table.at(ast_nodes[asts[tc]].right_node) = asts[tcs[tc]];
-        store_trace_ptrs[asts[tc]].pop_back();
-      } else {
-        std::cout << exe_name << ": error occured during sltu backtracking at 0x" << std::hex << pc - entry_point << std::dec << std::endl;
-        exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
-      }
+    if (store_trace_ptrs[asts[tc]].size() > 1) {
+      store_trace_ptrs[asts[tc]].pop_back();
+    } else if (store_trace_ptrs[asts[tc]].size() == 1) {
+      if (ast_nodes[asts[tc]].type == VAR) input_table.at(ast_nodes[asts[tc]].right_node) = asts[tcs[tc]];
+      store_trace_ptrs[asts[tc]].pop_back();
     } else {
-      if (store_trace_ptrs[asts[tc]].size() > 1) {
-        store_trace_ptrs[asts[tc]].pop_back();
-      } else if (store_trace_ptrs[asts[tc]].size() == 1) {
-        store_trace_ptrs[asts[tc]].pop_back();
-      } else {
-        std::cout << exe_name << ": error occured during sltu backtracking at 0x" << std::hex << pc - entry_point << std::dec << std::endl;
-        exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
-      }
+      std::cout << exe_name << ": error occured during sltu backtracking at 0x" << std::hex << pc - entry_point << std::dec << std::endl;
+      exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
     }
 
     store_virtual_memory(pt, vaddr, tcs[tc]);
@@ -265,49 +256,19 @@ void mit_box_abvt_engine::backtrack_sltu() {
 
 void mit_box_abvt_engine::backtrack_sd() {
   if (theory_types[tc] < BVT) {
-    if (ast_nodes[asts[tc]].type == VAR) {
-      if (store_trace_ptrs[asts[tc]].size() > 1) {
-        store_trace_ptrs[asts[tc]].pop_back();
-      } else if (store_trace_ptrs[asts[tc]].size() == 1) {
-        input_table.pop_back();
-        symbolic_input_cnt = input_table.size();
-        store_trace_ptrs[asts[tc]].pop_back();
-      } else {
-        std::cout << exe_name << ": error occured during sd backtracking at 0x" << std::hex << pc - entry_point << std::dec << std::endl;
-        exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
-      }
+    if (store_trace_ptrs[asts[tc]].size() >= 1) {
+      store_trace_ptrs[asts[tc]].pop_back();
     } else {
-      if (store_trace_ptrs[asts[tc]].size() > 1) {
-        store_trace_ptrs[asts[tc]].pop_back();
-      } else if (store_trace_ptrs[asts[tc]].size() == 1) {
-        store_trace_ptrs[asts[tc]].pop_back();
-      } else {
-        std::cout << exe_name << ": error occured during sd backtracking at 0x" << std::hex << pc - entry_point << std::dec << std::endl;
-        exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
-      }
+      std::cout << exe_name << ": error occured during sd backtracking at 0x" << std::hex << pc - entry_point << std::dec << std::endl;
+      exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
     }
 
   } else if (theory_types[tc] >= BVT && asts[tc] != 0) {
-    if (ast_nodes[asts[tc]].type == VAR) {
-      if (store_trace_ptrs[asts[tc]].size() > 1) {
-        store_trace_ptrs[asts[tc]].pop_back();
-      } else if (store_trace_ptrs[asts[tc]].size() == 1) {
-        input_table.pop_back();
-        symbolic_input_cnt = input_table.size();
-        store_trace_ptrs[asts[tc]].pop_back();
-      } else {
-        std::cout << exe_name << ": error occured during sd backtracking at 0x" << std::hex << pc - entry_point << std::dec << std::endl;
-        exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
-      }
+    if (store_trace_ptrs[asts[tc]].size() >= 1) {
+      store_trace_ptrs[asts[tc]].pop_back();
     } else {
-      if (store_trace_ptrs[asts[tc]].size() > 1) {
-        store_trace_ptrs[asts[tc]].pop_back();
-      } else if (store_trace_ptrs[asts[tc]].size() == 1) {
-        store_trace_ptrs[asts[tc]].pop_back();
-      } else {
-        std::cout << exe_name << ": error occured during sd backtracking at 0x" << std::hex << pc - entry_point << std::dec << std::endl;
-        exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
-      }
+      std::cout << exe_name << ": error occured during sd backtracking at 0x" << std::hex << pc - entry_point << std::dec << std::endl;
+      exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
     }
   }
 
@@ -604,6 +565,9 @@ void mit_box_abvt_engine::create_xor_constraints(std::vector<uint64_t>& lo1_p, s
   }
 
   if (cannot_handle) {
+    if (apply_diseq_under_approximate_box_decision_procedure(lo1_p, up1_p, lo2_p, up2_p))
+      return;
+
     // xor result:
     assert_path_condition_into_smt_expression();
     check_operands_smt_expressions();
@@ -1028,6 +992,7 @@ bool mit_box_abvt_engine::apply_sltu_under_approximate_box_decision_procedure(st
   bool false_reachable = false;
   uint64_t ast_ptr, involved_input, stored_to_tc, mr_stored_to_tc;
 
+  // exclude cases where box theory cannot be applied
   if (reg_theory_types[rs1] >= BVT || reg_theory_types[rs2] >= BVT) {
     return false;
   } else if ((reg_mintervals_cnts[rs1] > NUMBER_OF_HEURISTIC_UNDER_APPROX_BOXES) ||
@@ -1037,18 +1002,19 @@ bool mit_box_abvt_engine::apply_sltu_under_approximate_box_decision_procedure(st
     return false;
   } else if ((reg_mintervals_cnts[rs1] > 1 && reg_theory_types[rs1] == MIT) || (reg_mintervals_cnts[rs2] > 1 && reg_theory_types[rs2] == MIT)) {
     return false;
+  } else if (reg_involved_inputs_cnts[rs1] > 1 || reg_involved_inputs_cnts[rs2] > 1) {
+    return false;
+  }
+
+  // must not be from same input variables: not related
+  if (reg_involved_inputs_cnts[rs1]) {
+    if (reg_involved_inputs_cnts[rs2]) {
+      if (reg_involved_inputs[rs1][0] == reg_involved_inputs[rs2][0])
+        return false;
+    }
   }
 
   uint8_t conditional_type = check_conditional_type_whether_is_strict_less_than_or_is_less_greater_than_eq();
-
-  // must not be from same input variables: not relation
-  for (size_t i = 0; i < reg_involved_inputs_cnts[rs1]; i++) {
-    for (size_t j = 0; j < reg_involved_inputs_cnts[rs2]; j++) {
-      if (reg_involved_inputs[rs1][i] == reg_involved_inputs[rs2][j]) {
-        return false;
-      }
-    }
-  }
 
   if (reg_theory_types[rs1] == MIT && reg_theory_types[rs2] == MIT) {
     if (lo1[0] > up1[0] || lo2[0] > up2[0]) {
@@ -1062,7 +1028,7 @@ bool mit_box_abvt_engine::apply_sltu_under_approximate_box_decision_procedure(st
       take_branch(1, 1);
       asts[tc-2]               = false_ast_ptr;
       bvt_false_branches[tc-2] = boolector_null; // careful
-      mr_sds[tc-2]             = (bvt_sat_check_counter) ? bvt_sat_check_counter++ : 0;
+      mr_sds[tc-2]             = (bvt_sat_check_counter) ? ++bvt_sat_check_counter : 0;
 
       path_condition.push_back(add_ast_node(IGTE, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 1, 0, zero_v, BOX, boolector_null));
 
@@ -1074,7 +1040,7 @@ bool mit_box_abvt_engine::apply_sltu_under_approximate_box_decision_procedure(st
       take_branch(0, 1);
       asts[tc-2]               = false_ast_ptr;
       bvt_false_branches[tc-2] = boolector_null; // careful
-      mr_sds[tc-2]             = (bvt_sat_check_counter) ? bvt_sat_check_counter++ : 0;
+      mr_sds[tc-2]             = (bvt_sat_check_counter) ? ++bvt_sat_check_counter : 0;
 
       path_condition.push_back(add_ast_node(ILT, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 1, 0, zero_v, BOX, boolector_null));
 
@@ -1104,13 +1070,64 @@ bool mit_box_abvt_engine::apply_sltu_under_approximate_box_decision_procedure(st
     std::vector<uint64_t> box_index_false_j;
     uint8_t branch = 0;
 
-    for (size_t i = 0; i < reg_mintervals_cnts[rs1]; i++) {
-      if (lo1[i] > up1[i]) {
-        // wrapped are not acceptable
-        return false;
+    if (reg_theory_types[rs1] == MIT || reg_theory_types[rs2] == MIT) {
+      for (size_t i = 0; i < reg_mintervals_cnts[rs1]; i++) {
+        if (lo1[i] > up1[i]) {
+          // wrapped are not acceptable
+          return false;
+        }
+        for (size_t j = 0; j < reg_mintervals_cnts[rs2]; j++) {
+          if (lo2[j] > up2[j]) {
+            // wrapped are not acceptable
+            return false;
+          }
+
+          true_branch_rs1_minterval_cnt  = 0;
+          true_branch_rs2_minterval_cnt  = 0;
+          false_branch_rs1_minterval_cnt = 0;
+          false_branch_rs2_minterval_cnt = 0;
+          branch = 0;
+
+          cannot_handle = evaluate_sltu_true_false_branch_mit(lo1[i], up1[i], lo2[j], up2[j]);
+
+          if (true_branch_rs1_minterval_cnt > 0 && true_branch_rs2_minterval_cnt > 0) {
+            branch++;
+            box_true_case_rs1_lo.push_back(true_branch_rs1_minterval_los[0]);
+            box_true_case_rs1_up.push_back(true_branch_rs1_minterval_ups[0]);
+            box_true_case_rs2_lo.push_back(true_branch_rs2_minterval_los[0]);
+            box_true_case_rs2_up.push_back(true_branch_rs2_minterval_ups[0]);
+            box_index_true_i.push_back(i);
+            box_index_true_j.push_back(j);
+          }
+
+          if (false_branch_rs1_minterval_cnt > 0 && false_branch_rs2_minterval_cnt > 0) {
+            branch++;
+            box_false_case_rs1_lo.push_back(false_branch_rs1_minterval_los[0]);
+            box_false_case_rs1_up.push_back(false_branch_rs1_minterval_ups[0]);
+            box_false_case_rs2_lo.push_back(false_branch_rs2_minterval_los[0]);
+            box_false_case_rs2_up.push_back(false_branch_rs2_minterval_ups[0]);
+            box_index_false_i.push_back(i);
+            box_index_false_j.push_back(j);
+          }
+
+          if (branch == 2) {
+            true_reachable  = true;
+            false_reachable = true;
+            goto lab;
+          }
+        }
       }
-      for (size_t j = 0; j < reg_mintervals_cnts[rs2]; j++) {
-        if (lo2[j] > up2[j]) {
+
+      // means cannot be reasoned by boxes
+      if (box_true_case_rs1_lo.size() == 0 && box_false_case_rs1_lo.size() == 0) return false;
+
+    } else {
+      // both are BOX
+      // first box with first box, second box with second box => to be sure about correctness
+      size_t i = 0;
+      size_t j = 0;
+      while (i < reg_mintervals_cnts[rs1] && j < reg_mintervals_cnts[rs2]) {
+        if (lo1[i] > up1[i] || lo2[j] > up2[j]) {
           // wrapped are not acceptable
           return false;
         }
@@ -1148,10 +1165,13 @@ bool mit_box_abvt_engine::apply_sltu_under_approximate_box_decision_procedure(st
           false_reachable = true;
           goto lab;
         }
-      }
-    }
 
-    if (box_true_case_rs1_lo.size() == 0 && box_false_case_rs1_lo.size() == 0) return false;
+        i++; j++;
+      }
+
+      // means cannot be reasoned by boxes
+      if (box_true_case_rs1_lo.size() == 0 && box_false_case_rs1_lo.size() == 0) return false;
+    }
 
     lab:
     if (true_reachable == false) { // means both are not reachable (box decision)
@@ -1231,21 +1251,49 @@ bool mit_box_abvt_engine::apply_sltu_under_approximate_box_decision_procedure(st
         false_reachable = check_sat_false_branch_bvt(boolector_ugte(btor, reg_bvts[rs1], reg_bvts[rs2]));
 
         if (false_reachable) {
-          dump_involving_input_variables_false_branch_bvt(false);
-          dump_all_input_variables_on_trace_false_branch_bvt(false);
-          uint64_t false_ast_ptr   = add_ast_node(IGTE, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 0, 0, zero_v, BOX, boolector_null);
-          take_branch(0, 1);
-          asts[tc-2]               = false_ast_ptr;
-          bvt_false_branches[tc-2] = boolector_ugte(btor, reg_bvts[rs1], reg_bvts[rs2]); // careful
-          mr_sds[tc-2]             = 0;
+          if (conditional_type == LGTE) {
+            // false
+            constrain_memory_under_approximate_box(rs1, reg_asts[rs1], true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, 1, 0);
+            constrain_memory_under_approximate_box(rs2, reg_asts[rs2], true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, 1, 0);
+            uint64_t false_ast_ptr   = add_ast_node(ILT, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 0, 0, zero_v, BVT, boolector_null); // important should be BVT so that in backtrack_sltu it does boolector_pop
+            take_branch(1, 1);
+            asts[tc-2]               = false_ast_ptr;
+            bvt_false_branches[tc-2] = boolector_null; // careful
+            mr_sds[tc-2]             = (bvt_sat_check_counter) ? ++bvt_sat_check_counter : 0;
 
-          path_condition.push_back(add_ast_node(ILT, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 1, 0, zero_v, BOX, boolector_null));
+            // true
+            boolector_push(btor, 1);
+            boolector_assert(btor, boolector_ugte(btor, reg_bvts[rs1], reg_bvts[rs2]));
+            dump_involving_input_variables_false_branch_bvt(false);
+            dump_all_input_variables_on_trace_false_branch_bvt(false);
+            take_branch(0, 0);
+
+          } else {
+            // false
+            dump_involving_input_variables_false_branch_bvt(false);
+            dump_all_input_variables_on_trace_false_branch_bvt(false);
+            uint64_t false_ast_ptr   = add_ast_node(IGTE, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 0, 0, zero_v, BOX, boolector_null); // important: should remain BOX
+            take_branch(0, 1);
+            asts[tc-2]               = false_ast_ptr;
+            bvt_false_branches[tc-2] = boolector_ugte(btor, reg_bvts[rs1], reg_bvts[rs2]); // careful
+            mr_sds[tc-2]             = 0;
+
+            path_condition.push_back(add_ast_node(ILT, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 1, 0, zero_v, BOX, boolector_null));
+
+            // important: if on true branch we need BVT in future it will apply boolector_push() later in assert_path_condition_into_smt_expression
+            // so no worries
+
+            // true under_approximate
+            constrain_memory_under_approximate_box(rs1, reg_asts[rs1], true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, 1, 0);
+            constrain_memory_under_approximate_box(rs2, reg_asts[rs2], true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, 1, 0);
+            take_branch(1, 0);
+          }
+        } else {
+          // true under_approximate
+          constrain_memory_under_approximate_box(rs1, reg_asts[rs1], true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, 1, 0);
+          constrain_memory_under_approximate_box(rs2, reg_asts[rs2], true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, 1, 0);
+          take_branch(1, 0);
         }
-
-        // true under_approximate
-        constrain_memory_under_approximate_box(rs1, reg_asts[rs1], true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, 1, 0);
-        constrain_memory_under_approximate_box(rs2, reg_asts[rs2], true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, 1, 0);
-        take_branch(1, 0);
 
         queries_reasoned_by_box++;
         return true;
@@ -1257,22 +1305,407 @@ bool mit_box_abvt_engine::apply_sltu_under_approximate_box_decision_procedure(st
       true_reachable = check_sat_true_branch_bvt(boolector_ult(btor, reg_bvts[rs1], reg_bvts[rs2]));
 
       if (true_reachable) {
+        if (conditional_type == LGTE) {
+          // false
+          dump_involving_input_variables_true_branch_bvt(false);
+          dump_all_input_variables_on_trace_true_branch_bvt(false);
+          uint64_t false_ast_ptr   = add_ast_node(ILT, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 0, 0, zero_v, BOX, boolector_null); // important: should remain BOX
+          take_branch(1, 1);
+          asts[tc-2]               = false_ast_ptr;
+          bvt_false_branches[tc-2] = boolector_ult(btor, reg_bvts[rs1], reg_bvts[rs2]); // careful
+          mr_sds[tc-2]             = 0;
+
+          path_condition.push_back(add_ast_node(IGTE, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 1, 0, zero_v, BOX, boolector_null));
+
+          // important: if on true branch we need BVT in future it will apply boolector_push() later in assert_path_condition_into_smt_expression
+          // so no worries
+
+          // true
+          constrain_memory_under_approximate_box(rs1, reg_asts[rs1], false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups, 1, 0);
+          constrain_memory_under_approximate_box(rs2, reg_asts[rs2], false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups, 1, 0);
+          take_branch(0, 0);
+
+        } else {
+          // false under_approximate
+          constrain_memory_under_approximate_box(rs1, reg_asts[rs1], false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups, 1, 0);
+          constrain_memory_under_approximate_box(rs2, reg_asts[rs2], false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups, 1, 0);
+          uint64_t false_ast_ptr   = add_ast_node(IGTE, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 0, 0, zero_v, BVT, boolector_null); // important should be BVT so that in backtrack_sltu it does boolector_pop
+          take_branch(0, 1);
+          asts[tc-2]               = false_ast_ptr;
+          bvt_false_branches[tc-2] = boolector_null; // careful
+          mr_sds[tc-2]             = (bvt_sat_check_counter) ? ++bvt_sat_check_counter : 0;
+
+          // true
+          boolector_push(btor, 1);
+          boolector_assert(btor, boolector_ult(btor, reg_bvts[rs1], reg_bvts[rs2]));
+          dump_involving_input_variables_true_branch_bvt(false);
+          dump_all_input_variables_on_trace_true_branch_bvt(false);
+          take_branch(1, 0);
+        }
+
+      } else {
         // false under_approximate
         constrain_memory_under_approximate_box(rs1, reg_asts[rs1], false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups, 1, 0);
         constrain_memory_under_approximate_box(rs2, reg_asts[rs2], false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups, 1, 0);
-        uint64_t false_ast_ptr   = add_ast_node(IGTE, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 0, 0, zero_v, BVT, boolector_null);
-        take_branch(0, 1);
-        asts[tc-2]               = false_ast_ptr;
-        bvt_false_branches[tc-2] = boolector_null; // careful
-        mr_sds[tc-2]             = (bvt_sat_check_counter) ? ++bvt_sat_check_counter : 0; // false branch was reasoned locally using boxes
+        take_branch(0, 0);
+      }
 
-        // true
-        boolector_push(btor, 1);
-        boolector_assert(btor, boolector_ult(btor, reg_bvts[rs1], reg_bvts[rs2]));
-        dump_involving_input_variables_true_branch_bvt(false);
-        dump_all_input_variables_on_trace_true_branch_bvt(false);
-        take_branch(1, 0);
-        bvt_sat_check_counter = 0; // true branch was reasoned by check_sat_true_branch_bvt and was reachable
+      queries_reasoned_by_box++;
+      return true;
+    } else {
+      // cannot decide
+      return false;
+    }
+  }
+}
+
+bool mit_box_abvt_engine::apply_diseq_under_approximate_box_decision_procedure(std::vector<uint64_t>& lo1, std::vector<uint64_t>& up1, std::vector<uint64_t>& lo2, std::vector<uint64_t>& up2) {
+  bool true_reachable  = false;
+  bool false_reachable = false;
+  uint64_t ast_ptr, involved_input, stored_to_tc, mr_stored_to_tc;
+
+  // exclude cases where box theory cannot be applied
+  if (reg_theory_types[rs1] >= BVT || reg_theory_types[rs2] >= BVT) {
+    return false;
+  } else if ((reg_mintervals_cnts[rs1] > NUMBER_OF_HEURISTIC_UNDER_APPROX_BOXES) ||
+             (reg_mintervals_cnts[rs2] > NUMBER_OF_HEURISTIC_UNDER_APPROX_BOXES)) {
+    return false;
+  } else if (reg_steps[rs1] > 1 || reg_steps[rs2] > 1) {
+    return false;
+  } else if ((reg_mintervals_cnts[rs1] > 1 && reg_theory_types[rs1] == MIT) || (reg_mintervals_cnts[rs2] > 1 && reg_theory_types[rs2] == MIT)) {
+    return false;
+  } else if (reg_involved_inputs_cnts[rs1] > 1 || reg_involved_inputs_cnts[rs2] > 1) {
+    return false;
+  }
+
+  // must not be from same input variables: not related
+  if (reg_involved_inputs_cnts[rs1]) {
+    if (reg_involved_inputs_cnts[rs2]) {
+      if (reg_involved_inputs[rs1][0] == reg_involved_inputs[rs2][0])
+        return false;
+    }
+  }
+
+  uint8_t conditional_type = check_conditional_type_whether_is_equality_or_disequality();
+
+  if (reg_theory_types[rs1] == MIT && reg_theory_types[rs2] == MIT) {
+    if (lo1[0] > up1[0] || lo2[0] > up2[0]) {
+      // wrapped are not acceptable
+      return false;
+    }
+
+    if (conditional_type == EQ) {
+      evaluate_sltu_true_branch_under_approximate_box(lo1[0], up1[0], lo2[0], up2[0]);
+      uint64_t false_ast_ptr   = add_ast_node(INEQ, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 0, 0, zero_v, BOX, boolector_null);
+      take_branch(1, 1);
+      asts[tc-2]               = false_ast_ptr;
+      bvt_false_branches[tc-2] = boolector_null; // careful
+      mr_sds[tc-2]             = (bvt_sat_check_counter) ? ++bvt_sat_check_counter : 0;
+
+      path_condition.push_back(add_ast_node(IEQ, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 1, 0, zero_v, BOX, boolector_null));
+
+      evaluate_diseq_false_branch_under_approximate_box(lo1[0], up1[0], lo2[0], up2[0]);
+      take_branch(0, 0);
+    } else {
+      evaluate_diseq_false_branch_under_approximate_box(lo1[0], up1[0], lo2[0], up2[0]);
+      uint64_t false_ast_ptr   = add_ast_node(IEQ, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 0, 0, zero_v, BOX, boolector_null);
+      take_branch(0, 1);
+      asts[tc-2]               = false_ast_ptr;
+      bvt_false_branches[tc-2] = boolector_null; // careful
+      mr_sds[tc-2]             = (bvt_sat_check_counter) ? ++bvt_sat_check_counter : 0;
+
+      path_condition.push_back(add_ast_node(INEQ, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 1, 0, zero_v, BOX, boolector_null));
+
+      evaluate_sltu_true_branch_under_approximate_box(lo1[0], up1[0], lo2[0], up2[0]);
+      take_branch(1, 0);
+    }
+
+    queries_reasoned_by_box+=2;
+    return true;
+
+  } else {
+    bool cannot_handle = false;
+    std::vector<uint64_t> box_true_case_rs1_lo;
+    std::vector<uint64_t> box_true_case_rs1_up;
+    std::vector<uint64_t> box_true_case_rs2_lo;
+    std::vector<uint64_t> box_true_case_rs2_up;
+    std::vector<uint64_t> box_false_case_rs1_lo;
+    std::vector<uint64_t> box_false_case_rs1_up;
+    std::vector<uint64_t> box_false_case_rs2_lo;
+    std::vector<uint64_t> box_false_case_rs2_up;
+    std::vector<uint64_t> box_index_true_i;
+    std::vector<uint64_t> box_index_true_j;
+    std::vector<uint64_t> box_index_false_i;
+    std::vector<uint64_t> box_index_false_j;
+    uint8_t branch = 0;
+
+    if (reg_theory_types[rs1] == MIT || reg_theory_types[rs2] == MIT) {
+      for (size_t i = 0; i < reg_mintervals_cnts[rs1]; i++) {
+        if (lo1[i] > up1[i]) {
+          // wrapped are not acceptable
+          return false;
+        }
+        for (size_t j = 0; j < reg_mintervals_cnts[rs2]; j++) {
+          if (lo2[j] > up2[j]) {
+            // wrapped are not acceptable
+            return false;
+          }
+
+          true_branch_rs1_minterval_cnt  = 0;
+          true_branch_rs2_minterval_cnt  = 0;
+          false_branch_rs1_minterval_cnt = 0;
+          false_branch_rs2_minterval_cnt = 0;
+          branch = 0;
+
+          cannot_handle = evaluate_xor_true_false_branch_mit(lo1[i], up1[i], lo2[j], up2[j]);
+
+          if (true_branch_rs1_minterval_cnt > 0 && true_branch_rs2_minterval_cnt > 0) {
+            branch++;
+            box_true_case_rs1_lo.push_back(true_branch_rs1_minterval_los[0]);
+            box_true_case_rs1_up.push_back(true_branch_rs1_minterval_ups[0]);
+            box_true_case_rs2_lo.push_back(true_branch_rs2_minterval_los[0]);
+            box_true_case_rs2_up.push_back(true_branch_rs2_minterval_ups[0]);
+            box_index_true_i.push_back(i);
+            box_index_true_j.push_back(j);
+          }
+
+          if (false_branch_rs1_minterval_cnt > 0 && false_branch_rs2_minterval_cnt > 0) {
+            branch++;
+            box_false_case_rs1_lo.push_back(false_branch_rs1_minterval_los[0]);
+            box_false_case_rs1_up.push_back(false_branch_rs1_minterval_ups[0]);
+            box_false_case_rs2_lo.push_back(false_branch_rs2_minterval_los[0]);
+            box_false_case_rs2_up.push_back(false_branch_rs2_minterval_ups[0]);
+            box_index_false_i.push_back(i);
+            box_index_false_j.push_back(j);
+          }
+
+          if (branch == 2) {
+            true_reachable  = true;
+            false_reachable = true;
+            goto lab;
+          }
+        }
+      }
+
+      // means cannot be reasoned by boxes
+      if (box_true_case_rs1_lo.size() == 0 && box_false_case_rs1_lo.size() == 0) return false;
+
+    } else {
+      // both are BOX
+      // first box with first box, second box with second box => to be sure about correctness
+      size_t i = 0;
+      size_t j = 0;
+      while (i < reg_mintervals_cnts[rs1] && j < reg_mintervals_cnts[rs2]) {
+        if (lo1[i] > up1[i] || lo2[j] > up2[j]) {
+          // wrapped are not acceptable
+          return false;
+        }
+
+        true_branch_rs1_minterval_cnt  = 0;
+        true_branch_rs2_minterval_cnt  = 0;
+        false_branch_rs1_minterval_cnt = 0;
+        false_branch_rs2_minterval_cnt = 0;
+        branch = 0;
+
+        cannot_handle = evaluate_xor_true_false_branch_mit(lo1[i], up1[i], lo2[j], up2[j]);
+
+        if (true_branch_rs1_minterval_cnt > 0 && true_branch_rs2_minterval_cnt > 0) {
+          branch++;
+          box_true_case_rs1_lo.push_back(true_branch_rs1_minterval_los[0]);
+          box_true_case_rs1_up.push_back(true_branch_rs1_minterval_ups[0]);
+          box_true_case_rs2_lo.push_back(true_branch_rs2_minterval_los[0]);
+          box_true_case_rs2_up.push_back(true_branch_rs2_minterval_ups[0]);
+          box_index_true_i.push_back(i);
+          box_index_true_j.push_back(j);
+        }
+
+        if (false_branch_rs1_minterval_cnt > 0 && false_branch_rs2_minterval_cnt > 0) {
+          branch++;
+          box_false_case_rs1_lo.push_back(false_branch_rs1_minterval_los[0]);
+          box_false_case_rs1_up.push_back(false_branch_rs1_minterval_ups[0]);
+          box_false_case_rs2_lo.push_back(false_branch_rs2_minterval_los[0]);
+          box_false_case_rs2_up.push_back(false_branch_rs2_minterval_ups[0]);
+          box_index_false_i.push_back(i);
+          box_index_false_j.push_back(j);
+        }
+
+        if (branch == 2) {
+          true_reachable  = true;
+          false_reachable = true;
+          goto lab;
+        }
+
+        i++; j++;
+      }
+
+      // means cannot be reasoned by boxes
+      if (box_true_case_rs1_lo.size() == 0 && box_false_case_rs1_lo.size() == 0) return false;
+    }
+
+    lab:
+    if (true_reachable == false) { // means both are not reachable (box decision)
+      if (box_true_case_rs1_lo.size() > 0) {
+        // this is just to choose one box choice for the original operand var
+        choose_best_local_choice_between_boxes(box_index_true_i[0], box_index_true_j[0]);
+
+        true_reachable  = true;
+        true_branch_rs1_minterval_los[0] = box_true_case_rs1_lo[0];
+        true_branch_rs1_minterval_ups[0] = box_true_case_rs1_up[0];
+        true_branch_rs2_minterval_los[0] = box_true_case_rs2_lo[0];
+        true_branch_rs2_minterval_ups[0] = box_true_case_rs2_up[0];
+      } else if (box_false_case_rs1_lo.size() > 0) {
+        // this is just to choose one box choice for the original operand var
+        choose_best_local_choice_between_boxes(box_index_false_i[0], box_index_false_j[0]);
+
+        false_reachable = true;
+        false_branch_rs1_minterval_los[0] = box_false_case_rs1_lo[0];
+        false_branch_rs1_minterval_ups[0] = box_false_case_rs1_up[0];
+        false_branch_rs2_minterval_los[0] = box_false_case_rs2_lo[0];
+        false_branch_rs2_minterval_ups[0] = box_false_case_rs2_up[0];
+      }
+    } else {
+      // this is just to choose one box choice for the original operand var
+      choose_best_local_choice_between_boxes(box_index_true_i.back(), box_index_true_j.back());
+      // don't need for false
+
+      true_branch_rs1_minterval_los[0]  = box_true_case_rs1_lo.back();
+      true_branch_rs1_minterval_ups[0]  = box_true_case_rs1_up.back();
+      true_branch_rs2_minterval_los[0]  = box_true_case_rs2_lo.back();
+      true_branch_rs2_minterval_ups[0]  = box_true_case_rs2_up.back();
+
+      false_branch_rs1_minterval_los[0] = box_false_case_rs1_lo.back();
+      false_branch_rs1_minterval_ups[0] = box_false_case_rs1_up.back();
+      false_branch_rs2_minterval_los[0] = box_false_case_rs2_lo.back();
+      false_branch_rs2_minterval_ups[0] = box_false_case_rs2_up.back();
+    }
+
+    if (true_reachable) {
+      if (false_reachable) {
+        if (conditional_type == EQ) {
+          constrain_memory_under_approximate_box(rs1, reg_asts[rs1], true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, 1, 0);
+          constrain_memory_under_approximate_box(rs2, reg_asts[rs2], true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, 1, 0);
+          uint64_t false_ast_ptr   = add_ast_node(INEQ, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 0, 0, zero_v, BOX, boolector_null);
+          take_branch(1, 1);
+          asts[tc-2]               = false_ast_ptr;
+          bvt_false_branches[tc-2] = boolector_null; // careful
+          mr_sds[tc-2]             = (bvt_sat_check_counter) ? ++bvt_sat_check_counter : 0;
+
+          path_condition.push_back(add_ast_node(IEQ, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 1, 0, zero_v, BOX, boolector_null));
+
+          constrain_memory_under_approximate_box(rs1, reg_asts[rs1], false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups, 1, 0);
+          constrain_memory_under_approximate_box(rs2, reg_asts[rs2], false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups, 1, 0);
+          take_branch(0, 0);
+        } else {
+          constrain_memory_under_approximate_box(rs1, reg_asts[rs1], false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups, 1, 0);
+          constrain_memory_under_approximate_box(rs2, reg_asts[rs2], false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups, 1, 0);
+          uint64_t false_ast_ptr   = add_ast_node(IEQ, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 0, 0, zero_v, BOX, boolector_null);
+          take_branch(0, 1);
+          asts[tc-2]               = false_ast_ptr;
+          bvt_false_branches[tc-2] = boolector_null; // careful
+          mr_sds[tc-2]             = (bvt_sat_check_counter) ? ++bvt_sat_check_counter : 0;
+
+          path_condition.push_back(add_ast_node(INEQ, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 1, 0, zero_v, BOX, boolector_null));
+
+          constrain_memory_under_approximate_box(rs1, reg_asts[rs1], true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, 1, 0);
+          constrain_memory_under_approximate_box(rs2, reg_asts[rs2], true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, 1, 0);
+          take_branch(1, 0);
+        }
+
+        queries_reasoned_by_box+=2;
+        return true;
+      } else {
+        // false query to smt
+        assert_path_condition_into_smt_expression();
+        check_operands_smt_expressions();
+        false_reachable = check_sat_false_branch_bvt(boolector_eq(btor, reg_bvts[rs1], reg_bvts[rs2]));
+
+        if (false_reachable) {
+          if (conditional_type == EQ) {
+            constrain_memory_under_approximate_box(rs1, reg_asts[rs1], true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, 1, 0);
+            constrain_memory_under_approximate_box(rs2, reg_asts[rs2], true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, 1, 0);
+            uint64_t false_ast_ptr   = add_ast_node(INEQ, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 0, 0, zero_v, BVT, boolector_null); // important should be BVT so that in backtrack_sltu it does boolector_pop
+            take_branch(1, 1);
+            asts[tc-2]               = false_ast_ptr;
+            bvt_false_branches[tc-2] = boolector_null; // careful
+            mr_sds[tc-2]             = (bvt_sat_check_counter) ? ++bvt_sat_check_counter : 0;
+
+            // true
+            boolector_push(btor, 1);
+            boolector_assert(btor, boolector_eq(btor, reg_bvts[rs1], reg_bvts[rs2]));
+            dump_involving_input_variables_false_branch_bvt(false);
+            dump_all_input_variables_on_trace_false_branch_bvt(false);
+            take_branch(0, 0);
+
+          } else {
+            // false
+            dump_involving_input_variables_false_branch_bvt(false);
+            dump_all_input_variables_on_trace_false_branch_bvt(false);
+            uint64_t false_ast_ptr   = add_ast_node(IEQ, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 0, 0, zero_v, BOX, boolector_null); // important: should remain BOX
+            take_branch(0, 1);
+            asts[tc-2]               = false_ast_ptr;
+            bvt_false_branches[tc-2] = boolector_eq(btor, reg_bvts[rs1], reg_bvts[rs2]); // careful
+            mr_sds[tc-2]             = 0;
+
+            path_condition.push_back(add_ast_node(INEQ, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 1, 0, zero_v, BOX, boolector_null));
+
+            // important: if on true branch we need BVT in future it will apply boolector_push() later in assert_path_condition_into_smt_expression
+            // so no worries
+
+            // true under_approximate
+            constrain_memory_under_approximate_box(rs1, reg_asts[rs1], true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, 1, 0);
+            constrain_memory_under_approximate_box(rs2, reg_asts[rs2], true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, 1, 0);
+            take_branch(1, 0);
+          }
+        } else {
+          // true under_approximate
+          constrain_memory_under_approximate_box(rs1, reg_asts[rs1], true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, 1, 0);
+          constrain_memory_under_approximate_box(rs2, reg_asts[rs2], true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, 1, 0);
+          take_branch(1, 0);
+        }
+
+        queries_reasoned_by_box++;
+        return true;
+      }
+    } else if (false_reachable) {
+      // true query to smt
+      assert_path_condition_into_smt_expression();
+      check_operands_smt_expressions();
+      true_reachable = check_sat_true_branch_bvt(boolector_ne(btor, reg_bvts[rs1], reg_bvts[rs2]));
+
+      if (true_reachable) {
+        if (conditional_type == EQ) {
+          // false
+          dump_involving_input_variables_true_branch_bvt(false);
+          dump_all_input_variables_on_trace_true_branch_bvt(false);
+          uint64_t false_ast_ptr   = add_ast_node(INEQ, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 0, 0, zero_v, BOX, boolector_null); // important: should remain BOX
+          take_branch(1, 1);
+          asts[tc-2]               = false_ast_ptr;
+          bvt_false_branches[tc-2] = boolector_ne(btor, reg_bvts[rs1], reg_bvts[rs2]); // careful
+          mr_sds[tc-2]             = 0;
+
+          path_condition.push_back(add_ast_node(IEQ, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 1, 0, zero_v, BOX, boolector_null));
+
+          // true
+          constrain_memory_under_approximate_box(rs1, reg_asts[rs1], false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups, 1, 0);
+          constrain_memory_under_approximate_box(rs2, reg_asts[rs2], false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups, 1, 0);
+          take_branch(0, 0);
+        } else {
+          // false under_approximate
+          constrain_memory_under_approximate_box(rs1, reg_asts[rs1], false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups, 1, 0);
+          constrain_memory_under_approximate_box(rs2, reg_asts[rs2], false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups, 1, 0);
+          uint64_t false_ast_ptr   = add_ast_node(IEQ, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 0, 0, zero_v, BVT, boolector_null); // important should be BVT so that in backtrack_sltu it does boolector_pop
+          take_branch(0, 1);
+          asts[tc-2]               = false_ast_ptr;
+          bvt_false_branches[tc-2] = boolector_null; // careful
+          mr_sds[tc-2]             = (bvt_sat_check_counter) ? ++bvt_sat_check_counter : 0;
+
+          // true
+          boolector_push(btor, 1);
+          boolector_assert(btor, boolector_ne(btor, reg_bvts[rs1], reg_bvts[rs2]));
+          dump_involving_input_variables_true_branch_bvt(false);
+          dump_all_input_variables_on_trace_true_branch_bvt(false);
+          take_branch(1, 0);
+        }
 
       } else {
         // false under_approximate
@@ -1304,7 +1737,7 @@ void mit_box_abvt_engine::refine_abvt_abstraction_by_dumping_all_input_variables
   }
 
   for (size_t i = 0; i < input_table.size(); i++) {
-    involved_input = input_table_ast_tcs_before_branch_evaluation[i];
+    involved_input = input_table[i];
     if (theory_type_ast_nodes[involved_input] == MIT) continue;
     is_assigned = false;
     value_v[0] = std::stoull(input_assignments[ast_nodes[involved_input].right_node], 0, 2);
