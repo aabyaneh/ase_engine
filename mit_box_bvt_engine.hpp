@@ -7,6 +7,7 @@ class mit_box_bvt_engine : public mit_bvt_engine {
     // ---------------------------
     virtual void     init_engine(uint64_t peek_argument);
     virtual uint64_t run_engine(uint64_t* to_context);
+    void    witness_profile();
 
     // ---------------------------
     // reasoning/decision core

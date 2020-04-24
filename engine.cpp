@@ -892,7 +892,7 @@ void engine::selfie_load(char* string) {
             if (read(fd, binary_buffer, SIZEOFUINT64) == 0) {
               std::cout << exe_name << ": "
                 << (int64_t) (ELF_HEADER_LEN + SIZEOFUINT64 + binary_length)
-                << ": bytes with "
+                << " bytes with "
                 << (int64_t) (code_length / INSTRUCTIONSIZE)
                 << " instructions and "
                 << (int64_t) (binary_length - code_length)

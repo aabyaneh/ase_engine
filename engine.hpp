@@ -20,11 +20,13 @@
 #include <iterator>
 #include "boolector/boolector.h"
 
-#define RED    "\x1B[31m"
-#define GREEN  "\033[32m"
-#define BLUE   "\033[34m"
-#define YELLOW "\033[33m"
-#define RESET  "\x1B[0m"
+#define RED     "\x1B[31m"
+#define GREEN   "\033[32m"
+#define BLUE    "\033[34m"
+#define YELLOW  "\033[33m"
+#define CYAN    "\x1B[36m"
+#define MAGENTA "\x1B[35m"
+#define RESET   "\x1B[0m"
 
 typedef unsigned long long uint64_t;
 

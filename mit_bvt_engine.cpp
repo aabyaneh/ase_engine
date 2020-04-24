@@ -159,6 +159,35 @@ void mit_bvt_engine::init_engine(uint64_t peek_argument) {
   }
 }
 
+void mit_bvt_engine::witness_profile() {
+  int64_t  cardinality;
+  uint64_t current_number_of_witnesses = 1;
+
+  for (size_t i = 0; i < input_table.size(); i++) {
+    cardinality = 0;
+    for (size_t j = 0; j < mintervals_los[input_table[i]].size(); j++) {
+      cardinality += (mintervals_ups[input_table[i]][j] - mintervals_los[input_table[i]][j] + 1) / steps[input_table[i]];
+    }
+
+    if (cardinality > 0)
+      current_number_of_witnesses *= cardinality;
+    else
+      std::cout << exe_name << ": cardinality of an input is <= zero! " << std::endl;
+  }
+
+  if (current_number_of_witnesses > max_number_of_generated_witnesses_among_all_paths)
+    max_number_of_generated_witnesses_among_all_paths = current_number_of_witnesses;
+
+  total_number_of_generated_witnesses_for_all_paths += current_number_of_witnesses;
+}
+
+void print_execution_info(uint64_t paths, uint64_t total_number_of_generated_witnesses_for_all_paths, uint64_t max_number_of_generated_witnesses_among_all_paths, uint64_t queries_reasoned_by_mit, uint64_t queries_reasoned_by_bvt) {
+  std::cout << "\n\n";
+  std::cout << YELLOW "number of explored paths:= " << paths << RESET << std::endl;
+  std::cout << CYAN "number of witnesses:= total: " << total_number_of_generated_witnesses_for_all_paths << ", max: " << max_number_of_generated_witnesses_among_all_paths << RESET << std::endl;
+  std::cout << GREEN "number of queries:= mit: " << queries_reasoned_by_mit << ", bvt: " << queries_reasoned_by_bvt << RESET << "\n\n";
+}
+
 uint64_t mit_bvt_engine::run_engine(uint64_t* to_context) {
   registers = get_regs(to_context);
   pt        = get_pt(to_context);
@@ -182,6 +211,8 @@ uint64_t mit_bvt_engine::run_engine(uint64_t* to_context) {
         output_results << "B=" << paths+1 << "\n";
       }
 
+      witness_profile();
+
       backtrack_trace(current_context);
 
       if (paths == 0) std::cout << exe_name << ": backtracking \n"; else unprint_integer(paths);
@@ -189,9 +220,7 @@ uint64_t mit_bvt_engine::run_engine(uint64_t* to_context) {
       print_integer(paths);
 
       if (pc == 0) {
-        std::cout << "\n\n";
-        std::cout << YELLOW "backtracking: " << paths << RESET << '\n';
-        std::cout << GREEN "number of queries:= mit: " << queries_reasoned_by_mit << ", bvt: " << queries_reasoned_by_bvt << RESET << "\n\n";
+        print_execution_info(paths, total_number_of_generated_witnesses_for_all_paths, max_number_of_generated_witnesses_among_all_paths, queries_reasoned_by_mit, queries_reasoned_by_bvt);
 
         if (symbolic_input_cnt != 0)
           std::cout << "symbolic_input_cnt is not zero!\n";

@@ -141,6 +141,9 @@ class bvt_engine : public engine {
     std::vector<uint64_t> input_table;
     std::vector<uint64_t> input_table_store_trace_ptr;
     std::vector<uint64_t> input_table_ast_tcs_before_branch_evaluation;
+    uint64_t total_number_of_generated_witnesses_for_all_paths = 0;
+    uint64_t max_number_of_generated_witnesses_among_all_paths = 0;
+    void     witness_profile();
 
     // -------------------------
     // SMT solver instance

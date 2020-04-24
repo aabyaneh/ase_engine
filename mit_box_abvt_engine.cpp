@@ -1,15 +1,19 @@
 #include "mit_box_abvt_engine.hpp"
 
-// -----------------------------------------------------------------
-// ------------------- SYMBOLIC EXECUTION ENGINE -------------------
-// -----------------------------------------------------------------
-
 // ------------------------- INITIALIZATION ------------------------
 
 void mit_box_abvt_engine::init_engine(uint64_t peek_argument) {
   max_bvt_sat_check_period = peek_argument;
 
   mit_box_bvt_engine::init_engine(peek_argument);
+}
+
+void print_execution_info(uint64_t paths, uint64_t total_number_of_generated_witnesses_for_all_paths, uint64_t max_number_of_generated_witnesses_among_all_paths, uint64_t queries_reasoned_by_mit, uint64_t queries_reasoned_by_box, uint64_t queries_reasoned_by_bvt, uint64_t queries_reasoned_by_bvt_sat) {
+  std::cout << "\n\n";
+  std::cout << YELLOW "number of explored paths:= " << paths << RESET << std::endl;
+  std::cout << CYAN "number of witnesses:= total: " << total_number_of_generated_witnesses_for_all_paths << ", max: " << max_number_of_generated_witnesses_among_all_paths << RESET << std::endl;
+  std::cout << GREEN "number of queries:= mit: " << queries_reasoned_by_mit << ", box: " << queries_reasoned_by_box << ", bvt: " << queries_reasoned_by_bvt << RESET << "\n";
+  std::cout << GREEN "  |-- bvt queries:= #sat: " << queries_reasoned_by_bvt_sat << ", #unsat: " << queries_reasoned_by_bvt - queries_reasoned_by_bvt_sat << RESET << "\n\n";
 }
 
 uint64_t mit_box_abvt_engine::run_engine(uint64_t* to_context) {
@@ -40,7 +44,7 @@ uint64_t mit_box_abvt_engine::run_engine(uint64_t* to_context) {
       // -----------------------------------------------------------------------
 
       if (bvt_sat_check_counter == 0 && unreachable_path == false) {
-        // it is not an unreachable path, and last condition is reasoned exactly.
+        // it is not an unreachable path, and last bvt condition is reasoned exactly.
 
         // for correctness check
         // if (boolector_sat(btor) != BOOLECTOR_SAT) {
@@ -51,14 +55,16 @@ uint64_t mit_box_abvt_engine::run_engine(uint64_t* to_context) {
         paths++;
         print_integer(paths);
 
+        witness_profile();
+
       } else if (unreachable_path == true) {
         // unreachable path has been explored; backtrack
         unreachable_path = false;
       } else {
         /*
           an end-point is reached where the reasoning is yet not exact: bvt_sat_check_counter > 0;
-          so satisfiability must be checked: if sat then it is a real path dump the generated witness by smt
-          if not sat means unreachable path so backtrack;
+          so satisfiability must be checked: if sat then it is a real path, dump the generated witness by smt
+          and if unsat means unreachable path so backtrack.
         */
 
         /*
@@ -76,6 +82,8 @@ uint64_t mit_box_abvt_engine::run_engine(uint64_t* to_context) {
           refine_abvt_abstraction_by_dumping_all_input_variables_on_trace_bvt();
 
           queries_reasoned_by_bvt_sat++;
+
+          witness_profile();
         }
       }
 
@@ -84,10 +92,7 @@ uint64_t mit_box_abvt_engine::run_engine(uint64_t* to_context) {
       backtrack_trace(current_context);
 
       if (pc == 0) {
-        std::cout << "\n\n";
-        std::cout << YELLOW "backtracking: " << paths << RESET << '\n';
-        std::cout << GREEN "number of queries:= mit: " << queries_reasoned_by_mit << ", box: " << queries_reasoned_by_box << ", bvt: " << queries_reasoned_by_bvt << RESET << "\n";
-        std::cout << GREEN "--- bvt queries:= #sat: " << queries_reasoned_by_bvt_sat << ", #unsat: " << queries_reasoned_by_bvt - queries_reasoned_by_bvt_sat << RESET << "\n\n";
+        print_execution_info(paths, total_number_of_generated_witnesses_for_all_paths, max_number_of_generated_witnesses_among_all_paths, queries_reasoned_by_mit, queries_reasoned_by_box, queries_reasoned_by_bvt, queries_reasoned_by_bvt_sat);
 
         if (symbolic_input_cnt != 0)
           std::cout << "symbolic_input_cnt is not zero!\n";
@@ -190,16 +195,8 @@ void mit_box_abvt_engine::backtrack_sltu() {
           pc = pc + INSTRUCTIONSIZE;
           ic_sltu = ic_sltu + 1;
 
-          // -------------------------------------------------------------------
           // lazy decision
-          // -------------------------------------------------------------------
-          if (mr_sds[tc] == 0) {
-            bvt_sat_check_counter = 0;
-          } else {
-            bvt_sat_check_counter = mr_sds[tc]; // restore the value of bvt_sat_check_counter
-            // bvt_sat_check_counter = max_bvt_sat_check_period/2+1;
-          }
-          // -------------------------------------------------------------------
+          bvt_sat_check_counter = mr_sds[tc]; // restore the value of bvt_sat_check_counter
 
           reg_asts[vaddr] = (registers[vaddr] == 0) ? zero_node : one_node;
           reg_bvts[vaddr] = (registers[vaddr] == 0) ? smt_exprs[zero_node] : smt_exprs[one_node];
@@ -220,7 +217,7 @@ void mit_box_abvt_engine::backtrack_sltu() {
             path_condition.push_back(asts[tc]);
           } else {
             // when asts[tc] == 0 means theory of bvt take care of everything.
-            /* when bvt_false_branches[tc] != boolector_null && theory_type_ast_nodes[asts[tc]] == BVT then points to box theory,
+            /* when bvt_false_branches[tc] != boolector_null && theory_type_ast_nodes[asts[tc]] >= BVT then points to box theory,
                for when box can decide true-case and not false. In that case true may not be evaluated as a smt expr so no pop */
             if (asts[tc] == 0 || theory_type_ast_nodes[asts[tc]] >= BVT)
               boolector_pop(btor, 1);
@@ -392,7 +389,7 @@ void mit_box_abvt_engine::create_sltu_constraints(std::vector<uint64_t>& lo1_p, 
           false_branch_is_over_approximated_by = bvt_sat_check_counter + 1;
         }
 
-        true_reachable = check_sat_true_branch_bvt(boolector_ult (btor, reg_bvts[rs1], reg_bvts[rs2]));
+        true_reachable = check_sat_true_branch_bvt(boolector_ult(btor, reg_bvts[rs1], reg_bvts[rs2]));
         if (true_reachable) {
           is_true_guess = false;
           true_branch_is_over_approximated_by = 0;
@@ -450,7 +447,6 @@ void mit_box_abvt_engine::create_sltu_constraints(std::vector<uint64_t>& lo1_p, 
           dump_all_input_variables_on_trace_true_branch_bvt(is_true_guess);
           take_branch(1, 0);
           bvt_sat_check_counter = true_branch_is_over_approximated_by;
-
         }
       } else {
         dump_involving_input_variables_true_branch_bvt(is_true_guess);
@@ -790,7 +786,7 @@ void mit_box_abvt_engine::dump_involving_input_variables_true_branch_bvt(bool is
         value_v[0]  = std::stoull(true_input_assignments[ast_nodes[involved_input_ast_tc].right_node], 0, 2);
         abstraction = BVT;
       } else {
-        value_v[0]  = mintervals_los[involved_input_ast_tc][0]; // previous witness, might be an incorrect witness after applicatio of the current conditional
+        value_v[0]  = mintervals_los[involved_input_ast_tc][0]; // previous witness, might be an incorrect witness after application of the current conditional but no problem
         abstraction = ABVT;
       }
       ast_ptr = add_ast_node(VAR, 0, ast_nodes[involved_input_ast_tc].right_node, 1, value_v, value_v, 1, 0, zero_v, abstraction, smt_exprs[involved_input_ast_tc]);
@@ -821,7 +817,7 @@ void mit_box_abvt_engine::dump_involving_input_variables_true_branch_bvt(bool is
         value_v[0]  = std::stoull(true_input_assignments[ast_nodes[involved_input_ast_tc].right_node], 0, 2);
         abstraction = BVT;
       } else {
-        value_v[0]  = mintervals_los[involved_input_ast_tc][0]; // previous witness, might be an incorrect witness after applicatio of the current conditional
+        value_v[0]  = mintervals_los[involved_input_ast_tc][0]; // previous witness, might be an incorrect witness after application of the current conditional
         abstraction = ABVT;
       }
       ast_ptr = add_ast_node(VAR, 0, ast_nodes[involved_input_ast_tc].right_node, 1, value_v, value_v, 1, 0, zero_v, abstraction, smt_exprs[involved_input_ast_tc]);
@@ -858,7 +854,7 @@ void mit_box_abvt_engine::dump_involving_input_variables_false_branch_bvt(bool i
         value_v[0]  = std::stoull(false_input_assignments[ast_nodes[involved_input_ast_tc].right_node], 0, 2);
         abstraction = BVT;
       } else {
-        value_v[0]  = mintervals_los[involved_input_ast_tc][0]; // previous witness, might be an incorrect witness after applicatio of the current conditional
+        value_v[0]  = mintervals_los[involved_input_ast_tc][0]; // previous witness, might be an incorrect witness after application of the current conditional
         abstraction = ABVT;
       }
       ast_ptr = add_ast_node(VAR, 0, ast_nodes[involved_input_ast_tc].right_node, 1, value_v, value_v, 1, 0, zero_v, abstraction, smt_exprs[involved_input_ast_tc]);
@@ -889,7 +885,7 @@ void mit_box_abvt_engine::dump_involving_input_variables_false_branch_bvt(bool i
         value_v[0]  = std::stoull(false_input_assignments[ast_nodes[involved_input_ast_tc].right_node], 0, 2);
         abstraction = BVT;
       } else {
-        value_v[0]  = mintervals_los[involved_input_ast_tc][0]; // previous witness, might be an incorrect witness after applicatio of the current conditional
+        value_v[0]  = mintervals_los[involved_input_ast_tc][0]; // previous witness, might be an incorrect witness after application of the current conditional
         abstraction = ABVT;
       }
       ast_ptr = add_ast_node(VAR, 0, ast_nodes[involved_input_ast_tc].right_node, 1, value_v, value_v, 1, 0, zero_v, abstraction, smt_exprs[involved_input_ast_tc]);

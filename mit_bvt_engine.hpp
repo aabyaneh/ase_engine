@@ -160,6 +160,9 @@ class mit_bvt_engine : public engine {
     std::vector<uint64_t> input_table;
     std::vector<uint64_t> input_table_store_trace_ptr;
     std::vector<uint64_t> input_table_ast_tcs_before_branch_evaluation;
+    uint64_t total_number_of_generated_witnesses_for_all_paths = 0;
+    uint64_t max_number_of_generated_witnesses_among_all_paths = 0;
+    virtual  void witness_profile();
 
     // -------------------------
     // SMT solver instance
@@ -262,7 +265,7 @@ class mit_bvt_engine : public engine {
     // ---------------------------
     // reasoning/decision core
     // ---------------------------
-    virtual uint64_t add_ast_node(uint8_t typ, uint64_t left_node, uint64_t right_node, uint32_t mints_num, std::vector<uint64_t>& lo, std::vector<uint64_t>& up, uint64_t step, uint64_t sym_input_num, std::vector<uint64_t>& sym_input_ast_tcs, uint8_t theory_type, BoolectorNode* smt_expr);
+    virtual  uint64_t add_ast_node(uint8_t typ, uint64_t left_node, uint64_t right_node, uint32_t mints_num, std::vector<uint64_t>& lo, std::vector<uint64_t>& up, uint64_t step, uint64_t sym_input_num, std::vector<uint64_t>& sym_input_ast_tcs, uint8_t theory_type, BoolectorNode* smt_expr);
     uint8_t  detect_symbolic_operand(uint64_t ast_tc);
     void     set_involved_inputs(uint64_t reg, std::vector<uint64_t>& involved_inputs, size_t vaddr_num);
     void     set_involved_inputs_two_symbolic_operands();
@@ -270,9 +273,9 @@ class mit_bvt_engine : public engine {
     uint64_t backward_propagation_of_value_intervals(uint64_t ast_tc, std::vector<uint64_t>& lo, std::vector<uint64_t>& up, size_t mints_num, uint8_t theory_type);
     void     constrain_memory_mit(uint64_t reg, std::vector<uint64_t>& lo, std::vector<uint64_t>& up, uint32_t mints_num, uint64_t trb, bool only_reachable_branch);
     bool     evaluate_sltu_true_false_branch_mit(uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t up2);
-    virtual  void     create_sltu_constraints(std::vector<uint64_t>& lo1_p, std::vector<uint64_t>& up1_p, std::vector<uint64_t>& lo2_p, std::vector<uint64_t>& up2_p, uint64_t trb);
+    virtual  void create_sltu_constraints(std::vector<uint64_t>& lo1_p, std::vector<uint64_t>& up1_p, std::vector<uint64_t>& lo2_p, std::vector<uint64_t>& up2_p, uint64_t trb);
     bool     evaluate_xor_true_false_branch_mit(uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t up2);
-    virtual void     create_xor_constraints(std::vector<uint64_t>& lo1_p, std::vector<uint64_t>& up1_p, std::vector<uint64_t>& lo2_p, std::vector<uint64_t>& up2_p, uint64_t trb);
+    virtual  void  create_xor_constraints(std::vector<uint64_t>& lo1_p, std::vector<uint64_t>& up1_p, std::vector<uint64_t>& lo2_p, std::vector<uint64_t>& up2_p, uint64_t trb);
     bool     check_sat_true_branch_bvt(BoolectorNode* assert);
     bool     check_sat_false_branch_bvt(BoolectorNode* assert);
     void     dump_involving_input_variables_true_branch_bvt();
