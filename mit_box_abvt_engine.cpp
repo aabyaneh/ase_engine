@@ -986,7 +986,6 @@ void mit_box_abvt_engine::dump_all_input_variables_on_trace_false_branch_bvt(boo
 bool mit_box_abvt_engine::apply_sltu_under_approximate_box_decision_procedure(std::vector<uint64_t>& lo1, std::vector<uint64_t>& up1, std::vector<uint64_t>& lo2, std::vector<uint64_t>& up2) {
   bool true_reachable  = false;
   bool false_reachable = false;
-  uint64_t ast_ptr, involved_input, stored_to_tc, mr_stored_to_tc;
 
   // exclude cases where box theory cannot be applied
   if (reg_theory_types[rs1] >= BVT || reg_theory_types[rs2] >= BVT) {
@@ -1084,6 +1083,32 @@ bool mit_box_abvt_engine::apply_sltu_under_approximate_box_decision_procedure(st
           false_branch_rs2_minterval_cnt = 0;
           branch = 0;
 
+          // if both operands represent concrete values then evaluate_sltu_true_false_branch_mit may not handle it correctly
+          if (lo1[i] == up1[i] && lo2[j] == up2[j]) {
+            cannot_handle = false;
+
+            if (lo1[i] < lo2[j]) {
+              branch++;
+              box_true_case_rs1_lo.push_back(lo1[i]);
+              box_true_case_rs1_up.push_back(lo1[i]);
+              box_true_case_rs2_lo.push_back(lo2[j]);
+              box_true_case_rs2_up.push_back(lo2[j]);
+              box_index_true_i.push_back(i);
+              box_index_true_j.push_back(j);
+            } else {
+              branch++;
+              box_false_case_rs1_lo.push_back(lo1[i]);
+              box_false_case_rs1_up.push_back(lo1[i]);
+              box_false_case_rs2_lo.push_back(lo2[j]);
+              box_false_case_rs2_up.push_back(lo2[j]);
+              box_index_false_i.push_back(i);
+              box_index_false_j.push_back(j);
+            }
+
+            continue;
+          }
+          // ---------------------------------------------------------------------
+
           cannot_handle = evaluate_sltu_true_false_branch_mit(lo1[i], up1[i], lo2[j], up2[j]);
 
           if (true_branch_rs1_minterval_cnt > 0 && true_branch_rs2_minterval_cnt > 0) {
@@ -1134,6 +1159,32 @@ bool mit_box_abvt_engine::apply_sltu_under_approximate_box_decision_procedure(st
         false_branch_rs2_minterval_cnt = 0;
         branch = 0;
 
+        // if both operands represent concrete values then evaluate_sltu_true_false_branch_mit may not handle it correctly
+        if (lo1[i] == up1[i] && lo2[j] == up2[j]) {
+          cannot_handle = false;
+
+          if (lo1[i] < lo2[j]) {
+            branch++;
+            box_true_case_rs1_lo.push_back(lo1[i]);
+            box_true_case_rs1_up.push_back(lo1[i]);
+            box_true_case_rs2_lo.push_back(lo2[j]);
+            box_true_case_rs2_up.push_back(lo2[j]);
+            box_index_true_i.push_back(i);
+            box_index_true_j.push_back(j);
+          } else {
+            branch++;
+            box_false_case_rs1_lo.push_back(lo1[i]);
+            box_false_case_rs1_up.push_back(lo1[i]);
+            box_false_case_rs2_lo.push_back(lo2[j]);
+            box_false_case_rs2_up.push_back(lo2[j]);
+            box_index_false_i.push_back(i);
+            box_index_false_j.push_back(j);
+          }
+
+          goto loop_end;
+        }
+        // ---------------------------------------------------------------------
+
         cannot_handle = evaluate_sltu_true_false_branch_mit(lo1[i], up1[i], lo2[j], up2[j]);
 
         if (true_branch_rs1_minterval_cnt > 0 && true_branch_rs2_minterval_cnt > 0) {
@@ -1162,6 +1213,7 @@ bool mit_box_abvt_engine::apply_sltu_under_approximate_box_decision_procedure(st
           goto lab;
         }
 
+        loop_end:
         i++; j++;
       }
 
@@ -1204,6 +1256,13 @@ bool mit_box_abvt_engine::apply_sltu_under_approximate_box_decision_procedure(st
       false_branch_rs1_minterval_ups[0] = box_false_case_rs1_up.back();
       false_branch_rs2_minterval_los[0] = box_false_case_rs2_lo.back();
       false_branch_rs2_minterval_ups[0] = box_false_case_rs2_up.back();
+    }
+
+    // necessary for restore_input_table_to_before_applying_bvt_dumps
+    // because of updates occured in input table as result of choose_best_local_choice_between_boxes we need this
+    input_table_ast_tcs_before_branch_evaluation.clear();
+    for (size_t i = 0; i < input_table.size(); i++) {
+      input_table_ast_tcs_before_branch_evaluation.push_back(input_table[i]);
     }
 
     if (true_reachable) {
@@ -1257,6 +1316,8 @@ bool mit_box_abvt_engine::apply_sltu_under_approximate_box_decision_procedure(st
             bvt_false_branches[tc-2] = boolector_null; // careful
             mr_sds[tc-2]             = (bvt_sat_check_counter) ? ++bvt_sat_check_counter : 0;
 
+            restore_input_table_to_before_applying_bvt_dumps();
+
             // true
             boolector_push(btor, 1);
             boolector_assert(btor, boolector_ugte(btor, reg_bvts[rs1], reg_bvts[rs2]));
@@ -1278,6 +1339,11 @@ bool mit_box_abvt_engine::apply_sltu_under_approximate_box_decision_procedure(st
 
             // important: if on true branch we need BVT in future it will apply boolector_push() later in assert_path_condition_into_smt_expression
             // so no worries
+
+            // very important: restore input table,
+            // dump_involving_input_variables_true_branch_bvt, dump_all_input_variables_on_trace_true_branch_bvt
+            // will change inputs of BOX to BVT which we don't want and should be restored for true branch
+            restore_input_table_to_before_applying_bvt_dumps();
 
             // true under_approximate
             constrain_memory_under_approximate_box(rs1, reg_asts[rs1], true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, 1, 0);
@@ -1316,6 +1382,11 @@ bool mit_box_abvt_engine::apply_sltu_under_approximate_box_decision_procedure(st
           // important: if on true branch we need BVT in future it will apply boolector_push() later in assert_path_condition_into_smt_expression
           // so no worries
 
+          // very important: restore input table,
+          // dump_involving_input_variables_true_branch_bvt, dump_all_input_variables_on_trace_true_branch_bvt
+          // will change inputs of BOX to BVT which we don't want and should be restored for true branch
+          restore_input_table_to_before_applying_bvt_dumps();
+
           // true
           constrain_memory_under_approximate_box(rs1, reg_asts[rs1], false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups, 1, 0);
           constrain_memory_under_approximate_box(rs2, reg_asts[rs2], false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups, 1, 0);
@@ -1330,6 +1401,8 @@ bool mit_box_abvt_engine::apply_sltu_under_approximate_box_decision_procedure(st
           asts[tc-2]               = false_ast_ptr;
           bvt_false_branches[tc-2] = boolector_null; // careful
           mr_sds[tc-2]             = (bvt_sat_check_counter) ? ++bvt_sat_check_counter : 0;
+
+          restore_input_table_to_before_applying_bvt_dumps();
 
           // true
           boolector_push(btor, 1);
@@ -1453,6 +1526,32 @@ bool mit_box_abvt_engine::apply_diseq_under_approximate_box_decision_procedure(s
           false_branch_rs2_minterval_cnt = 0;
           branch = 0;
 
+          // if both operands represent concrete values then evaluate_sltu_true_false_branch_mit may not handle it correctly
+          if (lo1[i] == up1[i] && lo2[j] == up2[j]) {
+            cannot_handle = false;
+
+            if (lo1[i] != lo2[j]) {
+              branch++;
+              box_true_case_rs1_lo.push_back(lo1[i]);
+              box_true_case_rs1_up.push_back(lo1[i]);
+              box_true_case_rs2_lo.push_back(lo2[j]);
+              box_true_case_rs2_up.push_back(lo2[j]);
+              box_index_true_i.push_back(i);
+              box_index_true_j.push_back(j);
+            } else {
+              branch++;
+              box_false_case_rs1_lo.push_back(lo1[i]);
+              box_false_case_rs1_up.push_back(lo1[i]);
+              box_false_case_rs2_lo.push_back(lo2[j]);
+              box_false_case_rs2_up.push_back(lo2[j]);
+              box_index_false_i.push_back(i);
+              box_index_false_j.push_back(j);
+            }
+
+            continue;
+          }
+          // ---------------------------------------------------------------------
+
           cannot_handle = evaluate_xor_true_false_branch_mit(lo1[i], up1[i], lo2[j], up2[j]);
 
           if (true_branch_rs1_minterval_cnt > 0 && true_branch_rs2_minterval_cnt > 0) {
@@ -1503,6 +1602,32 @@ bool mit_box_abvt_engine::apply_diseq_under_approximate_box_decision_procedure(s
         false_branch_rs2_minterval_cnt = 0;
         branch = 0;
 
+        // if both operands represent concrete values then evaluate_sltu_true_false_branch_mit may not handle it correctly
+        if (lo1[i] == up1[i] && lo2[j] == up2[j]) {
+          cannot_handle = false;
+
+          if (lo1[i] != lo2[j]) {
+            branch++;
+            box_true_case_rs1_lo.push_back(lo1[i]);
+            box_true_case_rs1_up.push_back(lo1[i]);
+            box_true_case_rs2_lo.push_back(lo2[j]);
+            box_true_case_rs2_up.push_back(lo2[j]);
+            box_index_true_i.push_back(i);
+            box_index_true_j.push_back(j);
+          } else {
+            branch++;
+            box_false_case_rs1_lo.push_back(lo1[i]);
+            box_false_case_rs1_up.push_back(lo1[i]);
+            box_false_case_rs2_lo.push_back(lo2[j]);
+            box_false_case_rs2_up.push_back(lo2[j]);
+            box_index_false_i.push_back(i);
+            box_index_false_j.push_back(j);
+          }
+
+          goto loop_end;
+        }
+        // ---------------------------------------------------------------------
+
         cannot_handle = evaluate_xor_true_false_branch_mit(lo1[i], up1[i], lo2[j], up2[j]);
 
         if (true_branch_rs1_minterval_cnt > 0 && true_branch_rs2_minterval_cnt > 0) {
@@ -1531,6 +1656,7 @@ bool mit_box_abvt_engine::apply_diseq_under_approximate_box_decision_procedure(s
           goto lab;
         }
 
+        loop_end:
         i++; j++;
       }
 
@@ -1573,6 +1699,13 @@ bool mit_box_abvt_engine::apply_diseq_under_approximate_box_decision_procedure(s
       false_branch_rs1_minterval_ups[0] = box_false_case_rs1_up.back();
       false_branch_rs2_minterval_los[0] = box_false_case_rs2_lo.back();
       false_branch_rs2_minterval_ups[0] = box_false_case_rs2_up.back();
+    }
+
+    // necessary for restore_input_table_to_before_applying_bvt_dumps
+    // because of updates occured in input table as result of choose_best_local_choice_between_boxes we need this
+    input_table_ast_tcs_before_branch_evaluation.clear();
+    for (size_t i = 0; i < input_table.size(); i++) {
+      input_table_ast_tcs_before_branch_evaluation.push_back(input_table[i]);
     }
 
     if (true_reachable) {
@@ -1625,6 +1758,8 @@ bool mit_box_abvt_engine::apply_diseq_under_approximate_box_decision_procedure(s
             bvt_false_branches[tc-2] = boolector_null; // careful
             mr_sds[tc-2]             = (bvt_sat_check_counter) ? ++bvt_sat_check_counter : 0;
 
+            restore_input_table_to_before_applying_bvt_dumps();
+
             // true
             boolector_push(btor, 1);
             boolector_assert(btor, boolector_eq(btor, reg_bvts[rs1], reg_bvts[rs2]));
@@ -1646,6 +1781,11 @@ bool mit_box_abvt_engine::apply_diseq_under_approximate_box_decision_procedure(s
 
             // important: if on true branch we need BVT in future it will apply boolector_push() later in assert_path_condition_into_smt_expression
             // so no worries
+
+            // very important: restore input table,
+            // dump_involving_input_variables_true_branch_bvt, dump_all_input_variables_on_trace_true_branch_bvt
+            // will change inputs of BOX to BVT which we don't want and should be restored for true branch
+            restore_input_table_to_before_applying_bvt_dumps();
 
             // true under_approximate
             constrain_memory_under_approximate_box(rs1, reg_asts[rs1], true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, 1, 0);
@@ -1681,6 +1821,11 @@ bool mit_box_abvt_engine::apply_diseq_under_approximate_box_decision_procedure(s
 
           path_condition.push_back(add_ast_node(IEQ, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 1, 0, zero_v, BOX, boolector_null));
 
+          // very important: restore input table,
+          // dump_involving_input_variables_true_branch_bvt, dump_all_input_variables_on_trace_true_branch_bvt
+          // will change inputs of BOX to BVT which we don't want and should be restored for true branch
+          restore_input_table_to_before_applying_bvt_dumps();
+
           // true
           constrain_memory_under_approximate_box(rs1, reg_asts[rs1], false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups, 1, 0);
           constrain_memory_under_approximate_box(rs2, reg_asts[rs2], false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups, 1, 0);
@@ -1694,6 +1839,8 @@ bool mit_box_abvt_engine::apply_diseq_under_approximate_box_decision_procedure(s
           asts[tc-2]               = false_ast_ptr;
           bvt_false_branches[tc-2] = boolector_null; // careful
           mr_sds[tc-2]             = (bvt_sat_check_counter) ? ++bvt_sat_check_counter : 0;
+
+          restore_input_table_to_before_applying_bvt_dumps();
 
           // true
           boolector_push(btor, 1);

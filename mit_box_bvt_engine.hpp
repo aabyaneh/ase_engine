@@ -27,8 +27,10 @@ class mit_box_bvt_engine : public mit_bvt_engine {
     uint64_t constrain_memory_under_approximate_box(uint64_t reg, uint64_t ast_tc, std::vector<uint64_t>& lo, std::vector<uint64_t>& up, size_t mints_num, uint64_t input_box);
     void evaluate_sltu_true_branch_under_approximate_box(uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t up2);
     void evaluate_sltu_false_branch_under_approximate_box(uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t up2);
-    void choose_best_local_choice_between_boxes(size_t index_true_i, size_t index_true_j);
     virtual bool apply_sltu_under_approximate_box_decision_procedure(std::vector<uint64_t>& lo1, std::vector<uint64_t>& up1, std::vector<uint64_t>& lo2, std::vector<uint64_t>& up2);
     void evaluate_diseq_false_branch_under_approximate_box(uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t up2);
     virtual bool apply_diseq_under_approximate_box_decision_procedure(std::vector<uint64_t>& lo1, std::vector<uint64_t>& up1, std::vector<uint64_t>& lo2, std::vector<uint64_t>& up2);
+
+    void choose_best_local_choice_between_boxes(size_t index_true_i, size_t index_true_j);
+    void restore_input_table_to_before_applying_bvt_dumps();
 };
