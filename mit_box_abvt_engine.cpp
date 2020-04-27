@@ -983,6 +983,37 @@ void mit_box_abvt_engine::dump_all_input_variables_on_trace_false_branch_bvt(boo
 // ------------------- under_approximate decision procedure --------------------
 // -----------------------------------------------------------------------------
 
+void mit_box_abvt_engine::generate_and_apply_sltu_boxes(uint8_t conditional_type, uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t up2) {
+
+  if (conditional_type == LGTE) {
+    evaluate_sltu_true_branch_under_approximate_box(lo1, up1, lo2, up2);
+    uint64_t false_ast_ptr   = add_ast_node(ILT, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 0, 0, zero_v, BOX, boolector_null);
+    take_branch(1, 1);
+    asts[tc-2]               = false_ast_ptr;
+    bvt_false_branches[tc-2] = boolector_null; // careful
+    mr_sds[tc-2]             = (bvt_sat_check_counter) ? ++bvt_sat_check_counter : 0;
+
+    path_condition.push_back(add_ast_node(IGTE, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 1, 0, zero_v, BOX, boolector_null));
+
+    evaluate_sltu_false_branch_under_approximate_box(lo1, up1, lo2, up2);
+    take_branch(0, 0);
+  } else {
+    evaluate_sltu_false_branch_under_approximate_box(lo1, up1, lo2, up2);
+    uint64_t false_ast_ptr   = add_ast_node(IGTE, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 0, 0, zero_v, BOX, boolector_null);
+    take_branch(0, 1);
+    asts[tc-2]               = false_ast_ptr;
+    bvt_false_branches[tc-2] = boolector_null; // careful
+    mr_sds[tc-2]             = (bvt_sat_check_counter) ? ++bvt_sat_check_counter : 0;
+
+    path_condition.push_back(add_ast_node(ILT, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 1, 0, zero_v, BOX, boolector_null));
+
+    evaluate_sltu_true_branch_under_approximate_box(lo1, up1, lo2, up2);
+    take_branch(1, 0);
+  }
+
+  queries_reasoned_by_box+=2;
+}
+
 bool mit_box_abvt_engine::apply_sltu_under_approximate_box_decision_procedure(std::vector<uint64_t>& lo1, std::vector<uint64_t>& up1, std::vector<uint64_t>& lo2, std::vector<uint64_t>& up2) {
   bool true_reachable  = false;
   bool false_reachable = false;
@@ -1017,246 +1048,20 @@ bool mit_box_abvt_engine::apply_sltu_under_approximate_box_decision_procedure(st
       return false;
     }
 
-    if (conditional_type == LGTE) {
-      evaluate_sltu_true_branch_under_approximate_box(lo1[0], up1[0], lo2[0], up2[0]);
-      uint64_t false_ast_ptr   = add_ast_node(ILT, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 0, 0, zero_v, BOX, boolector_null);
-      take_branch(1, 1);
-      asts[tc-2]               = false_ast_ptr;
-      bvt_false_branches[tc-2] = boolector_null; // careful
-      mr_sds[tc-2]             = (bvt_sat_check_counter) ? ++bvt_sat_check_counter : 0;
-
-      path_condition.push_back(add_ast_node(IGTE, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 1, 0, zero_v, BOX, boolector_null));
-
-      evaluate_sltu_false_branch_under_approximate_box(lo1[0], up1[0], lo2[0], up2[0]);
-      take_branch(0, 0);
-    } else {
-      evaluate_sltu_false_branch_under_approximate_box(lo1[0], up1[0], lo2[0], up2[0]);
-      uint64_t false_ast_ptr   = add_ast_node(IGTE, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 0, 0, zero_v, BOX, boolector_null);
-      take_branch(0, 1);
-      asts[tc-2]               = false_ast_ptr;
-      bvt_false_branches[tc-2] = boolector_null; // careful
-      mr_sds[tc-2]             = (bvt_sat_check_counter) ? ++bvt_sat_check_counter : 0;
-
-      path_condition.push_back(add_ast_node(ILT, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 1, 0, zero_v, BOX, boolector_null));
-
-      evaluate_sltu_true_branch_under_approximate_box(lo1[0], up1[0], lo2[0], up2[0]);
-      take_branch(1, 0);
-    }
+    generate_and_apply_sltu_boxes(conditional_type, lo1[0], up1[0], lo2[0], up2[0]);
 
     // will be (reg_mintervals_cnts[rs1] > 1 && reg_theory_types[rs1] == BOX)
     // will be (reg_mintervals_cnts[rs2] > 1 && reg_theory_types[rs2] == BOX)
 
-    queries_reasoned_by_box+=2;
     return true;
 
   } else {
-    bool cannot_handle = false;
-    std::vector<uint64_t> box_true_case_rs1_lo;
-    std::vector<uint64_t> box_true_case_rs1_up;
-    std::vector<uint64_t> box_true_case_rs2_lo;
-    std::vector<uint64_t> box_true_case_rs2_up;
-    std::vector<uint64_t> box_false_case_rs1_lo;
-    std::vector<uint64_t> box_false_case_rs1_up;
-    std::vector<uint64_t> box_false_case_rs2_lo;
-    std::vector<uint64_t> box_false_case_rs2_up;
-    std::vector<uint64_t> box_index_true_i;
-    std::vector<uint64_t> box_index_true_j;
-    std::vector<uint64_t> box_index_false_i;
-    std::vector<uint64_t> box_index_false_j;
-    uint8_t branch = 0;
+    // if (sltu_box_decision_heuristic_1(lo1, up1, lo2, up2, true_reachable, false_reachable) == CANNOT_BE_HANDLED)
+    //   return false;
 
-    if (reg_theory_types[rs1] == MIT || reg_theory_types[rs2] == MIT) {
-      for (size_t i = 0; i < reg_mintervals_cnts[rs1]; i++) {
-        if (lo1[i] > up1[i]) {
-          // wrapped are not acceptable
-          return false;
-        }
-        for (size_t j = 0; j < reg_mintervals_cnts[rs2]; j++) {
-          if (lo2[j] > up2[j]) {
-            // wrapped are not acceptable
-            return false;
-          }
-
-          true_branch_rs1_minterval_cnt  = 0;
-          true_branch_rs2_minterval_cnt  = 0;
-          false_branch_rs1_minterval_cnt = 0;
-          false_branch_rs2_minterval_cnt = 0;
-          branch = 0;
-
-          // if both operands represent concrete values then evaluate_sltu_true_false_branch_mit may not handle it correctly
-          if (lo1[i] == up1[i] && lo2[j] == up2[j]) {
-            cannot_handle = false;
-
-            if (lo1[i] < lo2[j]) {
-              branch++;
-              box_true_case_rs1_lo.push_back(lo1[i]);
-              box_true_case_rs1_up.push_back(lo1[i]);
-              box_true_case_rs2_lo.push_back(lo2[j]);
-              box_true_case_rs2_up.push_back(lo2[j]);
-              box_index_true_i.push_back(i);
-              box_index_true_j.push_back(j);
-            } else {
-              branch++;
-              box_false_case_rs1_lo.push_back(lo1[i]);
-              box_false_case_rs1_up.push_back(lo1[i]);
-              box_false_case_rs2_lo.push_back(lo2[j]);
-              box_false_case_rs2_up.push_back(lo2[j]);
-              box_index_false_i.push_back(i);
-              box_index_false_j.push_back(j);
-            }
-
-            continue;
-          }
-          // ---------------------------------------------------------------------
-
-          cannot_handle = evaluate_sltu_true_false_branch_mit(lo1[i], up1[i], lo2[j], up2[j]);
-
-          if (true_branch_rs1_minterval_cnt > 0 && true_branch_rs2_minterval_cnt > 0) {
-            branch++;
-            box_true_case_rs1_lo.push_back(true_branch_rs1_minterval_los[0]);
-            box_true_case_rs1_up.push_back(true_branch_rs1_minterval_ups[0]);
-            box_true_case_rs2_lo.push_back(true_branch_rs2_minterval_los[0]);
-            box_true_case_rs2_up.push_back(true_branch_rs2_minterval_ups[0]);
-            box_index_true_i.push_back(i);
-            box_index_true_j.push_back(j);
-          }
-
-          if (false_branch_rs1_minterval_cnt > 0 && false_branch_rs2_minterval_cnt > 0) {
-            branch++;
-            box_false_case_rs1_lo.push_back(false_branch_rs1_minterval_los[0]);
-            box_false_case_rs1_up.push_back(false_branch_rs1_minterval_ups[0]);
-            box_false_case_rs2_lo.push_back(false_branch_rs2_minterval_los[0]);
-            box_false_case_rs2_up.push_back(false_branch_rs2_minterval_ups[0]);
-            box_index_false_i.push_back(i);
-            box_index_false_j.push_back(j);
-          }
-
-          if (branch == 2) {
-            true_reachable  = true;
-            false_reachable = true;
-            goto lab;
-          }
-        }
-      }
-
-      // means cannot be reasoned by boxes
-      if (box_true_case_rs1_lo.size() == 0 && box_false_case_rs1_lo.size() == 0) return false;
-
-    } else {
-      // both are BOX
-      // first box with first box, second box with second box => to be sure about correctness
-      size_t i = 0;
-      size_t j = 0;
-      while (i < reg_mintervals_cnts[rs1] && j < reg_mintervals_cnts[rs2]) {
-        if (lo1[i] > up1[i] || lo2[j] > up2[j]) {
-          // wrapped are not acceptable
-          return false;
-        }
-
-        true_branch_rs1_minterval_cnt  = 0;
-        true_branch_rs2_minterval_cnt  = 0;
-        false_branch_rs1_minterval_cnt = 0;
-        false_branch_rs2_minterval_cnt = 0;
-        branch = 0;
-
-        // if both operands represent concrete values then evaluate_sltu_true_false_branch_mit may not handle it correctly
-        if (lo1[i] == up1[i] && lo2[j] == up2[j]) {
-          cannot_handle = false;
-
-          if (lo1[i] < lo2[j]) {
-            branch++;
-            box_true_case_rs1_lo.push_back(lo1[i]);
-            box_true_case_rs1_up.push_back(lo1[i]);
-            box_true_case_rs2_lo.push_back(lo2[j]);
-            box_true_case_rs2_up.push_back(lo2[j]);
-            box_index_true_i.push_back(i);
-            box_index_true_j.push_back(j);
-          } else {
-            branch++;
-            box_false_case_rs1_lo.push_back(lo1[i]);
-            box_false_case_rs1_up.push_back(lo1[i]);
-            box_false_case_rs2_lo.push_back(lo2[j]);
-            box_false_case_rs2_up.push_back(lo2[j]);
-            box_index_false_i.push_back(i);
-            box_index_false_j.push_back(j);
-          }
-
-          goto loop_end;
-        }
-        // ---------------------------------------------------------------------
-
-        cannot_handle = evaluate_sltu_true_false_branch_mit(lo1[i], up1[i], lo2[j], up2[j]);
-
-        if (true_branch_rs1_minterval_cnt > 0 && true_branch_rs2_minterval_cnt > 0) {
-          branch++;
-          box_true_case_rs1_lo.push_back(true_branch_rs1_minterval_los[0]);
-          box_true_case_rs1_up.push_back(true_branch_rs1_minterval_ups[0]);
-          box_true_case_rs2_lo.push_back(true_branch_rs2_minterval_los[0]);
-          box_true_case_rs2_up.push_back(true_branch_rs2_minterval_ups[0]);
-          box_index_true_i.push_back(i);
-          box_index_true_j.push_back(j);
-        }
-
-        if (false_branch_rs1_minterval_cnt > 0 && false_branch_rs2_minterval_cnt > 0) {
-          branch++;
-          box_false_case_rs1_lo.push_back(false_branch_rs1_minterval_los[0]);
-          box_false_case_rs1_up.push_back(false_branch_rs1_minterval_ups[0]);
-          box_false_case_rs2_lo.push_back(false_branch_rs2_minterval_los[0]);
-          box_false_case_rs2_up.push_back(false_branch_rs2_minterval_ups[0]);
-          box_index_false_i.push_back(i);
-          box_index_false_j.push_back(j);
-        }
-
-        if (branch == 2) {
-          true_reachable  = true;
-          false_reachable = true;
-          goto lab;
-        }
-
-        loop_end:
-        i++; j++;
-      }
-
-      // means cannot be reasoned by boxes
-      if (box_true_case_rs1_lo.size() == 0 && box_false_case_rs1_lo.size() == 0) return false;
-    }
-
-    lab:
-    if (true_reachable == false) { // means both are not reachable (box decision)
-      if (box_true_case_rs1_lo.size() > 0) {
-        // this is just to choose one box choice for the original operand var
-        choose_best_local_choice_between_boxes(box_index_true_i[0], box_index_true_j[0]);
-
-        true_reachable  = true;
-        true_branch_rs1_minterval_los[0] = box_true_case_rs1_lo[0];
-        true_branch_rs1_minterval_ups[0] = box_true_case_rs1_up[0];
-        true_branch_rs2_minterval_los[0] = box_true_case_rs2_lo[0];
-        true_branch_rs2_minterval_ups[0] = box_true_case_rs2_up[0];
-      } else if (box_false_case_rs1_lo.size() > 0) {
-        // this is just to choose one box choice for the original operand var
-        choose_best_local_choice_between_boxes(box_index_false_i[0], box_index_false_j[0]);
-
-        false_reachable = true;
-        false_branch_rs1_minterval_los[0] = box_false_case_rs1_lo[0];
-        false_branch_rs1_minterval_ups[0] = box_false_case_rs1_up[0];
-        false_branch_rs2_minterval_los[0] = box_false_case_rs2_lo[0];
-        false_branch_rs2_minterval_ups[0] = box_false_case_rs2_up[0];
-      }
-    } else {
-      // this is just to choose one box choice for the original operand var
-      choose_best_local_choice_between_boxes(box_index_true_i.back(), box_index_true_j.back());
-      // don't need for false
-
-      true_branch_rs1_minterval_los[0]  = box_true_case_rs1_lo.back();
-      true_branch_rs1_minterval_ups[0]  = box_true_case_rs1_up.back();
-      true_branch_rs2_minterval_los[0]  = box_true_case_rs2_lo.back();
-      true_branch_rs2_minterval_ups[0]  = box_true_case_rs2_up.back();
-
-      false_branch_rs1_minterval_los[0] = box_false_case_rs1_lo.back();
-      false_branch_rs1_minterval_ups[0] = box_false_case_rs1_up.back();
-      false_branch_rs2_minterval_los[0] = box_false_case_rs2_lo.back();
-      false_branch_rs2_minterval_ups[0] = box_false_case_rs2_up.back();
-    }
+    uint8_t result = sltu_box_decision_heuristic_2(conditional_type, lo1, up1, lo2, up2, true_reachable, false_reachable);
+    if (result != CAN_BE_HANDLED)
+      return result;
 
     // necessary for restore_input_table_to_before_applying_bvt_dumps
     // because of updates occured in input table as result of choose_best_local_choice_between_boxes we need this
@@ -1428,6 +1233,37 @@ bool mit_box_abvt_engine::apply_sltu_under_approximate_box_decision_procedure(st
   }
 }
 
+void mit_box_abvt_engine::generate_and_apply_diseq_boxes(uint8_t conditional_type, uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t up2) {
+
+  if (conditional_type == EQ) {
+    evaluate_sltu_true_branch_under_approximate_box(lo1, up1, lo2, up2);
+    uint64_t false_ast_ptr   = add_ast_node(INEQ, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 0, 0, zero_v, BOX, boolector_null);
+    take_branch(1, 1);
+    asts[tc-2]               = false_ast_ptr;
+    bvt_false_branches[tc-2] = boolector_null; // careful
+    mr_sds[tc-2]             = (bvt_sat_check_counter) ? ++bvt_sat_check_counter : 0;
+
+    path_condition.push_back(add_ast_node(IEQ, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 1, 0, zero_v, BOX, boolector_null));
+
+    evaluate_diseq_false_branch_under_approximate_box(lo1, up1, lo2, up2);
+    take_branch(0, 0);
+  } else {
+    evaluate_diseq_false_branch_under_approximate_box(lo1, up1, lo2, up2);
+    uint64_t false_ast_ptr   = add_ast_node(IEQ, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 0, 0, zero_v, BOX, boolector_null);
+    take_branch(0, 1);
+    asts[tc-2]               = false_ast_ptr;
+    bvt_false_branches[tc-2] = boolector_null; // careful
+    mr_sds[tc-2]             = (bvt_sat_check_counter) ? ++bvt_sat_check_counter : 0;
+
+    path_condition.push_back(add_ast_node(INEQ, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 1, 0, zero_v, BOX, boolector_null));
+
+    evaluate_sltu_true_branch_under_approximate_box(lo1, up1, lo2, up2);
+    take_branch(1, 0);
+  }
+
+  queries_reasoned_by_box+=2;
+}
+
 bool mit_box_abvt_engine::apply_diseq_under_approximate_box_decision_procedure(std::vector<uint64_t>& lo1, std::vector<uint64_t>& up1, std::vector<uint64_t>& lo2, std::vector<uint64_t>& up2) {
   bool true_reachable  = false;
   bool false_reachable = false;
@@ -1463,243 +1299,17 @@ bool mit_box_abvt_engine::apply_diseq_under_approximate_box_decision_procedure(s
       return false;
     }
 
-    if (conditional_type == EQ) {
-      evaluate_sltu_true_branch_under_approximate_box(lo1[0], up1[0], lo2[0], up2[0]);
-      uint64_t false_ast_ptr   = add_ast_node(INEQ, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 0, 0, zero_v, BOX, boolector_null);
-      take_branch(1, 1);
-      asts[tc-2]               = false_ast_ptr;
-      bvt_false_branches[tc-2] = boolector_null; // careful
-      mr_sds[tc-2]             = (bvt_sat_check_counter) ? ++bvt_sat_check_counter : 0;
+    generate_and_apply_diseq_boxes(conditional_type, lo1[0], up1[0], lo2[0], up2[0]);
 
-      path_condition.push_back(add_ast_node(IEQ, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 1, 0, zero_v, BOX, boolector_null));
-
-      evaluate_diseq_false_branch_under_approximate_box(lo1[0], up1[0], lo2[0], up2[0]);
-      take_branch(0, 0);
-    } else {
-      evaluate_diseq_false_branch_under_approximate_box(lo1[0], up1[0], lo2[0], up2[0]);
-      uint64_t false_ast_ptr   = add_ast_node(IEQ, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 0, 0, zero_v, BOX, boolector_null);
-      take_branch(0, 1);
-      asts[tc-2]               = false_ast_ptr;
-      bvt_false_branches[tc-2] = boolector_null; // careful
-      mr_sds[tc-2]             = (bvt_sat_check_counter) ? ++bvt_sat_check_counter : 0;
-
-      path_condition.push_back(add_ast_node(INEQ, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 1, 0, zero_v, BOX, boolector_null));
-
-      evaluate_sltu_true_branch_under_approximate_box(lo1[0], up1[0], lo2[0], up2[0]);
-      take_branch(1, 0);
-    }
-
-    queries_reasoned_by_box+=2;
     return true;
 
   } else {
-    bool cannot_handle = false;
-    std::vector<uint64_t> box_true_case_rs1_lo;
-    std::vector<uint64_t> box_true_case_rs1_up;
-    std::vector<uint64_t> box_true_case_rs2_lo;
-    std::vector<uint64_t> box_true_case_rs2_up;
-    std::vector<uint64_t> box_false_case_rs1_lo;
-    std::vector<uint64_t> box_false_case_rs1_up;
-    std::vector<uint64_t> box_false_case_rs2_lo;
-    std::vector<uint64_t> box_false_case_rs2_up;
-    std::vector<uint64_t> box_index_true_i;
-    std::vector<uint64_t> box_index_true_j;
-    std::vector<uint64_t> box_index_false_i;
-    std::vector<uint64_t> box_index_false_j;
-    uint8_t branch = 0;
+    // if (diseq_box_decision_heuristic_1(lo1, up1, lo2, up2, true_reachable, false_reachable) == CANNOT_BE_HANDLED)
+    //   return false;
 
-    if (reg_theory_types[rs1] == MIT || reg_theory_types[rs2] == MIT) {
-      for (size_t i = 0; i < reg_mintervals_cnts[rs1]; i++) {
-        if (lo1[i] > up1[i]) {
-          // wrapped are not acceptable
-          return false;
-        }
-        for (size_t j = 0; j < reg_mintervals_cnts[rs2]; j++) {
-          if (lo2[j] > up2[j]) {
-            // wrapped are not acceptable
-            return false;
-          }
-
-          true_branch_rs1_minterval_cnt  = 0;
-          true_branch_rs2_minterval_cnt  = 0;
-          false_branch_rs1_minterval_cnt = 0;
-          false_branch_rs2_minterval_cnt = 0;
-          branch = 0;
-
-          // if both operands represent concrete values then evaluate_sltu_true_false_branch_mit may not handle it correctly
-          if (lo1[i] == up1[i] && lo2[j] == up2[j]) {
-            cannot_handle = false;
-
-            if (lo1[i] != lo2[j]) {
-              branch++;
-              box_true_case_rs1_lo.push_back(lo1[i]);
-              box_true_case_rs1_up.push_back(lo1[i]);
-              box_true_case_rs2_lo.push_back(lo2[j]);
-              box_true_case_rs2_up.push_back(lo2[j]);
-              box_index_true_i.push_back(i);
-              box_index_true_j.push_back(j);
-            } else {
-              branch++;
-              box_false_case_rs1_lo.push_back(lo1[i]);
-              box_false_case_rs1_up.push_back(lo1[i]);
-              box_false_case_rs2_lo.push_back(lo2[j]);
-              box_false_case_rs2_up.push_back(lo2[j]);
-              box_index_false_i.push_back(i);
-              box_index_false_j.push_back(j);
-            }
-
-            continue;
-          }
-          // ---------------------------------------------------------------------
-
-          cannot_handle = evaluate_xor_true_false_branch_mit(lo1[i], up1[i], lo2[j], up2[j]);
-
-          if (true_branch_rs1_minterval_cnt > 0 && true_branch_rs2_minterval_cnt > 0) {
-            branch++;
-            box_true_case_rs1_lo.push_back(true_branch_rs1_minterval_los[0]);
-            box_true_case_rs1_up.push_back(true_branch_rs1_minterval_ups[0]);
-            box_true_case_rs2_lo.push_back(true_branch_rs2_minterval_los[0]);
-            box_true_case_rs2_up.push_back(true_branch_rs2_minterval_ups[0]);
-            box_index_true_i.push_back(i);
-            box_index_true_j.push_back(j);
-          }
-
-          if (false_branch_rs1_minterval_cnt > 0 && false_branch_rs2_minterval_cnt > 0) {
-            branch++;
-            box_false_case_rs1_lo.push_back(false_branch_rs1_minterval_los[0]);
-            box_false_case_rs1_up.push_back(false_branch_rs1_minterval_ups[0]);
-            box_false_case_rs2_lo.push_back(false_branch_rs2_minterval_los[0]);
-            box_false_case_rs2_up.push_back(false_branch_rs2_minterval_ups[0]);
-            box_index_false_i.push_back(i);
-            box_index_false_j.push_back(j);
-          }
-
-          if (branch == 2) {
-            true_reachable  = true;
-            false_reachable = true;
-            goto lab;
-          }
-        }
-      }
-
-      // means cannot be reasoned by boxes
-      if (box_true_case_rs1_lo.size() == 0 && box_false_case_rs1_lo.size() == 0) return false;
-
-    } else {
-      // both are BOX
-      // first box with first box, second box with second box => to be sure about correctness
-      size_t i = 0;
-      size_t j = 0;
-      while (i < reg_mintervals_cnts[rs1] && j < reg_mintervals_cnts[rs2]) {
-        if (lo1[i] > up1[i] || lo2[j] > up2[j]) {
-          // wrapped are not acceptable
-          return false;
-        }
-
-        true_branch_rs1_minterval_cnt  = 0;
-        true_branch_rs2_minterval_cnt  = 0;
-        false_branch_rs1_minterval_cnt = 0;
-        false_branch_rs2_minterval_cnt = 0;
-        branch = 0;
-
-        // if both operands represent concrete values then evaluate_sltu_true_false_branch_mit may not handle it correctly
-        if (lo1[i] == up1[i] && lo2[j] == up2[j]) {
-          cannot_handle = false;
-
-          if (lo1[i] != lo2[j]) {
-            branch++;
-            box_true_case_rs1_lo.push_back(lo1[i]);
-            box_true_case_rs1_up.push_back(lo1[i]);
-            box_true_case_rs2_lo.push_back(lo2[j]);
-            box_true_case_rs2_up.push_back(lo2[j]);
-            box_index_true_i.push_back(i);
-            box_index_true_j.push_back(j);
-          } else {
-            branch++;
-            box_false_case_rs1_lo.push_back(lo1[i]);
-            box_false_case_rs1_up.push_back(lo1[i]);
-            box_false_case_rs2_lo.push_back(lo2[j]);
-            box_false_case_rs2_up.push_back(lo2[j]);
-            box_index_false_i.push_back(i);
-            box_index_false_j.push_back(j);
-          }
-
-          goto loop_end;
-        }
-        // ---------------------------------------------------------------------
-
-        cannot_handle = evaluate_xor_true_false_branch_mit(lo1[i], up1[i], lo2[j], up2[j]);
-
-        if (true_branch_rs1_minterval_cnt > 0 && true_branch_rs2_minterval_cnt > 0) {
-          branch++;
-          box_true_case_rs1_lo.push_back(true_branch_rs1_minterval_los[0]);
-          box_true_case_rs1_up.push_back(true_branch_rs1_minterval_ups[0]);
-          box_true_case_rs2_lo.push_back(true_branch_rs2_minterval_los[0]);
-          box_true_case_rs2_up.push_back(true_branch_rs2_minterval_ups[0]);
-          box_index_true_i.push_back(i);
-          box_index_true_j.push_back(j);
-        }
-
-        if (false_branch_rs1_minterval_cnt > 0 && false_branch_rs2_minterval_cnt > 0) {
-          branch++;
-          box_false_case_rs1_lo.push_back(false_branch_rs1_minterval_los[0]);
-          box_false_case_rs1_up.push_back(false_branch_rs1_minterval_ups[0]);
-          box_false_case_rs2_lo.push_back(false_branch_rs2_minterval_los[0]);
-          box_false_case_rs2_up.push_back(false_branch_rs2_minterval_ups[0]);
-          box_index_false_i.push_back(i);
-          box_index_false_j.push_back(j);
-        }
-
-        if (branch == 2) {
-          true_reachable  = true;
-          false_reachable = true;
-          goto lab;
-        }
-
-        loop_end:
-        i++; j++;
-      }
-
-      // means cannot be reasoned by boxes
-      if (box_true_case_rs1_lo.size() == 0 && box_false_case_rs1_lo.size() == 0) return false;
-    }
-
-    lab:
-    if (true_reachable == false) { // means both are not reachable (box decision)
-      if (box_true_case_rs1_lo.size() > 0) {
-        // this is just to choose one box choice for the original operand var
-        choose_best_local_choice_between_boxes(box_index_true_i[0], box_index_true_j[0]);
-
-        true_reachable  = true;
-        true_branch_rs1_minterval_los[0] = box_true_case_rs1_lo[0];
-        true_branch_rs1_minterval_ups[0] = box_true_case_rs1_up[0];
-        true_branch_rs2_minterval_los[0] = box_true_case_rs2_lo[0];
-        true_branch_rs2_minterval_ups[0] = box_true_case_rs2_up[0];
-      } else if (box_false_case_rs1_lo.size() > 0) {
-        // this is just to choose one box choice for the original operand var
-        choose_best_local_choice_between_boxes(box_index_false_i[0], box_index_false_j[0]);
-
-        false_reachable = true;
-        false_branch_rs1_minterval_los[0] = box_false_case_rs1_lo[0];
-        false_branch_rs1_minterval_ups[0] = box_false_case_rs1_up[0];
-        false_branch_rs2_minterval_los[0] = box_false_case_rs2_lo[0];
-        false_branch_rs2_minterval_ups[0] = box_false_case_rs2_up[0];
-      }
-    } else {
-      // this is just to choose one box choice for the original operand var
-      choose_best_local_choice_between_boxes(box_index_true_i.back(), box_index_true_j.back());
-      // don't need for false
-
-      true_branch_rs1_minterval_los[0]  = box_true_case_rs1_lo.back();
-      true_branch_rs1_minterval_ups[0]  = box_true_case_rs1_up.back();
-      true_branch_rs2_minterval_los[0]  = box_true_case_rs2_lo.back();
-      true_branch_rs2_minterval_ups[0]  = box_true_case_rs2_up.back();
-
-      false_branch_rs1_minterval_los[0] = box_false_case_rs1_lo.back();
-      false_branch_rs1_minterval_ups[0] = box_false_case_rs1_up.back();
-      false_branch_rs2_minterval_los[0] = box_false_case_rs2_lo.back();
-      false_branch_rs2_minterval_ups[0] = box_false_case_rs2_up.back();
-    }
+    uint8_t result = diseq_box_decision_heuristic_2(conditional_type, lo1, up1, lo2, up2, true_reachable, false_reachable);
+    if (result != CAN_BE_HANDLED)
+      return result;
 
     // necessary for restore_input_table_to_before_applying_bvt_dumps
     // because of updates occured in input table as result of choose_best_local_choice_between_boxes we need this
