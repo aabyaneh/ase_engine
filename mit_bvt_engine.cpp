@@ -159,14 +159,22 @@ void mit_bvt_engine::init_engine(uint64_t peek_argument) {
   }
 }
 
+void mit_bvt_engine::print_input_witness(size_t i, size_t j, uint64_t lo, uint64_t up, uint64_t step) {
+  std::cout << std::left << MAGENTA "--INPUT :=  id: " << std::setw(3) << i+1 << ", #: " << std::setw(2) << j << " => [lo: " << std::setw(5) << lo << ", up: " << std::setw(5) << up << ", step: " << step << "]" << RESET << std::endl;
+}
+
 void mit_bvt_engine::witness_profile() {
   int64_t  cardinality;
   uint64_t current_number_of_witnesses = 1;
+
+  if (IS_PRINT_INPUT_WITNESSES_AT_ENDPOINT) std::cout << "\n-------------------------------------------------------------\n";
 
   for (size_t i = 0; i < input_table.size(); i++) {
     cardinality = 0;
     for (size_t j = 0; j < mintervals_los[input_table[i]].size(); j++) {
       cardinality += (mintervals_ups[input_table[i]][j] - mintervals_los[input_table[i]][j] + 1) / steps[input_table[i]];
+
+      if (IS_PRINT_INPUT_WITNESSES_AT_ENDPOINT) print_input_witness(i, j, mintervals_los[input_table[i]][j], mintervals_ups[input_table[i]][j], steps[input_table[i]]);
     }
 
     if (cardinality > 0)

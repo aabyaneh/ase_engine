@@ -14,10 +14,15 @@ void mit_box_bvt_engine::witness_profile() {
   int64_t  cardinality;
   uint64_t current_number_of_witnesses = 1;
 
+  if (IS_PRINT_INPUT_WITNESSES_AT_ENDPOINT) std::cout << "\n-------------------------------------------------------------\n";
+
   for (size_t i = 0; i < input_table.size(); i++) {
     cardinality = 0;
     for (size_t j = 0; j < mintervals_los[input_table[i]].size(); j++) {
       cardinality += (mintervals_ups[input_table[i]][j] - mintervals_los[input_table[i]][j] + 1) / steps[input_table[i]];
+
+      if (IS_PRINT_INPUT_WITNESSES_AT_ENDPOINT) mit_bvt_engine::print_input_witness(i, j, mintervals_los[input_table[i]][j], mintervals_ups[input_table[i]][j], steps[input_table[i]]);
+      
       if (theory_type_ast_nodes[input_table[i]] == BOX) break;
     }
 
