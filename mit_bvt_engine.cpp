@@ -172,7 +172,7 @@ void mit_bvt_engine::witness_profile() {
   for (size_t i = 0; i < input_table.size(); i++) {
     cardinality = 0;
     for (size_t j = 0; j < mintervals_los[input_table[i]].size(); j++) {
-      cardinality += (mintervals_ups[input_table[i]][j] - mintervals_los[input_table[i]][j] + 1) / steps[input_table[i]];
+      cardinality += (mintervals_ups[input_table[i]][j] - mintervals_los[input_table[i]][j]) / steps[input_table[i]] + 1;
 
       if (IS_PRINT_INPUT_WITNESSES_AT_ENDPOINT) print_input_witness(i, j, mintervals_los[input_table[i]][j], mintervals_ups[input_table[i]][j], steps[input_table[i]]);
     }
@@ -1009,10 +1009,10 @@ void mit_bvt_engine::apply_add() {
 
         reg_mintervals_los[rd][0] = registers[rd]; // one witness
         reg_mintervals_ups[rd][0] = registers[rd]; // one witness
-        reg_mintervals_cnts[rd] = 1;
-        reg_steps[rd]           = 1;
-        reg_theory_types[rd]    = BVT;
-        reg_asts[rd]            = add_ast_node(ADD, reg_asts[rs1], reg_asts[rs2], reg_mintervals_cnts[rd], reg_mintervals_los[rd], reg_mintervals_ups[rd], reg_steps[rd], reg_involved_inputs_cnts[rd], reg_involved_inputs[rd], reg_theory_types[rd], reg_bvts[rd]);
+        reg_mintervals_cnts[rd]   = 1;
+        reg_steps[rd]             = 1;
+        reg_theory_types[rd]      = std::max(std::max(reg_theory_types[rs1], reg_theory_types[rs2]), BVT);
+        reg_asts[rd]              = add_ast_node(ADD, reg_asts[rs1], reg_asts[rs2], reg_mintervals_cnts[rd], reg_mintervals_los[rd], reg_mintervals_ups[rd], reg_steps[rd], reg_involved_inputs_cnts[rd], reg_involved_inputs[rd], reg_theory_types[rd], reg_bvts[rd]);
 
       } else {
         // rd inherits rs1 constraint since rs2 has none
@@ -1170,7 +1170,7 @@ void mit_bvt_engine::apply_sub() {
         reg_mintervals_ups[rd][0] = registers[rd]; // one witness
         reg_mintervals_cnts[rd]   = 1;
         reg_steps[rd]             = 1;
-        reg_theory_types[rd]      = BVT;
+        reg_theory_types[rd]      = std::max(std::max(reg_theory_types[rs1], reg_theory_types[rs2]), BVT);
         reg_asts[rd]              = add_ast_node(SUB, reg_asts[rs1], reg_asts[rs2], reg_mintervals_cnts[rd], reg_mintervals_los[rd], reg_mintervals_ups[rd], reg_steps[rd], reg_involved_inputs_cnts[rd], reg_involved_inputs[rd], reg_theory_types[rd], reg_bvts[rd]);
 
       } else {
@@ -1381,6 +1381,7 @@ void mit_bvt_engine::apply_mul() {
 }
 
 void mit_bvt_engine::apply_divu() {
+  // TODO: if theory is ABVT may raise an unreal divison by zero
   do_divu();
 
   if (rd != REG_ZR) {
@@ -1408,7 +1409,7 @@ void mit_bvt_engine::apply_divu() {
         reg_mintervals_ups[rd][0] = registers[rd];
         reg_mintervals_cnts[rd]   = 1;
         reg_steps[rd]             = 1;
-        reg_theory_types[rd]      = BVT;
+        reg_theory_types[rd]      = std::max(reg_theory_types[rs1], BVT);
         reg_asts[rd]              = add_ast_node(DIVU, reg_asts[rs1], reg_asts[rs2], reg_mintervals_cnts[rd], reg_mintervals_los[rd], reg_mintervals_ups[rd], reg_steps[rd], reg_involved_inputs_cnts[rd], reg_involved_inputs[rd], reg_theory_types[rd], reg_bvts[rd]);
       }
     } else if (reg_symb_type[rs2] == SYMBOLIC) {
@@ -1426,7 +1427,7 @@ void mit_bvt_engine::apply_divu() {
       reg_mintervals_ups[rd][0] = registers[rd];
       reg_mintervals_cnts[rd]   = 1;
       reg_steps[rd]             = 1;
-      reg_theory_types[rd]      = BVT;
+      reg_theory_types[rd]      = std::max(reg_theory_types[rs2], BVT);
       reg_asts[rd]              = add_ast_node(DIVU, reg_asts[rs1], reg_asts[rs2], reg_mintervals_cnts[rd], reg_mintervals_los[rd], reg_mintervals_ups[rd], reg_steps[rd], reg_involved_inputs_cnts[rd], reg_involved_inputs[rd], reg_theory_types[rd], reg_bvts[rd]);
 
     } else {
@@ -1446,6 +1447,7 @@ void mit_bvt_engine::apply_divu() {
 }
 
 void mit_bvt_engine::apply_remu() {
+  // TODO: if theory is ABVT may raise an unreal remainder by zero
   do_remu();
 
   if (rd != REG_ZR) {
@@ -1473,7 +1475,7 @@ void mit_bvt_engine::apply_remu() {
         reg_mintervals_ups[rd][0] = registers[rd];
         reg_mintervals_cnts[rd]   = 1;
         reg_steps[rd]             = 1;
-        reg_theory_types[rd]      = BVT;
+        reg_theory_types[rd]      = std::max(reg_theory_types[rs1], BVT);
         reg_asts[rd]              = add_ast_node(REMU, reg_asts[rs1], reg_asts[rs2], reg_mintervals_cnts[rd], reg_mintervals_los[rd], reg_mintervals_ups[rd], reg_steps[rd], reg_involved_inputs_cnts[rd], reg_involved_inputs[rd], reg_theory_types[rd], reg_bvts[rd]);
       }
     } else if (reg_symb_type[rs2] == SYMBOLIC) {
@@ -1491,7 +1493,7 @@ void mit_bvt_engine::apply_remu() {
       reg_mintervals_ups[rd][0] = registers[rd];
       reg_mintervals_cnts[rd]   = 1;
       reg_steps[rd]             = 1;
-      reg_theory_types[rd]      = BVT;
+      reg_theory_types[rd]      = std::max(reg_theory_types[rs2], BVT);
       reg_asts[rd]              = add_ast_node(REMU, reg_asts[rs1], reg_asts[rs2], reg_mintervals_cnts[rd], reg_mintervals_los[rd], reg_mintervals_ups[rd], reg_steps[rd], reg_involved_inputs_cnts[rd], reg_involved_inputs[rd], reg_theory_types[rd], reg_bvts[rd]);
 
     } else {

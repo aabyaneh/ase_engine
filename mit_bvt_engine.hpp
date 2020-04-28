@@ -15,9 +15,8 @@ class mit_bvt_engine : public engine {
     // layered decision procedure
     // -------------------------
 
-    enum abstraction_layer : uint8_t {
-      MIT = 0, BOX = 1, BVT = 2, ABVT = 3 // modular interval theory, box, bit-vector theory, approximate bit-vector theory
-    };
+    // abstraction_layers
+    uint8_t MIT = 0, BOX = 1, BVT = 2, ABVT = 3; // modular interval theory, box, bit-vector theory, approximate bit-vector theory
 
     // -------------------------
     // the trace data structure

@@ -19,7 +19,7 @@ void mit_box_bvt_engine::witness_profile() {
   for (size_t i = 0; i < input_table.size(); i++) {
     cardinality = 0;
     for (size_t j = 0; j < mintervals_los[input_table[i]].size(); j++) {
-      cardinality += (mintervals_ups[input_table[i]][j] - mintervals_los[input_table[i]][j] + 1) / steps[input_table[i]];
+      cardinality += (mintervals_ups[input_table[i]][j] - mintervals_los[input_table[i]][j]) / steps[input_table[i]] + 1;
 
       if (IS_PRINT_INPUT_WITNESSES_AT_ENDPOINT) mit_bvt_engine::print_input_witness(i, j, mintervals_los[input_table[i]][j], mintervals_ups[input_table[i]][j], steps[input_table[i]]);
 
