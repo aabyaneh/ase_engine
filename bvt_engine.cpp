@@ -453,6 +453,7 @@ void bvt_engine::implement_symbolic_input(uint64_t* context) {
 
   // model range interval as SMT solver input variable
   sprintf(var_buffer, "in_%llu", symbolic_input_cnt);
+  boolector_push(btor, 1);
   in = boolector_var(btor, bv_sort, var_buffer);
   // <= up
   boolector_assert(btor, boolector_ulte(btor, in, boolector_unsigned_int_64(up)));
@@ -1640,6 +1641,9 @@ void bvt_engine::backtrack_ecall() {
     symbolic_input_cnt = input_table.size();
     store_trace_ptrs[asts[tc]].pop_back();
     input_table_store_trace_ptr.pop_back();
+
+    // input assertions should be poped
+    boolector_pop(btor, 1);
 
     store_virtual_memory(pt, vaddrs[tc], tcs[tc]);
   }
