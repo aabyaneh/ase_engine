@@ -162,6 +162,8 @@ class mit_bvt_engine : public engine {
     std::vector<uint64_t> input_table_ast_tcs_before_branch_evaluation;
     uint64_t total_number_of_generated_witnesses_for_all_paths = 0;
     uint64_t max_number_of_generated_witnesses_among_all_paths = 0;
+    bool     is_number_of_generated_witnesses_overflowed       = false;
+    unsigned __int128 current_number_of_witnesses;
     void     print_input_witness(size_t i, size_t j, uint64_t lo, uint64_t up, uint64_t step);
     virtual  void witness_profile();
 

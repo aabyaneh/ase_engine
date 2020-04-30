@@ -29,6 +29,7 @@ class bvt_engine : public engine {
     uint64_t MAX_AST_NODES_TRACE_LENGTH = 5 * MAX_TRACE_LENGTH;
     uint64_t AST_NODES_TRACE_LENGTH     = MAX_AST_NODES_TRACE_LENGTH / 2;
     uint64_t MEMORY_ALLOCATION_STEP_AST_NODES_TRACE = 10000000;
+    bool     IS_PRINT_INPUT_WITNESSES_AT_ENDPOINT   = false;
 
     // -------------------------
     // memory trace
@@ -143,6 +144,9 @@ class bvt_engine : public engine {
     std::vector<uint64_t> input_table_ast_tcs_before_branch_evaluation;
     uint64_t total_number_of_generated_witnesses_for_all_paths = 0;
     uint64_t max_number_of_generated_witnesses_among_all_paths = 0;
+    bool     is_number_of_generated_witnesses_overflowed       = false;
+    unsigned __int128 current_number_of_witnesses;
+    void     print_input_witness(size_t i, size_t j, uint64_t lo, uint64_t up);
     void     witness_profile();
 
     // -------------------------

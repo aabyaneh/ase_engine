@@ -11,8 +11,9 @@ void mit_box_bvt_engine::init_engine(uint64_t peek_argument) {
 }
 
 void mit_box_bvt_engine::witness_profile() {
-  int64_t  cardinality;
-  uint64_t current_number_of_witnesses = 1;
+  uint64_t cardinality;
+
+  current_number_of_witnesses = 1;
 
   if (IS_PRINT_INPUT_WITNESSES_AT_ENDPOINT) std::cout << "\n-------------------------------------------------------------\n";
 
@@ -26,22 +27,34 @@ void mit_box_bvt_engine::witness_profile() {
       if (theory_type_ast_nodes[input_table[i]] == BOX) break;
     }
 
-    if (cardinality > 0)
-      current_number_of_witnesses *= cardinality;
-    else
-      std::cout << exe_name << ": cardinality of an input is <= zero! " << std::endl;
+    if (cardinality > 0) {
+      if (is_number_of_generated_witnesses_overflowed == false) {
+        if (current_number_of_witnesses * cardinality > UINT64_MAX_T) // overflow?
+          is_number_of_generated_witnesses_overflowed = true;
+        else
+          current_number_of_witnesses *= cardinality;
+      }
+    } else
+      std::cout << exe_name << ": cardinality of an input is == zero! " << std::endl;
   }
 
   if (current_number_of_witnesses > max_number_of_generated_witnesses_among_all_paths)
     max_number_of_generated_witnesses_among_all_paths = current_number_of_witnesses;
 
   total_number_of_generated_witnesses_for_all_paths += current_number_of_witnesses;
+  if (total_number_of_generated_witnesses_for_all_paths < current_number_of_witnesses) // overflow?
+    is_number_of_generated_witnesses_overflowed = true;
 }
 
-void print_execution_info(uint64_t paths, uint64_t total_number_of_generated_witnesses_for_all_paths, uint64_t max_number_of_generated_witnesses_among_all_paths, uint64_t queries_reasoned_by_mit, uint64_t queries_reasoned_by_box, uint64_t queries_reasoned_by_bvt) {
+void print_execution_info(uint64_t paths, uint64_t total_number_of_generated_witnesses_for_all_paths, uint64_t max_number_of_generated_witnesses_among_all_paths, uint64_t queries_reasoned_by_mit, uint64_t queries_reasoned_by_box, uint64_t queries_reasoned_by_bvt, bool is_number_of_generated_witnesses_overflowed) {
   std::cout << "\n\n";
   std::cout << YELLOW "number of explored paths:= " << paths << RESET << std::endl;
-  std::cout << CYAN "number of witnesses:= total: " << total_number_of_generated_witnesses_for_all_paths << ", max: " << max_number_of_generated_witnesses_among_all_paths << RESET << std::endl;
+
+  if (is_number_of_generated_witnesses_overflowed == false)
+    std::cout << CYAN "number of witnesses:= total: " << total_number_of_generated_witnesses_for_all_paths << ", max: " << max_number_of_generated_witnesses_among_all_paths << RESET << std::endl;
+  else
+    std::cout << CYAN "number of witnesses:= total: > " << UINT64_MAX << ", max: !" << RESET << std::endl;
+
   std::cout << GREEN "number of queries:= mit: " << queries_reasoned_by_mit << ", box: " << queries_reasoned_by_box << ", bvt: " << queries_reasoned_by_bvt << RESET << "\n\n";
 }
 
@@ -77,7 +90,7 @@ uint64_t mit_box_bvt_engine::run_engine(uint64_t* to_context) {
       print_integer(paths);
 
       if (pc == 0) {
-        print_execution_info(paths, total_number_of_generated_witnesses_for_all_paths, max_number_of_generated_witnesses_among_all_paths, queries_reasoned_by_mit, queries_reasoned_by_box, queries_reasoned_by_bvt);
+        print_execution_info(paths, total_number_of_generated_witnesses_for_all_paths, max_number_of_generated_witnesses_among_all_paths, queries_reasoned_by_mit, queries_reasoned_by_box, queries_reasoned_by_bvt, is_number_of_generated_witnesses_overflowed);
 
         if (symbolic_input_cnt != 0)
           std::cout << "symbolic_input_cnt is not zero!\n";
