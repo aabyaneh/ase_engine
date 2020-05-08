@@ -2396,6 +2396,10 @@ BoolectorNode* bvt_engine::boolector_op(uint8_t op, uint64_t ast_tc) {
     case INEQ: {
       return smt_exprs[ast_tc] = boolector_ne(btor, smt_exprs[ast_nodes[ast_tc].left_node], smt_exprs[ast_nodes[ast_tc].right_node]);
     }
+    default: {
+      std::cout << "never be reached" << '\n';
+      exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
+    }
   }
 }
 
@@ -2601,6 +2605,10 @@ uint64_t bvt_engine::recompute_operation(uint8_t op, uint64_t left_operand_ast_t
       return compute_divu(left_operand_ast_tc, right_operand_ast_tc, old_ast_tc, theory_type, symbolic_operands);
     case REMU:
       return compute_remu(left_operand_ast_tc, right_operand_ast_tc, old_ast_tc, theory_type, symbolic_operands);
+    default: {
+      std::cout << "never be reached" << '\n';
+      exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
+    }
   }
 }
 

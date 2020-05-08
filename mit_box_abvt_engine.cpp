@@ -406,7 +406,7 @@ void mit_box_abvt_engine::create_sltu_constraints(std::vector<uint64_t>& lo1_p, 
       if (branch_is_found_in_cache != cached_reachability_results_for_explored_branches.end()) {
         cached_reachability_results_for_explored_branches[pc] = (true_reachable << 1) | false_reachable;
       } else {
-        cached_reachability_results_for_explored_branches.insert(std::make_pair<uint64_t, uint8_t>(pc, (true_reachable << 1) | false_reachable) );
+        cached_reachability_results_for_explored_branches.insert(std::make_pair(pc, (true_reachable << 1) | false_reachable) );
       }
     }
 
@@ -655,7 +655,7 @@ void mit_box_abvt_engine::create_xor_constraints(std::vector<uint64_t>& lo1_p, s
       if (branch_is_found_in_cache != cached_reachability_results_for_explored_branches.end()) {
         cached_reachability_results_for_explored_branches[pc] = (true_reachable << 1) | false_reachable;
       } else {
-        cached_reachability_results_for_explored_branches.insert(std::make_pair<uint64_t, uint8_t>(pc, (true_reachable << 1) | false_reachable) );
+        cached_reachability_results_for_explored_branches.insert(std::make_pair(pc, (true_reachable << 1) | false_reachable) );
       }
     }
 

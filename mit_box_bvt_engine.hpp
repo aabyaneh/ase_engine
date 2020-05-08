@@ -24,7 +24,7 @@ class mit_box_bvt_engine : public mit_bvt_engine {
     uint32_t  NUMBER_OF_HEURISTIC_UNDER_APPROX_BOXES = 2;
 
     uint64_t backward_propagation_of_under_approximate_box(uint64_t ast_tc, std::vector<uint64_t>& lo, std::vector<uint64_t>& up, size_t mints_num, uint64_t input_box);
-    uint64_t constrain_memory_under_approximate_box(uint64_t reg, uint64_t ast_tc, std::vector<uint64_t>& lo, std::vector<uint64_t>& up, size_t mints_num, uint64_t input_box);
+    void     constrain_memory_under_approximate_box(uint64_t reg, uint64_t ast_tc, std::vector<uint64_t>& lo, std::vector<uint64_t>& up, size_t mints_num, uint64_t input_box);
     void     evaluate_sltu_true_branch_under_approximate_box(uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t up2);
     void     evaluate_sltu_false_branch_under_approximate_box(uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t up2);
     virtual  void generate_and_apply_sltu_boxes(uint8_t conditional_type, uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t up2);

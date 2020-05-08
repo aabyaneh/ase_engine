@@ -14,6 +14,11 @@ uint64_t EXITCODE_BADARGUMENTS = 1;
 uint64_t run() {
   uint64_t exit_code;
 
+  if (sizeof(uint64_t) != 8) {
+    std::cout << "sizeof uint64_t is not 8!\n";
+    return EXITCODE_BADARGUMENTS;
+  }
+
   if (current_engine->binary_length == 0) {
     std::cout << "nothing to run \n";
 

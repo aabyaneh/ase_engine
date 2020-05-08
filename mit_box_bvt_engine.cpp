@@ -445,7 +445,7 @@ void mit_box_bvt_engine::create_xor_constraints(std::vector<uint64_t>& lo1_p, st
 // ------------------- under_approximate decision procedure --------------------
 // -----------------------------------------------------------------------------
 
-uint64_t mit_box_bvt_engine::constrain_memory_under_approximate_box(uint64_t reg, uint64_t ast_tc, std::vector<uint64_t>& lo, std::vector<uint64_t>& up, size_t mints_num, uint64_t input_box) {
+void mit_box_bvt_engine::constrain_memory_under_approximate_box(uint64_t reg, uint64_t ast_tc, std::vector<uint64_t>& lo, std::vector<uint64_t>& up, size_t mints_num, uint64_t input_box) {
   if (reg_symb_type[reg] == SYMBOLIC) {
     backward_propagation_of_under_approximate_box(ast_tc, lo, up, mints_num, input_box);
   }

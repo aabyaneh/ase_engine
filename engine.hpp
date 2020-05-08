@@ -8,17 +8,17 @@
 #ifndef FILE_ENGINE_INCLUDED
 #define FILE_ENGINE_INCLUDED
 
-#include <stdint.h>
+#include <cstdint>
 #include <iostream>
 #include <fcntl.h>
 #include <unistd.h>
 #include <vector>
-#include <string>
+#include <cstring>
 #include <fstream>
 #include <iomanip>
 #include <algorithm>
 #include <iterator>
-#include "boolector/boolector.h"
+#include "boolector.h"
 
 #define RED     "\x1B[31m"
 #define GREEN   "\033[32m"
@@ -28,7 +28,7 @@
 #define MAGENTA "\x1B[35m"
 #define RESET   "\x1B[0m"
 
-typedef unsigned long long uint64_t;
+// typedef unsigned long long uint64_t;
 
 class engine {
   public:
