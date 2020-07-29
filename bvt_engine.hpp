@@ -29,7 +29,6 @@ class bvt_engine : public engine {
     uint64_t MAX_AST_NODES_TRACE_LENGTH = 5 * MAX_TRACE_LENGTH;
     uint64_t AST_NODES_TRACE_LENGTH     = MAX_AST_NODES_TRACE_LENGTH / 2;
     uint64_t MEMORY_ALLOCATION_STEP_AST_NODES_TRACE = 10000000;
-    bool     IS_PRINT_INPUT_WITNESSES_AT_ENDPOINT   = false;
 
     // -------------------------
     // memory trace

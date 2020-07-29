@@ -50,6 +50,8 @@ class engine {
     uint64_t number_of_written_characters = 0;
     uint64_t output_fd = 1;     // 1 is file descriptor of standard output
 
+    bool     IS_PRINT_INPUT_WITNESSES_AT_ENDPOINT = false;
+
     // -----------------------------------------------------------------
     // ----------------------- LIBRARY PROCEDURES ----------------------
     // -----------------------------------------------------------------

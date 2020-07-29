@@ -98,6 +98,11 @@ void print_usage() {
   std::cout << "   mit, bit-vector abstractions:                 executable -l binary -mit_bvt\n";
   std::cout << "   mit, box, bit-vector abstractions:            executable -l binary -mit_box_bvt\n";
   std::cout << "   mit, box, over-apprx bit-vector abstractions: executable -l binary -mit_box_abvt \"period\"\n";
+  std::cout << "- ase engine with printing witnesses\n";
+  std::cout << "   bit-vector abstraction:                       executable -l binary -witness -bvt\n";
+  std::cout << "   mit, bit-vector abstractions:                 executable -l binary -witness -mit_bvt\n";
+  std::cout << "   mit, box, bit-vector abstractions:            executable -l binary -witness -mit_box_bvt\n";
+  std::cout << "   mit, box, over-apprx bit-vector abstractions: executable -l binary -witness -mit_box_abvt \"period\"\n";
   std::cout << RESET << '\n';
 }
 
@@ -106,6 +111,7 @@ int main(int argc, char* argv[]) {
   char* exe_name = (char*) 0;
   char* load_file_name = (char*) 0;
   uint64_t running_arg = 0;
+  bool print_witness = false;
 
   init_args(argc, argv);
   exe_name = get_argument();
@@ -122,30 +128,40 @@ int main(int argc, char* argv[]) {
     }
 
     option = get_argument();
+
+    if (!strcmp(option, "-witness")) {
+      print_witness = true;
+      option = get_argument();
+    }
+
     if (!strcmp(option, "-concrete")) {
       running_arg = std::atoi(get_argument());
       current_engine = new engine();
       current_engine->exe_name = exe_name;
       current_engine->init_engine(running_arg);
       current_engine->selfie_load(load_file_name);
+      if (print_witness) current_engine->IS_PRINT_INPUT_WITNESSES_AT_ENDPOINT = true;
       return run();
     } else if (!strcmp(option, "-bvt")) {
       current_engine = new bvt_engine();
       current_engine->exe_name = exe_name;
       current_engine->init_engine(running_arg);
       current_engine->selfie_load(load_file_name);
+      if (print_witness) current_engine->IS_PRINT_INPUT_WITNESSES_AT_ENDPOINT = true;
       return run();
     } else if (!strcmp(option, "-mit_bvt")) {
       current_engine = new mit_bvt_engine();
       current_engine->exe_name = exe_name;
       current_engine->init_engine(running_arg);
       current_engine->selfie_load(load_file_name);
+      if (print_witness) current_engine->IS_PRINT_INPUT_WITNESSES_AT_ENDPOINT = true;
       return run();
     } else if (!strcmp(option, "-mit_box_bvt")) {
       current_engine = new mit_box_bvt_engine();
       current_engine->exe_name = exe_name;
       current_engine->init_engine(running_arg);
       current_engine->selfie_load(load_file_name);
+      if (print_witness) current_engine->IS_PRINT_INPUT_WITNESSES_AT_ENDPOINT = true;
       return run();
     } else if (!strcmp(option, "-mit_box_abvt")) {
       running_arg = std::atoi(get_argument());
@@ -153,6 +169,7 @@ int main(int argc, char* argv[]) {
       current_engine->exe_name = exe_name;
       current_engine->init_engine(running_arg);
       current_engine->selfie_load(load_file_name);
+      if (print_witness) current_engine->IS_PRINT_INPUT_WITNESSES_AT_ENDPOINT = true;
       return run();
     } else {
       print_usage();
