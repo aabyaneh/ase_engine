@@ -1,4 +1,4 @@
-# Abstract Symbolic Execution Engine
+# Symbolic Execution Engine
 
 ## Prerequisite
 [Boolector](https://boolector.github.io) SMT solver.
