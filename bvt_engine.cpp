@@ -179,15 +179,15 @@ void bvt_engine::witness_profile() {
 }
 
 void print_execution_info(uint64_t paths, uint64_t total_number_of_generated_witnesses_for_all_paths, uint64_t max_number_of_generated_witnesses_among_all_paths, uint64_t queries_reasoned_by_bvt, bool is_number_of_generated_witnesses_overflowed) {
-  std::cout << "\n\n";
-  std::cout << YELLOW "number of explored paths:= " << paths << RESET << std::endl;
+  std::cout << "\n";
+  std::cout << "number of explored paths:= " << paths << std::endl;
 
   if (is_number_of_generated_witnesses_overflowed == false)
-    std::cout << CYAN "number of witnesses:= total: " << total_number_of_generated_witnesses_for_all_paths << ", max: " << max_number_of_generated_witnesses_among_all_paths << RESET << std::endl;
+    std::cout << "number of witnesses:= total: " << total_number_of_generated_witnesses_for_all_paths << ", max: " << max_number_of_generated_witnesses_among_all_paths << std::endl;
   else
-    std::cout << CYAN "number of witnesses:= total: > " << UINT64_MAX << ", max: !" << RESET << std::endl;
+    std::cout << "number of witnesses:= total: > " << UINT64_MAX << ", max: !" << std::endl;
 
-  std::cout << GREEN "number of queries:= bvt: " << queries_reasoned_by_bvt << RESET << "\n\n";
+  std::cout << "number of queries:= bvt: " << queries_reasoned_by_bvt << "\n\n";
 }
 
 uint64_t bvt_engine::run_engine(uint64_t* to_context) {
@@ -213,13 +213,30 @@ uint64_t bvt_engine::run_engine(uint64_t* to_context) {
         output_results << "B=" << paths+1 << "\n";
       }
 
-      witness_profile();
+      if (does_path_need_to_be_reasoned_by_smt == false) {
+        if (paths == 0) std::cout << exe_name << ": backtracking \n"; else unprint_integer(paths);
+        paths++;
+        print_integer(paths);
+        witness_profile();
+
+      } else {
+        queries_reasoned_by_bvt++;
+        if (boolector_sat(btor) == BOOLECTOR_SAT) {
+          if (paths == 0) std::cout << exe_name << ": backtracking \n"; else unprint_integer(paths);
+          paths++;
+          print_integer(paths);
+
+          // dump inputs taken from smt, because this path was reasoned lazily so at end-point inputs should be updated with correct values
+          // for print and test generation purpose
+          refine_abvt_abstraction_by_dumping_all_input_variables_on_trace_bvt();
+
+          does_path_need_to_be_reasoned_by_smt = false;
+
+          witness_profile();
+        }
+      }
 
       backtrack_trace(current_context);
-
-      if (paths == 0) std::cout << exe_name << ": backtracking \n"; else unprint_integer(paths);
-      paths++;
-      print_integer(paths);
 
       if (pc == 0) {
         print_execution_info(paths, total_number_of_generated_witnesses_for_all_paths, max_number_of_generated_witnesses_among_all_paths, queries_reasoned_by_bvt, is_number_of_generated_witnesses_overflowed);
@@ -232,6 +249,12 @@ uint64_t bvt_engine::run_engine(uint64_t* to_context) {
 
         return EXITCODE_NOERROR;
       }
+    }
+
+    if (is_execution_timeout) {
+      print_execution_info(paths, total_number_of_generated_witnesses_for_all_paths, max_number_of_generated_witnesses_among_all_paths, queries_reasoned_by_bvt, is_number_of_generated_witnesses_overflowed);
+
+      return EXITCODE_TIMEOUT;
     }
   }
 }
@@ -497,7 +520,7 @@ void bvt_engine::implement_symbolic_input(uint64_t* context) {
   input_table_store_trace_ptr.push_back(tc);
 
   // print on console
-  std::cout << std::left << "read symbolic input interval # " << std::setw(3) << symbolic_input_cnt << " => [lo: " << lo << ", up: " << up << ", step: " << 1 << "]\n";
+  // std::cout << std::left << "read symbolic input interval # " << std::setw(3) << symbolic_input_cnt << " => [lo: " << lo << ", up: " << up << ", step: " << 1 << "]\n";
 
   symbolic_input_cnt++;
 
@@ -1959,8 +1982,16 @@ void bvt_engine::create_sltu_constraints() {
 
   if (cannot_handle) {
     check_operands_smt_expressions();
-    false_reachable = check_sat_false_branch_bvt(boolector_ugte(btor, reg_bvts[rs1], reg_bvts[rs2]));
-    true_reachable  = check_sat_true_branch_bvt (boolector_ult (btor, reg_bvts[rs1], reg_bvts[rs2]));
+
+    true_reachable  = check_sat_true_branch_bvt(boolector_ult(btor, reg_bvts[rs1], reg_bvts[rs2]));
+    if (true_reachable == false) {
+      false_reachable = true;
+      does_path_need_to_be_reasoned_by_smt = true;
+      sltu_instruction = pc; // this is because I need to change pc of the trace entry when dump inputs at end-point (don't want to be exit syscall)
+    } else {
+      false_reachable = check_sat_false_branch_bvt(boolector_ugte(btor, reg_bvts[rs1], reg_bvts[rs2]));
+      does_path_need_to_be_reasoned_by_smt = false;
+    }
 
     if (true_reachable) {
       if (false_reachable) {
@@ -2020,8 +2051,16 @@ void bvt_engine::create_xor_constraints() {
 
   if (cannot_handle) {
     check_operands_smt_expressions();
-    false_reachable = check_sat_false_branch_bvt(boolector_eq(btor, reg_bvts[rs1], reg_bvts[rs2]));
-    true_reachable  = check_sat_true_branch_bvt (boolector_ne(btor, reg_bvts[rs1], reg_bvts[rs2]));
+
+    true_reachable  = check_sat_true_branch_bvt(boolector_ne(btor, reg_bvts[rs1], reg_bvts[rs2]));
+    if (true_reachable == false) {
+      false_reachable = true;
+      does_path_need_to_be_reasoned_by_smt = true;
+      sltu_instruction = pc; // this is because I need to change pc of the trace entry when dump inputs at end-point (don't want to be exit syscall)
+    } else {
+      false_reachable = check_sat_false_branch_bvt(boolector_eq(btor, reg_bvts[rs1], reg_bvts[rs2]));
+      does_path_need_to_be_reasoned_by_smt = false;
+    }
 
     if (true_reachable) {
       if (false_reachable) {
@@ -2636,5 +2675,35 @@ uint64_t bvt_engine::update_current_constraint_on_ast_expression(uint64_t ast_tc
     left_operand_ast_tc  = update_current_constraint_on_ast_expression(ast_nodes[ast_tc].left_node);
     right_operand_ast_tc = update_current_constraint_on_ast_expression(ast_nodes[ast_tc].right_node);
     return recompute_operation(ast_nodes[ast_tc].type, left_operand_ast_tc, right_operand_ast_tc, ast_tc, theory_type, symbolic_operands);
+  }
+}
+
+void bvt_engine::refine_abvt_abstraction_by_dumping_all_input_variables_on_trace_bvt() {
+  uint64_t ast_ptr, involved_input, stored_to_tc, mr_stored_to_tc;
+  bool is_assigned;
+
+  input_assignments.clear();
+  for (size_t i = 0; i < input_table.size(); i++) {
+    input_assignments.push_back(boolector_bv_assignment(btor, smt_exprs[asts[input_table_store_trace_ptr[i]]] ) );
+  }
+
+  for (size_t i = 0; i < input_table.size(); i++) {
+    involved_input = input_table[i];
+    is_assigned = false;
+    value_v[0] = std::stoull(input_assignments[ast_nodes[involved_input].right_node], 0, 2);
+    ast_ptr = add_ast_node(VAR, 0, ast_nodes[involved_input].right_node, value_v, value_v, 0, zero_v, smt_exprs[involved_input], SYMBOLIC);
+    for (size_t k = 0; k < store_trace_ptrs[involved_input].size(); k++) {
+      stored_to_tc    = store_trace_ptrs[involved_input][k];
+      mr_stored_to_tc = load_symbolic_memory(pt, vaddrs[stored_to_tc]);
+      mr_stored_to_tc = mr_sds[mr_stored_to_tc];
+      if (mr_stored_to_tc <= stored_to_tc) {
+        store_symbolic_memory(pt, vaddrs[stored_to_tc], value_v[0], VALUE_T, ast_ptr, tc, 0, SYMBOLIC); pcs[tc] = sltu_instruction; // careful
+        is_assigned = true;
+      }
+    }
+    if (is_assigned == false) {
+      store_input_record(ast_ptr, input_table.at(ast_nodes[involved_input].right_node), SYMBOLIC); pcs[tc] = sltu_instruction; // careful
+    }
+    input_table.at(ast_nodes[involved_input].right_node) = ast_ptr;
   }
 }

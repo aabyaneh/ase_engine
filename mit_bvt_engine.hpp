@@ -24,9 +24,9 @@ class mit_bvt_engine : public engine {
 
     uint64_t MAX_NUM_OF_INTERVALS       = 2001;
     uint64_t MAX_NUM_OF_INVOLVED_INPUTS = 100;
-    uint64_t MAX_TRACE_LENGTH           = 10000000;
-    uint64_t MAX_AST_NODES_TRACE_LENGTH = 5 * MAX_TRACE_LENGTH;
-    uint64_t AST_NODES_TRACE_LENGTH     = MAX_AST_NODES_TRACE_LENGTH / 2;
+    uint64_t MAX_TRACE_LENGTH           = 20000000;
+    uint64_t MAX_AST_NODES_TRACE_LENGTH = 10 * MAX_TRACE_LENGTH;
+    uint64_t AST_NODES_TRACE_LENGTH     = MAX_AST_NODES_TRACE_LENGTH / 8;
     uint64_t MEMORY_ALLOCATION_STEP_AST_NODES_TRACE = 10000000;
 
     // -------------------------
@@ -103,10 +103,6 @@ class mit_bvt_engine : public engine {
 
     uint64_t zero_node;
     uint64_t one_node;
-    uint64_t queries_reasoned_by_mit = 0; // number of queries handled by mit
-    uint64_t queries_reasoned_by_bvt = 0; // number of queries handled by bvt
-    uint64_t queries_reasoned_by_bvt_sat = 0; // number of queries returned sat handled by bvt
-    uint64_t paths = 0;
 
     // detection of symbolic operand in an expression
     enum symbolic_operands_in_an_expression : uint8_t {
@@ -180,6 +176,7 @@ class mit_bvt_engine : public engine {
     // smt's witness
     std::vector<const char*> true_input_assignments;
     std::vector<const char*> false_input_assignments;
+    std::vector<const char*> input_assignments;
 
     BoolectorNode*         boolector_null = (BoolectorNode*) 0;
     std::vector<uint64_t>  path_condition;
@@ -280,10 +277,11 @@ class mit_bvt_engine : public engine {
     virtual  void  create_xor_constraints(std::vector<uint64_t>& lo1_p, std::vector<uint64_t>& up1_p, std::vector<uint64_t>& lo2_p, std::vector<uint64_t>& up2_p, uint64_t trb);
     bool     check_sat_true_branch_bvt(BoolectorNode* assert);
     bool     check_sat_false_branch_bvt(BoolectorNode* assert);
-    void     dump_involving_input_variables_true_branch_bvt();
-    void     dump_involving_input_variables_false_branch_bvt();
-    void     dump_all_input_variables_on_trace_true_branch_bvt();
-    void     dump_all_input_variables_on_trace_false_branch_bvt();
+    void     dump_involving_input_variables_true_branch_bvt(bool);
+    void     dump_involving_input_variables_false_branch_bvt(bool);
+    void     dump_all_input_variables_on_trace_true_branch_bvt(bool);
+    void     dump_all_input_variables_on_trace_false_branch_bvt(bool);
+    void     refine_abvt_abstraction_by_dumping_all_input_variables_on_trace_bvt();
     bool     match_addi_instruction();
     bool     match_sub_instruction(uint64_t prev_instr_rd);
     uint8_t  check_conditional_type_whether_is_equality_or_disequality();

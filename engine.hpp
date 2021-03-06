@@ -487,6 +487,7 @@ class engine {
     uint64_t EXITCODE_SYMBOLICEXECUTIONERROR = 12;
     uint64_t EXITCODE_OUTOFTRACEMEMORY       = 13;
     uint64_t EXITCODE_UNCAUGHTEXCEPTION      = 14;
+    uint64_t EXITCODE_TIMEOUT                = 16;
 
     uint64_t SYSCALL_BITWIDTH = 32; // integer bit width for system calls
 
@@ -510,6 +511,27 @@ class engine {
     virtual   void      init_engine(uint64_t peek_argument);
     virtual   uint64_t  run_engine(uint64_t* to_context);
 
+    // ----------------------------------------------------------------
+    // timeout
+    // ----------------------------------------------------------------
+    bool is_execution_finished = false;
+    bool is_execution_timeout  = false;
+
+    // ----------------------------------------------------------------
+    // symbolic execution profile
+    // ----------------------------------------------------------------
+    uint64_t queries_reasoned_by_mit = 0; // number of queries handled by mit
+    uint64_t queries_reasoned_by_bvt = 0; // number of queries handled by bvt
+    uint64_t queries_reasoned_by_bvt_sat = 0; // number of queries returned sat handled by bvt
+    uint64_t paths = 0;
+    uint64_t queries_reasoned_by_box = 0; // number of queries handled by box
+    uint64_t queries_reasoned_by_overapprx = 0;
+
+    // ----------------------------------------------------------------
+    // over-approximating path reasoning
+    // ----------------------------------------------------------------
+    bool does_path_need_to_be_reasoned_by_smt = false;
+    uint64_t sltu_instruction = -1;
 };
 
 #endif /* FILE_ENGINE_INCLUDED */

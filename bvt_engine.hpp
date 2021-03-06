@@ -100,8 +100,8 @@ class bvt_engine : public engine {
 
     uint64_t zero_node;
     uint64_t one_node;
-    uint64_t queries_reasoned_by_bvt = 0; // number of queries handled by bvt
-    uint64_t paths = 0;
+    // uint64_t queries_reasoned_by_bvt = 0; // number of queries handled by bvt
+    // uint64_t paths = 0;
 
     // detection of symbolic operand in an expression
     enum symbolic_operands_in_an_expression : uint8_t {
@@ -162,6 +162,7 @@ class bvt_engine : public engine {
     // smt's witness
     std::vector<const char*> true_input_assignments;
     std::vector<const char*> false_input_assignments;
+    std::vector<const char*> input_assignments;
 
     BoolectorNode*         boolector_null = (BoolectorNode*) 0;
     uint64_t               most_recent_if_on_ast_trace = 0;
@@ -267,6 +268,7 @@ class bvt_engine : public engine {
     void           check_operands_smt_expressions();
     BoolectorNode* create_smt_expression(uint64_t ast_tc);
     BoolectorNode* boolector_op(uint8_t op, uint64_t ast_tc);
+    void     refine_abvt_abstraction_by_dumping_all_input_variables_on_trace_bvt();
 
     // ---------------------------
     // on-demand propagation

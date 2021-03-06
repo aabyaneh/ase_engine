@@ -1628,6 +1628,8 @@ void engine::implement_brk(uint64_t* context) {
   if (valid) {
     set_program_break(context, program_break);
 
+    get_regs(context)[REG_A0] = previous_program_break;
+
   } else {
     // error returns current program break
     program_break = previous_program_break;
