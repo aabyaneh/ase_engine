@@ -1997,8 +1997,8 @@ void bvt_engine::create_sltu_constraints() {
       if (false_reachable) {
         if (check_conditional_type_whether_is_strict_less_than_or_is_less_greater_than_eq() == LGTE) {
           // false
-          dump_involving_input_variables_true_branch_bvt();
-          dump_all_input_variables_on_trace_true_branch_bvt();
+          dump_involving_input_variables_true_branch_bvt(false);
+          dump_all_input_variables_on_trace_true_branch_bvt(false);
           take_branch(1, 1);
           asts[tc-2]               = 0; // important for backtracking
           bvt_false_branches[tc-2] = boolector_ult(btor, reg_bvts[rs1], reg_bvts[rs2]); // careful
@@ -2006,13 +2006,13 @@ void bvt_engine::create_sltu_constraints() {
           // true
           boolector_push(btor, 1);
           boolector_assert(btor, boolector_ugte(btor, reg_bvts[rs1], reg_bvts[rs2]));
-          dump_involving_input_variables_false_branch_bvt();
-          dump_all_input_variables_on_trace_false_branch_bvt();
+          dump_involving_input_variables_false_branch_bvt(false);
+          dump_all_input_variables_on_trace_false_branch_bvt(false);
           take_branch(0, 0);
         } else {
           // false
-          dump_involving_input_variables_false_branch_bvt();
-          dump_all_input_variables_on_trace_false_branch_bvt();
+          dump_involving_input_variables_false_branch_bvt(false);
+          dump_all_input_variables_on_trace_false_branch_bvt(false);
           take_branch(0, 1);
           asts[tc-2]               = 0; // important for backtracking
           bvt_false_branches[tc-2] = boolector_ugte(btor, reg_bvts[rs1], reg_bvts[rs2]); // carefull
@@ -2020,18 +2020,18 @@ void bvt_engine::create_sltu_constraints() {
           // true
           boolector_push(btor, 1);
           boolector_assert(btor, boolector_ult(btor, reg_bvts[rs1], reg_bvts[rs2]));
-          dump_involving_input_variables_true_branch_bvt();
-          dump_all_input_variables_on_trace_true_branch_bvt();
+          dump_involving_input_variables_true_branch_bvt(false);
+          dump_all_input_variables_on_trace_true_branch_bvt(false);
           take_branch(1, 0);
         }
       } else {
-        dump_involving_input_variables_true_branch_bvt();
-        dump_all_input_variables_on_trace_true_branch_bvt();
+        dump_involving_input_variables_true_branch_bvt(false);
+        dump_all_input_variables_on_trace_true_branch_bvt(false);
         take_branch(1, 0);
       }
     } else if (false_reachable) {
-      dump_involving_input_variables_false_branch_bvt();
-      dump_all_input_variables_on_trace_false_branch_bvt();
+      dump_involving_input_variables_false_branch_bvt(true);
+      dump_all_input_variables_on_trace_false_branch_bvt(true);
       take_branch(0, 0);
     } else {
       std::cout << exe_name << ": both branches unreachable! at 0x" << std::hex << pc - entry_point << std::dec << std::endl;
@@ -2066,8 +2066,8 @@ void bvt_engine::create_xor_constraints() {
       if (false_reachable) {
         if (check_conditional_type_whether_is_equality_or_disequality() == EQ) {
           // false
-          dump_involving_input_variables_true_branch_bvt();
-          dump_all_input_variables_on_trace_true_branch_bvt();
+          dump_involving_input_variables_true_branch_bvt(false);
+          dump_all_input_variables_on_trace_true_branch_bvt(false);
           take_branch(1, 1);
           asts[tc-2]               = 0; // important for backtracking
           bvt_false_branches[tc-2] = boolector_ne(btor, reg_bvts[rs1], reg_bvts[rs2]); // carefull
@@ -2075,13 +2075,13 @@ void bvt_engine::create_xor_constraints() {
           // true
           boolector_push(btor, 1);
           boolector_assert(btor, boolector_eq(btor, reg_bvts[rs1], reg_bvts[rs2]));
-          dump_involving_input_variables_false_branch_bvt();
-          dump_all_input_variables_on_trace_false_branch_bvt();
+          dump_involving_input_variables_false_branch_bvt(false);
+          dump_all_input_variables_on_trace_false_branch_bvt(false);
           take_branch(0, 0);
         } else {
           // false
-          dump_involving_input_variables_false_branch_bvt();
-          dump_all_input_variables_on_trace_false_branch_bvt();
+          dump_involving_input_variables_false_branch_bvt(false);
+          dump_all_input_variables_on_trace_false_branch_bvt(false);
           take_branch(0, 1);
           asts[tc-2]               = 0; // important for backtracking
           bvt_false_branches[tc-2] = boolector_eq(btor, reg_bvts[rs1], reg_bvts[rs2]); // carefull
@@ -2089,18 +2089,18 @@ void bvt_engine::create_xor_constraints() {
           // true
           boolector_push(btor, 1);
           boolector_assert(btor, boolector_ne(btor, reg_bvts[rs1], reg_bvts[rs2]));
-          dump_involving_input_variables_true_branch_bvt();
-          dump_all_input_variables_on_trace_true_branch_bvt();
+          dump_involving_input_variables_true_branch_bvt(false);
+          dump_all_input_variables_on_trace_true_branch_bvt(false);
           take_branch(1, 0);
         }
       } else {
-        dump_involving_input_variables_true_branch_bvt();
-        dump_all_input_variables_on_trace_true_branch_bvt();
+        dump_involving_input_variables_true_branch_bvt(false);
+        dump_all_input_variables_on_trace_true_branch_bvt(false);
         take_branch(1, 0);
       }
     } else if (false_reachable) {
-      dump_involving_input_variables_false_branch_bvt();
-      dump_all_input_variables_on_trace_false_branch_bvt();
+      dump_involving_input_variables_false_branch_bvt(true);
+      dump_all_input_variables_on_trace_false_branch_bvt(true);
       take_branch(0, 0);
     } else {
       std::cout << exe_name << ": both branches unreachable! at 0x" << std::hex << pc - entry_point << std::dec << std::endl;
@@ -2145,7 +2145,7 @@ bool bvt_engine::check_sat_false_branch_bvt(BoolectorNode* assert) {
   return result;
 }
 
-void bvt_engine::dump_involving_input_variables_true_branch_bvt() {
+void bvt_engine::dump_involving_input_variables_true_branch_bvt(bool is_branch_reasoned_based_on_guess) {
   uint64_t ast_ptr, involved_input_ast_tc, stored_to_tc, mr_stored_to_tc;
   bool is_assigned;
 
@@ -2154,7 +2154,11 @@ void bvt_engine::dump_involving_input_variables_true_branch_bvt() {
     for (size_t i = 0; i < involved_sym_inputs_cnts[reg_asts[rs1]]; i++) {
       involved_input_ast_tc = involved_sym_inputs_ast_tcs[reg_asts[rs1]][i];
       involved_inputs_in_current_conditional_expression_rs1_operand.push_back(ast_nodes[involved_input_ast_tc].right_node);
-      value_v[0] = std::stoull(true_input_assignments[ast_nodes[involved_input_ast_tc].right_node], 0, 2);
+      if (!is_branch_reasoned_based_on_guess) {
+        value_v[0] = std::stoull(true_input_assignments[ast_nodes[involved_input_ast_tc].right_node], 0, 2);
+      } else {
+        value_v[0]  = mintervals_los[involved_input_ast_tc][0]; // previous witness, might be an incorrect witness after application of the current conditional but no problem
+      }
       ast_ptr = add_ast_node(VAR, 0, ast_nodes[involved_input_ast_tc].right_node, value_v, value_v, 0, zero_v, smt_exprs[involved_input_ast_tc], SYMBOLIC);
       is_assigned = false;
       for (size_t k = 0; k < store_trace_ptrs[involved_input_ast_tc].size(); k++) {
@@ -2179,7 +2183,11 @@ void bvt_engine::dump_involving_input_variables_true_branch_bvt() {
     for (size_t i = 0; i < involved_sym_inputs_cnts[reg_asts[rs2]]; i++) {
       involved_input_ast_tc = involved_sym_inputs_ast_tcs[reg_asts[rs2]][i];
       involved_inputs_in_current_conditional_expression_rs2_operand.push_back(ast_nodes[involved_input_ast_tc].right_node);
-      value_v[0] = std::stoull(true_input_assignments[ast_nodes[involved_input_ast_tc].right_node], 0, 2);
+      if (!is_branch_reasoned_based_on_guess) {
+        value_v[0] = std::stoull(true_input_assignments[ast_nodes[involved_input_ast_tc].right_node], 0, 2);
+      } else {
+        value_v[0]  = mintervals_los[involved_input_ast_tc][0]; // previous witness, might be an incorrect witness after application of the current conditional
+      }
       ast_ptr = add_ast_node(VAR, 0, ast_nodes[involved_input_ast_tc].right_node, value_v, value_v, 0, zero_v, smt_exprs[involved_input_ast_tc], SYMBOLIC);
       is_assigned = false;
       for (size_t k = 0; k < store_trace_ptrs[involved_input_ast_tc].size(); k++) {
@@ -2200,7 +2208,7 @@ void bvt_engine::dump_involving_input_variables_true_branch_bvt() {
   }
 }
 
-void bvt_engine::dump_involving_input_variables_false_branch_bvt() {
+void bvt_engine::dump_involving_input_variables_false_branch_bvt(bool is_branch_reasoned_based_on_guess) {
   uint64_t ast_ptr, involved_input_ast_tc, stored_to_tc, mr_stored_to_tc;
   bool is_assigned;
 
@@ -2209,7 +2217,11 @@ void bvt_engine::dump_involving_input_variables_false_branch_bvt() {
     for (size_t i = 0; i < involved_sym_inputs_cnts[reg_asts[rs1]]; i++) {
       involved_input_ast_tc = involved_sym_inputs_ast_tcs[reg_asts[rs1]][i];
       involved_inputs_in_current_conditional_expression_rs1_operand.push_back(ast_nodes[involved_input_ast_tc].right_node);
-      value_v[0] = std::stoull(false_input_assignments[ast_nodes[involved_input_ast_tc].right_node], 0, 2);
+      if (!is_branch_reasoned_based_on_guess) {
+        value_v[0] = std::stoull(false_input_assignments[ast_nodes[involved_input_ast_tc].right_node], 0, 2);
+      } else {
+        value_v[0]  = mintervals_los[involved_input_ast_tc][0]; // previous witness, might be an incorrect witness after application of the current conditional
+      }
       ast_ptr = add_ast_node(VAR, 0, ast_nodes[involved_input_ast_tc].right_node, value_v, value_v, 0, zero_v, smt_exprs[involved_input_ast_tc], SYMBOLIC);
       is_assigned = false;
       for (size_t k = 0; k < store_trace_ptrs[involved_input_ast_tc].size(); k++) {
@@ -2234,7 +2246,11 @@ void bvt_engine::dump_involving_input_variables_false_branch_bvt() {
     for (size_t i = 0; i < involved_sym_inputs_cnts[reg_asts[rs2]]; i++) {
       involved_input_ast_tc = involved_sym_inputs_ast_tcs[reg_asts[rs2]][i];
       involved_inputs_in_current_conditional_expression_rs2_operand.push_back(ast_nodes[involved_input_ast_tc].right_node);
-      value_v[0] = std::stoull(false_input_assignments[ast_nodes[involved_input_ast_tc].right_node], 0, 2);
+      if (!is_branch_reasoned_based_on_guess) {
+        value_v[0] = std::stoull(false_input_assignments[ast_nodes[involved_input_ast_tc].right_node], 0, 2);
+      } else {
+        value_v[0]  = mintervals_los[involved_input_ast_tc][0]; // previous witness, might be an incorrect witness after application of the current conditional
+      }
       ast_ptr = add_ast_node(VAR, 0, ast_nodes[involved_input_ast_tc].right_node, value_v, value_v, 0, zero_v, smt_exprs[involved_input_ast_tc], SYMBOLIC);
       is_assigned = false;
       for (size_t k = 0; k < store_trace_ptrs[involved_input_ast_tc].size(); k++) {
@@ -2255,7 +2271,7 @@ void bvt_engine::dump_involving_input_variables_false_branch_bvt() {
   }
 }
 
-void bvt_engine::dump_all_input_variables_on_trace_true_branch_bvt() {
+void bvt_engine::dump_all_input_variables_on_trace_true_branch_bvt(bool is_branch_reasoned_based_on_guess) {
   uint64_t ast_ptr, involved_input_ast_tc, stored_to_tc, mr_stored_to_tc;
   bool is_assigned;
 
@@ -2263,7 +2279,11 @@ void bvt_engine::dump_all_input_variables_on_trace_true_branch_bvt() {
     if (vector_contains_element(involved_inputs_in_current_conditional_expression_rs1_operand, i) ||
         vector_contains_element(involved_inputs_in_current_conditional_expression_rs2_operand, i) ) continue;
     involved_input_ast_tc = input_table_ast_tcs_before_branch_evaluation[i];
-    value_v[0] = std::stoull(true_input_assignments[ast_nodes[involved_input_ast_tc].right_node], 0, 2);
+    if (!is_branch_reasoned_based_on_guess) {
+      value_v[0] = std::stoull(true_input_assignments[ast_nodes[involved_input_ast_tc].right_node], 0, 2);
+    } else {
+      value_v[0]  = mintervals_los[involved_input_ast_tc][0]; // previous witness, might be an incorrect witness after applicatio of the current conditional
+    }
     ast_ptr = add_ast_node(VAR, 0, ast_nodes[involved_input_ast_tc].right_node, value_v, value_v, 0, zero_v, smt_exprs[involved_input_ast_tc], SYMBOLIC);
     is_assigned = false;
     for (size_t k = 0; k < store_trace_ptrs[involved_input_ast_tc].size(); k++) {
@@ -2283,7 +2303,7 @@ void bvt_engine::dump_all_input_variables_on_trace_true_branch_bvt() {
 
 }
 
-void bvt_engine::dump_all_input_variables_on_trace_false_branch_bvt() {
+void bvt_engine::dump_all_input_variables_on_trace_false_branch_bvt(bool is_branch_reasoned_based_on_guess) {
   uint64_t ast_ptr, involved_input_ast_tc, stored_to_tc, mr_stored_to_tc;
   bool is_assigned;
 
@@ -2291,7 +2311,11 @@ void bvt_engine::dump_all_input_variables_on_trace_false_branch_bvt() {
     if (vector_contains_element(involved_inputs_in_current_conditional_expression_rs1_operand, i) ||
         vector_contains_element(involved_inputs_in_current_conditional_expression_rs2_operand, i) ) continue;
     involved_input_ast_tc = input_table_ast_tcs_before_branch_evaluation[i];
-    value_v[0] = std::stoull(false_input_assignments[ast_nodes[involved_input_ast_tc].right_node], 0, 2);
+    if (!is_branch_reasoned_based_on_guess) {
+      value_v[0] = std::stoull(false_input_assignments[ast_nodes[involved_input_ast_tc].right_node], 0, 2);
+    } else {
+      value_v[0]  = mintervals_los[involved_input_ast_tc][0]; // previous witness, might be an incorrect witness after applicatio of the current conditional
+    }
     ast_ptr = add_ast_node(VAR, 0, ast_nodes[involved_input_ast_tc].right_node, value_v, value_v, 0, zero_v, smt_exprs[involved_input_ast_tc], SYMBOLIC);
     is_assigned = false;
     for (size_t k = 0; k < store_trace_ptrs[involved_input_ast_tc].size(); k++) {

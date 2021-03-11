@@ -25,9 +25,9 @@ class bvt_engine : public engine {
 
     uint64_t MAX_NUM_OF_INTERVALS       = 1;
     uint64_t MAX_NUM_OF_INVOLVED_INPUTS = 100;
-    uint64_t MAX_TRACE_LENGTH           = 10000000;
-    uint64_t MAX_AST_NODES_TRACE_LENGTH = 5 * MAX_TRACE_LENGTH;
-    uint64_t AST_NODES_TRACE_LENGTH     = MAX_AST_NODES_TRACE_LENGTH / 2;
+    uint64_t MAX_TRACE_LENGTH           = 20000000;
+    uint64_t MAX_AST_NODES_TRACE_LENGTH = 10 * MAX_TRACE_LENGTH;
+    uint64_t AST_NODES_TRACE_LENGTH     = MAX_AST_NODES_TRACE_LENGTH / 8;
     uint64_t MEMORY_ALLOCATION_STEP_AST_NODES_TRACE = 10000000;
 
     // -------------------------
@@ -257,10 +257,10 @@ class bvt_engine : public engine {
     void     create_xor_constraints();
     bool     check_sat_true_branch_bvt(BoolectorNode* assert);
     bool     check_sat_false_branch_bvt(BoolectorNode* assert);
-    void     dump_involving_input_variables_true_branch_bvt();
-    void     dump_involving_input_variables_false_branch_bvt();
-    void     dump_all_input_variables_on_trace_true_branch_bvt();
-    void     dump_all_input_variables_on_trace_false_branch_bvt();
+    void     dump_involving_input_variables_true_branch_bvt(bool);
+    void     dump_involving_input_variables_false_branch_bvt(bool);
+    void     dump_all_input_variables_on_trace_true_branch_bvt(bool);
+    void     dump_all_input_variables_on_trace_false_branch_bvt(bool);
     bool     match_addi_instruction();
     bool     match_sub_instruction(uint64_t prev_instr_rd);
     uint8_t  check_conditional_type_whether_is_equality_or_disequality();

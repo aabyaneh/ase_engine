@@ -21,7 +21,6 @@ class mit_box_bvt_engine : public mit_bvt_engine {
     // ---------------------------
     uint8_t   which_heuristic = 3;
     uint64_t* boxes;
-    uint64_t  queries_reasoned_by_box = 0; // number of queries handled by box
     uint32_t  NUMBER_OF_HEURISTIC_UNDER_APPROX_BOXES = 2;
 
     uint64_t backward_propagation_of_under_approximate_box(uint64_t ast_tc, std::vector<uint64_t>& lo, std::vector<uint64_t>& up, size_t mints_num, uint64_t input_box);
