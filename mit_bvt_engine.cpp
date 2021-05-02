@@ -159,54 +159,54 @@ void mit_bvt_engine::init_engine(uint64_t peek_argument) {
   }
 }
 
-void mit_bvt_engine::print_input_witness(size_t i, size_t j, uint64_t lo, uint64_t up, uint64_t step) {
-  std::cout << std::left << MAGENTA "--INPUT :=  id: " << std::setw(3) << i+1 << ", #: " << std::setw(2) << j << " => [lo: " << std::setw(5) << lo << ", up: " << std::setw(5) << up << ", step: " << step << "]" << RESET << std::endl;
+void mit_bvt_engine::print_input_witness(size_t i, size_t j, uint64_t input, uint64_t lo, uint64_t up, uint64_t step) {
+  std::cout << std::left << MAGENTA "--INPUT :=  id: " << std::setw(3) << i+1 << ", #: " << std::setw(2) << j << " , abstraction: " << get_abstraction(theory_type_ast_nodes[input]) << " => [lo: " << std::setw(5) << lo << ", up: " << std::setw(5) << up << ", step: " << step << "]" << RESET << std::endl;
 }
 
 void mit_bvt_engine::witness_profile() {
-  uint64_t cardinality;
+  // uint64_t cardinality;
 
   current_number_of_witnesses = 1;
 
   if (IS_PRINT_INPUT_WITNESSES_AT_ENDPOINT) std::cout << "\n-------------------------------------------------------------\n";
 
   for (size_t i = 0; i < input_table.size(); i++) {
-    cardinality = 0;
+    // cardinality = 0;
     for (size_t j = 0; j < mintervals_los[input_table[i]].size(); j++) {
-      cardinality += (mintervals_ups[input_table[i]][j] - mintervals_los[input_table[i]][j]) / steps[input_table[i]] + 1;
+      // cardinality += (mintervals_ups[input_table[i]][j] - mintervals_los[input_table[i]][j]) / steps[input_table[i]] + 1;
 
-      if (IS_PRINT_INPUT_WITNESSES_AT_ENDPOINT) print_input_witness(i, j, mintervals_los[input_table[i]][j], mintervals_ups[input_table[i]][j], steps[input_table[i]]);
+      if (IS_PRINT_INPUT_WITNESSES_AT_ENDPOINT) print_input_witness(i, j, input_table[i], mintervals_los[input_table[i]][j], mintervals_ups[input_table[i]][j], steps[input_table[i]]);
     }
 
-    if (cardinality > 0) {
-      if (is_number_of_generated_witnesses_overflowed == false) {
-        if (current_number_of_witnesses * cardinality > UINT64_MAX_T) // overflow?
-          is_number_of_generated_witnesses_overflowed = true;
-        else
-          current_number_of_witnesses *= cardinality;
-      }
-    } else
-      std::cout << exe_name << ": cardinality of an input is == zero! " << std::endl;
+    // if (cardinality > 0) {
+    //   if (is_number_of_generated_witnesses_overflowed == false) {
+    //     if (current_number_of_witnesses * cardinality > UINT64_MAX_T) // overflow?
+    //       is_number_of_generated_witnesses_overflowed = true;
+    //     else
+    //       current_number_of_witnesses *= cardinality;
+    //   }
+    // } else
+    //   std::cout << exe_name << ": cardinality of an input is == zero! " << std::endl;
   }
 
-  if (current_number_of_witnesses > max_number_of_generated_witnesses_among_all_paths)
-    max_number_of_generated_witnesses_among_all_paths = current_number_of_witnesses;
-
-  total_number_of_generated_witnesses_for_all_paths += current_number_of_witnesses;
-  if (total_number_of_generated_witnesses_for_all_paths < current_number_of_witnesses) // overflow?
-    is_number_of_generated_witnesses_overflowed = true;
+  // if (current_number_of_witnesses > max_number_of_generated_witnesses_among_all_paths)
+  //   max_number_of_generated_witnesses_among_all_paths = current_number_of_witnesses;
+  //
+  // total_number_of_generated_witnesses_for_all_paths += current_number_of_witnesses;
+  // if (total_number_of_generated_witnesses_for_all_paths < current_number_of_witnesses) // overflow?
+  //   is_number_of_generated_witnesses_overflowed = true;
 }
 
 void print_execution_info(uint64_t paths, uint64_t total_number_of_generated_witnesses_for_all_paths, uint64_t max_number_of_generated_witnesses_among_all_paths, uint64_t queries_reasoned_by_mit, uint64_t queries_reasoned_by_bvt, bool is_number_of_generated_witnesses_overflowed) {
-  std::cout << "\n";
-  std::cout << "number of explored paths:= " << paths << std::endl;
+  std::cout << "\n\n";
+  std::cout << YELLOW "number of explored paths:= " << paths << RESET << std::endl;
 
-  if (is_number_of_generated_witnesses_overflowed == false)
-    std::cout << "number of witnesses:= total: " << total_number_of_generated_witnesses_for_all_paths << ", max: " << max_number_of_generated_witnesses_among_all_paths << std::endl;
-  else
-    std::cout << "number of witnesses:= total: > " << UINT64_MAX << ", max: !" << std::endl;
+  // if (is_number_of_generated_witnesses_overflowed == false)
+  //   std::cout << "number of witnesses:= total: " << total_number_of_generated_witnesses_for_all_paths << ", max: " << max_number_of_generated_witnesses_among_all_paths << std::endl;
+  // else
+  //   std::cout << "number of witnesses:= total: > " << UINT64_MAX << ", max: !" << std::endl;
 
-  std::cout << "number of queries:= mit: " << queries_reasoned_by_mit << ", bvt: " << queries_reasoned_by_bvt << "\n\n";
+  std::cout << GREEN "number of queries:= mit: " << queries_reasoned_by_mit << ", bvt: " << queries_reasoned_by_bvt << RESET << "\n\n";
 }
 
 uint64_t mit_bvt_engine::run_engine(uint64_t* to_context) {
@@ -232,28 +232,10 @@ uint64_t mit_bvt_engine::run_engine(uint64_t* to_context) {
         output_results << "B=" << paths+1 << "\n";
       }
 
-      if (does_path_need_to_be_reasoned_by_smt == false) {
-        if (paths == 0) std::cout << exe_name << ": backtracking \n"; else unprint_integer(paths);
-        paths++;
-        print_integer(paths);
-        witness_profile();
-
-      } else {
-        queries_reasoned_by_bvt++;
-        if (boolector_sat(btor) == BOOLECTOR_SAT) {
-          if (paths == 0) std::cout << exe_name << ": backtracking \n"; else unprint_integer(paths);
-          paths++;
-          print_integer(paths);
-
-          // dump inputs taken from smt, because this path was reasoned lazily so at end-point inputs should be updated with correct values
-          // for print and test generation purpose
-          refine_abvt_abstraction_by_dumping_all_input_variables_on_trace_bvt();
-
-          does_path_need_to_be_reasoned_by_smt = false;
-
-          witness_profile();
-        }
-      }
+      if (paths == 0) std::cout << exe_name << ": backtracking \n"; else unprint_integer(paths);
+      paths++;
+      print_integer(paths);
+      witness_profile();
 
       backtrack_trace(current_context);
 
@@ -467,6 +449,17 @@ void mit_bvt_engine::implement_read(uint64_t* context) {
   std::cout << exe_name << ": symbolic read is not implemented yet\n";
 }
 
+std::string mit_bvt_engine::get_abstraction(uint8_t abstraction) {
+  if (abstraction == MIT)
+    return "MIT";
+  else if (abstraction == BOX)
+    return "BOX";
+  else if (abstraction == BVT)
+    return "BVT";
+  else
+    return "UNKNOWN";
+}
+
 void mit_bvt_engine::implement_printsv(uint64_t* context) {
   uint64_t id;
 
@@ -475,14 +468,12 @@ void mit_bvt_engine::implement_printsv(uint64_t* context) {
   std::cout << "\n------------------------------------------------------------\n";
 
   for (size_t i = 0; i < reg_mintervals_cnts[REG_A1]; i++) {
-    std::cout << std::left << "PRINTSV :=) id: " << std::setw(3) << id << ", #: " << std::setw(2) << i <<
-      " => [lo: " << std::setw(5) << reg_mintervals_los[REG_A1][i] << ", up: " << std::setw(5) << reg_mintervals_ups[REG_A1][i] <<
-      ", step: " << reg_steps[REG_A1] << "]\n";
+    std::cout << std::left << "PRINTSV :=) id: " << std::setw(3) << id << ", #: " << std::setw(2) << i << " , abstraction: " << get_abstraction(reg_theory_types[REG_A1]) << " => [lo: " << std::setw(5) << reg_mintervals_los[REG_A1][i] << ", up: " << std::setw(5) << reg_mintervals_ups[REG_A1][i] << ", step: " << reg_steps[REG_A1] << "]\n";
   }
 
   for (size_t j = 0; j < input_table.size(); j++) {
     for (size_t i = 0; i < mintervals_los[input_table[j]].size(); i++) {
-      std::cout << std::left << RED "--INPUT :=  id: " << std::setw(3) << j+1 << ", #: " << std::setw(2) << i << " => [lo: " << std::setw(5) << mintervals_los[input_table[j]][i] << ", up: " << std::setw(5) << mintervals_ups[input_table[j]][i] << ", step: " << steps[input_table[j]] << "]" << RESET << '\n';
+      std::cout << std::left << RED "--INPUT :=  id: " << std::setw(3) << j+1 << ", #: " << std::setw(2) << i << " , abstraction: " << get_abstraction(theory_type_ast_nodes[input_table[j]]) << " => [lo: " << std::setw(5) << mintervals_los[input_table[j]][i] << ", up: " << std::setw(5) << mintervals_ups[input_table[j]][i] << ", step: " << steps[input_table[j]] << "]" << RESET << '\n';
     }
   }
 
@@ -2706,21 +2697,14 @@ void mit_bvt_engine::create_sltu_constraints(std::vector<uint64_t>& lo1_p, std::
     check_operands_smt_expressions();
 
     true_reachable  = check_sat_true_branch_bvt(boolector_ult(btor, reg_bvts[rs1], reg_bvts[rs2]));
-    if (true_reachable == false) {
-      false_reachable = true;
-      does_path_need_to_be_reasoned_by_smt = true;
-      sltu_instruction = pc; // this is because I need to change pc of the trace entry when dump inputs at end-point (don't want to be exit syscall)
-    } else {
-      false_reachable = check_sat_false_branch_bvt(boolector_ugte(btor, reg_bvts[rs1], reg_bvts[rs2]));
-      does_path_need_to_be_reasoned_by_smt = false;
-    }
+    false_reachable = check_sat_false_branch_bvt(boolector_ugte(btor, reg_bvts[rs1], reg_bvts[rs2]));
 
     if (true_reachable) {
       if (false_reachable) {
         if (check_conditional_type_whether_is_strict_less_than_or_is_less_greater_than_eq() == LGTE) {
           // false
-          dump_involving_input_variables_true_branch_bvt(false);
-          dump_all_input_variables_on_trace_true_branch_bvt(false);
+          dump_involving_input_variables_true_branch_bvt();
+          dump_all_input_variables_on_trace_true_branch_bvt();
           take_branch(1, 1);
           asts[tc-2]               = 0; // important for backtracking
           bvt_false_branches[tc-2] = boolector_ult(btor, reg_bvts[rs1], reg_bvts[rs2]); // careful
@@ -2728,13 +2712,13 @@ void mit_bvt_engine::create_sltu_constraints(std::vector<uint64_t>& lo1_p, std::
           // true
           boolector_push(btor, 1);
           boolector_assert(btor, boolector_ugte(btor, reg_bvts[rs1], reg_bvts[rs2]));
-          dump_involving_input_variables_false_branch_bvt(false);
-          dump_all_input_variables_on_trace_false_branch_bvt(false);
+          dump_involving_input_variables_false_branch_bvt();
+          dump_all_input_variables_on_trace_false_branch_bvt();
           take_branch(0, 0);
         } else {
           // false
-          dump_involving_input_variables_false_branch_bvt(false);
-          dump_all_input_variables_on_trace_false_branch_bvt(false);
+          dump_involving_input_variables_false_branch_bvt();
+          dump_all_input_variables_on_trace_false_branch_bvt();
           take_branch(0, 1);
           asts[tc-2]               = 0; // important for backtracking
           bvt_false_branches[tc-2] = boolector_ugte(btor, reg_bvts[rs1], reg_bvts[rs2]); // carefull
@@ -2742,18 +2726,18 @@ void mit_bvt_engine::create_sltu_constraints(std::vector<uint64_t>& lo1_p, std::
           // true
           boolector_push(btor, 1);
           boolector_assert(btor, boolector_ult(btor, reg_bvts[rs1], reg_bvts[rs2]));
-          dump_involving_input_variables_true_branch_bvt(false);
-          dump_all_input_variables_on_trace_true_branch_bvt(false);
+          dump_involving_input_variables_true_branch_bvt();
+          dump_all_input_variables_on_trace_true_branch_bvt();
           take_branch(1, 0);
         }
       } else {
-        dump_involving_input_variables_true_branch_bvt(false);
-        dump_all_input_variables_on_trace_true_branch_bvt(false);
+        dump_involving_input_variables_true_branch_bvt();
+        dump_all_input_variables_on_trace_true_branch_bvt();
         take_branch(1, 0);
       }
     } else if (false_reachable) {
-      dump_involving_input_variables_false_branch_bvt(true);
-      dump_all_input_variables_on_trace_false_branch_bvt(true);
+      dump_involving_input_variables_false_branch_bvt();
+      dump_all_input_variables_on_trace_false_branch_bvt();
       take_branch(0, 0);
     } else {
       std::cout << exe_name << ": both branches unreachable! at 0x" << std::hex << pc - entry_point << std::dec << std::endl;
@@ -3009,21 +2993,14 @@ void mit_bvt_engine::create_xor_constraints(std::vector<uint64_t>& lo1_p, std::v
     check_operands_smt_expressions();
 
     true_reachable  = check_sat_true_branch_bvt(boolector_ne(btor, reg_bvts[rs1], reg_bvts[rs2]));
-    if (true_reachable == false) {
-      false_reachable = true;
-      does_path_need_to_be_reasoned_by_smt = true;
-      sltu_instruction = pc; // this is because I need to change pc of the trace entry when dump inputs at end-point (don't want to be exit syscall)
-    } else {
-      false_reachable = check_sat_false_branch_bvt(boolector_eq(btor, reg_bvts[rs1], reg_bvts[rs2]));
-      does_path_need_to_be_reasoned_by_smt = false;
-    }
+    false_reachable = check_sat_false_branch_bvt(boolector_eq(btor, reg_bvts[rs1], reg_bvts[rs2]));
 
     if (true_reachable) {
       if (false_reachable) {
         if (check_conditional_type_whether_is_equality_or_disequality() == EQ) {
           // false
-          dump_involving_input_variables_true_branch_bvt(false);
-          dump_all_input_variables_on_trace_true_branch_bvt(false);
+          dump_involving_input_variables_true_branch_bvt();
+          dump_all_input_variables_on_trace_true_branch_bvt();
           take_branch(1, 1);
           asts[tc-2]               = 0; // important for backtracking
           bvt_false_branches[tc-2] = boolector_ne(btor, reg_bvts[rs1], reg_bvts[rs2]); // carefull
@@ -3031,13 +3008,13 @@ void mit_bvt_engine::create_xor_constraints(std::vector<uint64_t>& lo1_p, std::v
           // true
           boolector_push(btor, 1);
           boolector_assert(btor, boolector_eq(btor, reg_bvts[rs1], reg_bvts[rs2]));
-          dump_involving_input_variables_false_branch_bvt(false);
-          dump_all_input_variables_on_trace_false_branch_bvt(false);
+          dump_involving_input_variables_false_branch_bvt();
+          dump_all_input_variables_on_trace_false_branch_bvt();
           take_branch(0, 0);
         } else {
           // false
-          dump_involving_input_variables_false_branch_bvt(false);
-          dump_all_input_variables_on_trace_false_branch_bvt(false);
+          dump_involving_input_variables_false_branch_bvt();
+          dump_all_input_variables_on_trace_false_branch_bvt();
           take_branch(0, 1);
           asts[tc-2]               = 0; // important for backtracking
           bvt_false_branches[tc-2] = boolector_eq(btor, reg_bvts[rs1], reg_bvts[rs2]); // carefull
@@ -3045,18 +3022,18 @@ void mit_bvt_engine::create_xor_constraints(std::vector<uint64_t>& lo1_p, std::v
           // true
           boolector_push(btor, 1);
           boolector_assert(btor, boolector_ne(btor, reg_bvts[rs1], reg_bvts[rs2]));
-          dump_involving_input_variables_true_branch_bvt(false);
-          dump_all_input_variables_on_trace_true_branch_bvt(false);
+          dump_involving_input_variables_true_branch_bvt();
+          dump_all_input_variables_on_trace_true_branch_bvt();
           take_branch(1, 0);
         }
       } else {
-        dump_involving_input_variables_true_branch_bvt(false);
-        dump_all_input_variables_on_trace_true_branch_bvt(false);
+        dump_involving_input_variables_true_branch_bvt();
+        dump_all_input_variables_on_trace_true_branch_bvt();
         take_branch(1, 0);
       }
     } else if (false_reachable) {
-      dump_involving_input_variables_false_branch_bvt(true);
-      dump_all_input_variables_on_trace_false_branch_bvt(true);
+      dump_involving_input_variables_false_branch_bvt();
+      dump_all_input_variables_on_trace_false_branch_bvt();
       take_branch(0, 0);
     } else {
       std::cout << exe_name << ": both branches unreachable! at 0x" << std::hex << pc - entry_point << std::dec << std::endl;
@@ -3153,37 +3130,30 @@ bool mit_bvt_engine::check_sat_false_branch_bvt(BoolectorNode* assert) {
   return result;
 }
 
-void mit_bvt_engine::dump_involving_input_variables_true_branch_bvt(bool is_branch_reasoned_based_on_guess) {
+void mit_bvt_engine::dump_involving_input_variables_true_branch_bvt() {
   uint64_t ast_ptr, involved_input_ast_tc, stored_to_tc, mr_stored_to_tc;
   bool is_assigned;
-  uint8_t abstraction;
 
   involved_inputs_in_current_conditional_expression_rs1_operand.clear();
   if (reg_symb_type[rs1] == SYMBOLIC) {
     for (size_t i = 0; i < involved_sym_inputs_cnts[reg_asts[rs1]]; i++) {
       involved_input_ast_tc = involved_sym_inputs_ast_tcs[reg_asts[rs1]][i];
       involved_inputs_in_current_conditional_expression_rs1_operand.push_back(ast_nodes[involved_input_ast_tc].right_node);
-      if (!is_branch_reasoned_based_on_guess) {
-        value_v[0] = std::stoull(true_input_assignments[ast_nodes[involved_input_ast_tc].right_node], 0, 2);
-        abstraction = BVT;
-      } else {
-        value_v[0]  = mintervals_los[involved_input_ast_tc][0]; // previous witness, might be an incorrect witness after application of the current conditional but no problem
-        abstraction = ABVT;
-      }
-      ast_ptr = add_ast_node(VAR, 0, ast_nodes[involved_input_ast_tc].right_node, 1, value_v, value_v, 1, 0, zero_v, abstraction, smt_exprs[involved_input_ast_tc]);
+      value_v[0] = std::stoull(true_input_assignments[ast_nodes[involved_input_ast_tc].right_node], 0, 2);
+      ast_ptr = add_ast_node(VAR, 0, ast_nodes[involved_input_ast_tc].right_node, 1, value_v, value_v, 1, 0, zero_v, BVT, smt_exprs[involved_input_ast_tc]);
       is_assigned = false;
       for (size_t k = 0; k < store_trace_ptrs[involved_input_ast_tc].size(); k++) {
         stored_to_tc    = store_trace_ptrs[involved_input_ast_tc][k];
         mr_stored_to_tc = load_symbolic_memory(pt, vaddrs[stored_to_tc]);
         mr_stored_to_tc = mr_sds[mr_stored_to_tc];
         if (mr_stored_to_tc <= stored_to_tc) {
-          store_symbolic_memory(pt, vaddrs[stored_to_tc], value_v[0], VALUE_T, ast_ptr, tc, 0, abstraction);
+          store_symbolic_memory(pt, vaddrs[stored_to_tc], value_v[0], VALUE_T, ast_ptr, tc, 0, BVT);
           is_assigned = true;
         }
       }
 
       if (is_assigned == false) {
-        store_input_record(ast_ptr, input_table.at(ast_nodes[involved_input_ast_tc].right_node), abstraction);
+        store_input_record(ast_ptr, input_table.at(ast_nodes[involved_input_ast_tc].right_node), BVT);
       }
       input_table.at(ast_nodes[involved_input_ast_tc].right_node) = ast_ptr;
     }
@@ -3194,64 +3164,51 @@ void mit_bvt_engine::dump_involving_input_variables_true_branch_bvt(bool is_bran
     for (size_t i = 0; i < involved_sym_inputs_cnts[reg_asts[rs2]]; i++) {
       involved_input_ast_tc = involved_sym_inputs_ast_tcs[reg_asts[rs2]][i];
       involved_inputs_in_current_conditional_expression_rs2_operand.push_back(ast_nodes[involved_input_ast_tc].right_node);
-      if (!is_branch_reasoned_based_on_guess) {
-        value_v[0] = std::stoull(true_input_assignments[ast_nodes[involved_input_ast_tc].right_node], 0, 2);
-        abstraction = BVT;
-      } else {
-        value_v[0]  = mintervals_los[involved_input_ast_tc][0]; // previous witness, might be an incorrect witness after application of the current conditional
-        abstraction = ABVT;
-      }
-      ast_ptr = add_ast_node(VAR, 0, ast_nodes[involved_input_ast_tc].right_node, 1, value_v, value_v, 1, 0, zero_v, abstraction, smt_exprs[involved_input_ast_tc]);
+      value_v[0] = std::stoull(true_input_assignments[ast_nodes[involved_input_ast_tc].right_node], 0, 2);
+      ast_ptr = add_ast_node(VAR, 0, ast_nodes[involved_input_ast_tc].right_node, 1, value_v, value_v, 1, 0, zero_v, BVT, smt_exprs[involved_input_ast_tc]);
       is_assigned = false;
       for (size_t k = 0; k < store_trace_ptrs[involved_input_ast_tc].size(); k++) {
         stored_to_tc    = store_trace_ptrs[involved_input_ast_tc][k];
         mr_stored_to_tc = load_symbolic_memory(pt, vaddrs[stored_to_tc]);
         mr_stored_to_tc = mr_sds[mr_stored_to_tc];
         if (mr_stored_to_tc <= stored_to_tc) {
-          store_symbolic_memory(pt, vaddrs[stored_to_tc], value_v[0], VALUE_T, ast_ptr, tc, 0, abstraction);
+          store_symbolic_memory(pt, vaddrs[stored_to_tc], value_v[0], VALUE_T, ast_ptr, tc, 0, BVT);
           is_assigned = true;
         }
       }
 
       if (is_assigned == false) {
-        store_input_record(ast_ptr, input_table.at(ast_nodes[involved_input_ast_tc].right_node), abstraction);
+        store_input_record(ast_ptr, input_table.at(ast_nodes[involved_input_ast_tc].right_node), BVT);
       }
       input_table.at(ast_nodes[involved_input_ast_tc].right_node) = ast_ptr;
     }
   }
 }
 
-void mit_bvt_engine::dump_involving_input_variables_false_branch_bvt(bool is_branch_reasoned_based_on_guess) {
+void mit_bvt_engine::dump_involving_input_variables_false_branch_bvt() {
   uint64_t ast_ptr, involved_input_ast_tc, stored_to_tc, mr_stored_to_tc;
   bool is_assigned;
-  uint8_t abstraction;
 
   involved_inputs_in_current_conditional_expression_rs1_operand.clear();
   if (reg_symb_type[rs1] == SYMBOLIC) {
     for (size_t i = 0; i < involved_sym_inputs_cnts[reg_asts[rs1]]; i++) {
       involved_input_ast_tc = involved_sym_inputs_ast_tcs[reg_asts[rs1]][i];
       involved_inputs_in_current_conditional_expression_rs1_operand.push_back(ast_nodes[involved_input_ast_tc].right_node);
-      if (!is_branch_reasoned_based_on_guess) {
-        value_v[0] = std::stoull(false_input_assignments[ast_nodes[involved_input_ast_tc].right_node], 0, 2);
-        abstraction = BVT;
-      } else {
-        value_v[0]  = mintervals_los[involved_input_ast_tc][0]; // previous witness, might be an incorrect witness after application of the current conditional
-        abstraction = ABVT;
-      }
-      ast_ptr = add_ast_node(VAR, 0, ast_nodes[involved_input_ast_tc].right_node, 1, value_v, value_v, 1, 0, zero_v, abstraction, smt_exprs[involved_input_ast_tc]);
+      value_v[0] = std::stoull(false_input_assignments[ast_nodes[involved_input_ast_tc].right_node], 0, 2);
+      ast_ptr = add_ast_node(VAR, 0, ast_nodes[involved_input_ast_tc].right_node, 1, value_v, value_v, 1, 0, zero_v, BVT, smt_exprs[involved_input_ast_tc]);
       is_assigned = false;
       for (size_t k = 0; k < store_trace_ptrs[involved_input_ast_tc].size(); k++) {
         stored_to_tc    = store_trace_ptrs[involved_input_ast_tc][k];
         mr_stored_to_tc = load_symbolic_memory(pt, vaddrs[stored_to_tc]);
         mr_stored_to_tc = mr_sds[mr_stored_to_tc];
         if (mr_stored_to_tc <= stored_to_tc) {
-          store_symbolic_memory(pt, vaddrs[stored_to_tc], value_v[0], VALUE_T, ast_ptr, tc, 0, abstraction);
+          store_symbolic_memory(pt, vaddrs[stored_to_tc], value_v[0], VALUE_T, ast_ptr, tc, 0, BVT);
           is_assigned = true;
         }
       }
 
       if (is_assigned == false) {
-        store_input_record(ast_ptr, input_table.at(ast_nodes[involved_input_ast_tc].right_node), abstraction);
+        store_input_record(ast_ptr, input_table.at(ast_nodes[involved_input_ast_tc].right_node), BVT);
       }
       input_table.at(ast_nodes[involved_input_ast_tc].right_node) = ast_ptr;
     }
@@ -3262,99 +3219,79 @@ void mit_bvt_engine::dump_involving_input_variables_false_branch_bvt(bool is_bra
     for (size_t i = 0; i < involved_sym_inputs_cnts[reg_asts[rs2]]; i++) {
       involved_input_ast_tc = involved_sym_inputs_ast_tcs[reg_asts[rs2]][i];
       involved_inputs_in_current_conditional_expression_rs2_operand.push_back(ast_nodes[involved_input_ast_tc].right_node);
-      if (!is_branch_reasoned_based_on_guess) {
-        value_v[0] = std::stoull(false_input_assignments[ast_nodes[involved_input_ast_tc].right_node], 0, 2);
-        abstraction = BVT;
-      } else {
-        value_v[0]  = mintervals_los[involved_input_ast_tc][0]; // previous witness, might be an incorrect witness after application of the current conditional
-        abstraction = ABVT;
-      }
-      ast_ptr = add_ast_node(VAR, 0, ast_nodes[involved_input_ast_tc].right_node, 1, value_v, value_v, 1, 0, zero_v, abstraction, smt_exprs[involved_input_ast_tc]);
+      value_v[0] = std::stoull(false_input_assignments[ast_nodes[involved_input_ast_tc].right_node], 0, 2);
+      ast_ptr = add_ast_node(VAR, 0, ast_nodes[involved_input_ast_tc].right_node, 1, value_v, value_v, 1, 0, zero_v, BVT, smt_exprs[involved_input_ast_tc]);
       is_assigned = false;
       for (size_t k = 0; k < store_trace_ptrs[involved_input_ast_tc].size(); k++) {
         stored_to_tc    = store_trace_ptrs[involved_input_ast_tc][k];
         mr_stored_to_tc = load_symbolic_memory(pt, vaddrs[stored_to_tc]);
         mr_stored_to_tc = mr_sds[mr_stored_to_tc];
         if (mr_stored_to_tc <= stored_to_tc) {
-          store_symbolic_memory(pt, vaddrs[stored_to_tc], value_v[0], VALUE_T, ast_ptr, tc, 0, abstraction);
+          store_symbolic_memory(pt, vaddrs[stored_to_tc], value_v[0], VALUE_T, ast_ptr, tc, 0, BVT);
           is_assigned = true;
         }
       }
 
       if (is_assigned == false) {
-        store_input_record(ast_ptr, input_table.at(ast_nodes[involved_input_ast_tc].right_node), abstraction);
+        store_input_record(ast_ptr, input_table.at(ast_nodes[involved_input_ast_tc].right_node), BVT);
       }
       input_table.at(ast_nodes[involved_input_ast_tc].right_node) = ast_ptr;
     }
   }
 }
 
-void mit_bvt_engine::dump_all_input_variables_on_trace_true_branch_bvt(bool is_branch_reasoned_based_on_guess) {
+void mit_bvt_engine::dump_all_input_variables_on_trace_true_branch_bvt() {
   uint64_t ast_ptr, involved_input_ast_tc, stored_to_tc, mr_stored_to_tc;
   bool is_assigned;
-  uint8_t abstraction;
 
   for (size_t i = 0; i < input_table.size(); i++) {
     if (vector_contains_element(involved_inputs_in_current_conditional_expression_rs1_operand, i) ||
         vector_contains_element(involved_inputs_in_current_conditional_expression_rs2_operand, i) ) continue;
     involved_input_ast_tc = input_table_ast_tcs_before_branch_evaluation[i];
     if (theory_type_ast_nodes[involved_input_ast_tc] == MIT) continue;
-    if (!is_branch_reasoned_based_on_guess) {
-      value_v[0] = std::stoull(true_input_assignments[ast_nodes[involved_input_ast_tc].right_node], 0, 2);
-      abstraction = BVT;
-    } else {
-      value_v[0]  = mintervals_los[involved_input_ast_tc][0]; // previous witness, might be an incorrect witness after applicatio of the current conditional
-      abstraction = ABVT;
-    }
-    ast_ptr = add_ast_node(VAR, 0, ast_nodes[involved_input_ast_tc].right_node, 1, value_v, value_v, 1, 0, zero_v, abstraction, smt_exprs[involved_input_ast_tc]);
+    value_v[0] = std::stoull(true_input_assignments[ast_nodes[involved_input_ast_tc].right_node], 0, 2);
+    ast_ptr = add_ast_node(VAR, 0, ast_nodes[involved_input_ast_tc].right_node, 1, value_v, value_v, 1, 0, zero_v, BVT, smt_exprs[involved_input_ast_tc]);
     is_assigned = false;
     for (size_t k = 0; k < store_trace_ptrs[involved_input_ast_tc].size(); k++) {
       stored_to_tc    = store_trace_ptrs[involved_input_ast_tc][k];
       mr_stored_to_tc = load_symbolic_memory(pt, vaddrs[stored_to_tc]);
       mr_stored_to_tc = mr_sds[mr_stored_to_tc];
       if (mr_stored_to_tc <= stored_to_tc) {
-        store_symbolic_memory(pt, vaddrs[stored_to_tc], value_v[0], VALUE_T, ast_ptr, tc, 0, abstraction);
+        store_symbolic_memory(pt, vaddrs[stored_to_tc], value_v[0], VALUE_T, ast_ptr, tc, 0, BVT);
         is_assigned = true;
       }
     }
     if (is_assigned == false) {
-      store_input_record(ast_ptr, input_table.at(ast_nodes[involved_input_ast_tc].right_node), abstraction);
+      store_input_record(ast_ptr, input_table.at(ast_nodes[involved_input_ast_tc].right_node), BVT);
     }
     input_table.at(ast_nodes[involved_input_ast_tc].right_node) = ast_ptr;
   }
 
 }
 
-void mit_bvt_engine::dump_all_input_variables_on_trace_false_branch_bvt(bool is_branch_reasoned_based_on_guess) {
+void mit_bvt_engine::dump_all_input_variables_on_trace_false_branch_bvt() {
   uint64_t ast_ptr, involved_input_ast_tc, stored_to_tc, mr_stored_to_tc;
   bool is_assigned;
-  uint8_t abstraction;
 
   for (size_t i = 0; i < input_table.size(); i++) {
     if (vector_contains_element(involved_inputs_in_current_conditional_expression_rs1_operand, i) ||
         vector_contains_element(involved_inputs_in_current_conditional_expression_rs2_operand, i) ) continue;
     involved_input_ast_tc = input_table_ast_tcs_before_branch_evaluation[i];
     if (theory_type_ast_nodes[involved_input_ast_tc] == MIT) continue;
-    if (!is_branch_reasoned_based_on_guess) {
-      value_v[0] = std::stoull(false_input_assignments[ast_nodes[involved_input_ast_tc].right_node], 0, 2);
-      abstraction = BVT;
-    } else {
-      value_v[0]  = mintervals_los[involved_input_ast_tc][0]; // previous witness, might be an incorrect witness after applicatio of the current conditional
-      abstraction = ABVT;
-    }
-    ast_ptr = add_ast_node(VAR, 0, ast_nodes[involved_input_ast_tc].right_node, 1, value_v, value_v, 1, 0, zero_v, abstraction, smt_exprs[involved_input_ast_tc]);
+    value_v[0] = std::stoull(false_input_assignments[ast_nodes[involved_input_ast_tc].right_node], 0, 2);
+    ast_ptr = add_ast_node(VAR, 0, ast_nodes[involved_input_ast_tc].right_node, 1, value_v, value_v, 1, 0, zero_v, BVT, smt_exprs[involved_input_ast_tc]);
     is_assigned = false;
     for (size_t k = 0; k < store_trace_ptrs[involved_input_ast_tc].size(); k++) {
       stored_to_tc    = store_trace_ptrs[involved_input_ast_tc][k];
       mr_stored_to_tc = load_symbolic_memory(pt, vaddrs[stored_to_tc]);
       mr_stored_to_tc = mr_sds[mr_stored_to_tc];
       if (mr_stored_to_tc <= stored_to_tc) {
-        store_symbolic_memory(pt, vaddrs[stored_to_tc], value_v[0], VALUE_T, ast_ptr, tc, 0, abstraction);
+        store_symbolic_memory(pt, vaddrs[stored_to_tc], value_v[0], VALUE_T, ast_ptr, tc, 0, BVT);
         is_assigned = true;
       }
     }
     if (is_assigned == false) {
-      store_input_record(ast_ptr, input_table.at(ast_nodes[involved_input_ast_tc].right_node), abstraction);
+      store_input_record(ast_ptr, input_table.at(ast_nodes[involved_input_ast_tc].right_node), BVT);
     }
     input_table.at(ast_nodes[involved_input_ast_tc].right_node) = ast_ptr;
   }

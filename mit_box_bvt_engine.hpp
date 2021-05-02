@@ -19,7 +19,7 @@ class mit_box_bvt_engine : public mit_bvt_engine {
     // ---------------------------
     // under_approximate box decision procedure
     // ---------------------------
-    uint8_t   which_heuristic = 3;
+    uint8_t   which_heuristic = 1;
     uint64_t* boxes;
     uint32_t  NUMBER_OF_HEURISTIC_UNDER_APPROX_BOXES = 2;
 

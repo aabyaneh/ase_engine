@@ -20,6 +20,7 @@ double time_elapsed_in_mcseconds;
 double time_elapsed_in_seconds;
 std::ofstream output_csv;
 std::string file_name;
+std::string method_name;
 
 uint64_t timeout = 120;
 uint64_t timeout_check_step = 1;
@@ -39,11 +40,12 @@ void run_timeout_thread() {
 void write_to_csv() {
   output_csv.open("output.csv", std::ofstream::app);
   output_csv << file_name << ","
+             << method_name << ","
+             << current_engine->is_execution_finished << ","
              << current_engine->paths << ","
-             << time_elapsed_in_seconds << ","
+             << (current_engine->is_execution_timeout == false ? time_elapsed_in_seconds : (double)-1) << ","
              << current_engine->queries_reasoned_by_mit << ","
              << current_engine->queries_reasoned_by_box << ","
-             << current_engine->queries_reasoned_by_overapprx << ","
              << current_engine->queries_reasoned_by_bvt << ","
              << current_engine->queries_reasoned_by_bvt_sat << ","
              << current_engine->queries_reasoned_by_bvt - current_engine->queries_reasoned_by_bvt_sat << std::endl;
@@ -81,19 +83,25 @@ uint64_t run() {
 
   std::cout << current_engine->exe_name << ": engine executing " << current_engine->binary_name << " with " << (int64_t) (current_engine->page_frame_memory / current_engine->MEGABYTE) << "MB physical memory \n\n";
 
-  exit_code = current_engine->run_engine(current_engine->current_context);
+  try {
+    exit_code = current_engine->run_engine(current_engine->current_context);
 
-  current_engine->execute = 0;
+    current_engine->execute = 0;
 
-  if (!current_engine->is_execution_timeout) {
-    std::cout << current_engine->exe_name << ": engine terminating " << current_engine->get_name(current_engine->current_context) << " with exit code " << (int64_t) current_engine->sign_extend(exit_code, current_engine->SYSCALL_BITWIDTH) << '\n';
-  } else {
-    std::cout << " * TIMEOUT * \n" << std::endl;
+    if (!current_engine->is_execution_timeout) {
+      std::cout << current_engine->exe_name << ": engine terminating " << current_engine->get_name(current_engine->current_context) << " with exit code " << (int64_t) current_engine->sign_extend(exit_code, current_engine->SYSCALL_BITWIDTH) << '\n';
+    } else {
+      std::cout << " * TIMEOUT * \n" << std::endl;
+    }
+
+    current_engine->print_profile();
+
+    current_engine->is_execution_finished = true;
+
+  } catch (...) {
+    exit_code = -1;
+    current_engine->execute = 0;
   }
-
-  current_engine->print_profile();
-
-  current_engine->is_execution_finished = true;
 
   gettimeofday(&symbolic_execution_end, NULL);
 
@@ -210,6 +218,7 @@ int main(int argc, char* argv[]) {
       if (print_witness) current_engine->IS_PRINT_INPUT_WITNESSES_AT_ENDPOINT = true;
       return run();
     } else if (!strcmp(option, "-bvt")) {
+      method_name = "bvt";
       current_engine = new bvt_engine();
       current_engine->exe_name = exe_name;
       current_engine->init_engine(running_arg);
@@ -218,6 +227,7 @@ int main(int argc, char* argv[]) {
       return run();
     }
     else if (!strcmp(option, "-mit_bvt")) {
+      method_name = "mit_bvt";
       current_engine = new mit_bvt_engine();
       current_engine->exe_name = exe_name;
       current_engine->init_engine(running_arg);
@@ -228,6 +238,8 @@ int main(int argc, char* argv[]) {
     else if (!strcmp(option, "-mit_box_bvt")) {
       char* arg = get_argument();
       running_arg = arg != (char*)0 ? std::atoi(arg) : -1;
+      method_name = "mit_box_bvt_";
+      method_name.append((running_arg == 1 ? "1" : "2"));
       current_engine = new mit_box_bvt_engine();
       current_engine->exe_name = exe_name;
       current_engine->init_engine(running_arg);

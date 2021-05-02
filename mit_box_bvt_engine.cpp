@@ -13,49 +13,49 @@ void mit_box_bvt_engine::init_engine(uint64_t peek_argument) {
 }
 
 void mit_box_bvt_engine::witness_profile() {
-  uint64_t cardinality;
+  // uint64_t cardinality;
 
   current_number_of_witnesses = 1;
 
   if (IS_PRINT_INPUT_WITNESSES_AT_ENDPOINT) std::cout << "\n-------------------------------------------------------------\n";
 
   for (size_t i = 0; i < input_table.size(); i++) {
-    cardinality = 0;
+    // cardinality = 0;
     for (size_t j = 0; j < mintervals_los[input_table[i]].size(); j++) {
-      cardinality += (mintervals_ups[input_table[i]][j] - mintervals_los[input_table[i]][j]) / steps[input_table[i]] + 1;
+      // cardinality += (mintervals_ups[input_table[i]][j] - mintervals_los[input_table[i]][j]) / steps[input_table[i]] + 1;
 
-      if (IS_PRINT_INPUT_WITNESSES_AT_ENDPOINT) mit_bvt_engine::print_input_witness(i, j, mintervals_los[input_table[i]][j], mintervals_ups[input_table[i]][j], steps[input_table[i]]);
+      if (IS_PRINT_INPUT_WITNESSES_AT_ENDPOINT) mit_bvt_engine::print_input_witness(i, j, input_table[i], mintervals_los[input_table[i]][j], mintervals_ups[input_table[i]][j], steps[input_table[i]]);
 
       if (theory_type_ast_nodes[input_table[i]] == BOX) break;
     }
 
-    if (cardinality > 0) {
-      if (is_number_of_generated_witnesses_overflowed == false) {
-        if (current_number_of_witnesses * cardinality > UINT64_MAX_T) // overflow?
-          is_number_of_generated_witnesses_overflowed = true;
-        else
-          current_number_of_witnesses *= cardinality;
-      }
-    } else
-      std::cout << exe_name << ": cardinality of an input is == zero! " << std::endl;
+    // if (cardinality > 0) {
+    //   if (is_number_of_generated_witnesses_overflowed == false) {
+    //     if (current_number_of_witnesses * cardinality > UINT64_MAX_T) // overflow?
+    //       is_number_of_generated_witnesses_overflowed = true;
+    //     else
+    //       current_number_of_witnesses *= cardinality;
+    //   }
+    // } else
+    //   std::cout << exe_name << ": cardinality of an input is == zero! " << std::endl;
   }
 
-  if (current_number_of_witnesses > max_number_of_generated_witnesses_among_all_paths)
-    max_number_of_generated_witnesses_among_all_paths = current_number_of_witnesses;
-
-  total_number_of_generated_witnesses_for_all_paths += current_number_of_witnesses;
-  if (total_number_of_generated_witnesses_for_all_paths < current_number_of_witnesses) // overflow?
-    is_number_of_generated_witnesses_overflowed = true;
+  // if (current_number_of_witnesses > max_number_of_generated_witnesses_among_all_paths)
+  //   max_number_of_generated_witnesses_among_all_paths = current_number_of_witnesses;
+  //
+  // total_number_of_generated_witnesses_for_all_paths += current_number_of_witnesses;
+  // if (total_number_of_generated_witnesses_for_all_paths < current_number_of_witnesses) // overflow?
+  //   is_number_of_generated_witnesses_overflowed = true;
 }
 
 void print_execution_info(uint64_t paths, uint64_t total_number_of_generated_witnesses_for_all_paths, uint64_t max_number_of_generated_witnesses_among_all_paths, uint64_t queries_reasoned_by_mit, uint64_t queries_reasoned_by_box, uint64_t queries_reasoned_by_bvt, bool is_number_of_generated_witnesses_overflowed) {
   std::cout << "\n\n";
   std::cout << YELLOW "number of explored paths:= " << paths << RESET << std::endl;
 
-  if (is_number_of_generated_witnesses_overflowed == false)
-    std::cout << CYAN "number of witnesses:= total: " << total_number_of_generated_witnesses_for_all_paths << ", max: " << max_number_of_generated_witnesses_among_all_paths << RESET << std::endl;
-  else
-    std::cout << CYAN "number of witnesses:= total: > " << UINT64_MAX << ", max: !" << RESET << std::endl;
+  // if (is_number_of_generated_witnesses_overflowed == false)
+  //   std::cout << CYAN "number of witnesses:= total: " << total_number_of_generated_witnesses_for_all_paths << ", max: " << max_number_of_generated_witnesses_among_all_paths << RESET << std::endl;
+  // else
+  //   std::cout << CYAN "number of witnesses:= total: > " << UINT64_MAX << ", max: !" << RESET << std::endl;
 
   std::cout << GREEN "number of queries:= mit: " << queries_reasoned_by_mit << ", box: " << queries_reasoned_by_box << ", bvt: " << queries_reasoned_by_bvt << RESET << "\n\n";
 }
@@ -83,28 +83,10 @@ uint64_t mit_box_bvt_engine::run_engine(uint64_t* to_context) {
         output_results << "B=" << paths+1 << "\n";
       }
 
-      if (does_path_need_to_be_reasoned_by_smt == false) {
-        if (paths == 0) std::cout << exe_name << ": backtracking \n"; else unprint_integer(paths);
-        paths++;
-        print_integer(paths);
-        witness_profile();
-
-      } else {
-        queries_reasoned_by_bvt++;
-        if (boolector_sat(btor) == BOOLECTOR_SAT) {
-          if (paths == 0) std::cout << exe_name << ": backtracking \n"; else unprint_integer(paths);
-          paths++;
-          print_integer(paths);
-
-          // dump inputs taken from smt, because this path was reasoned lazily so at end-point inputs should be updated with correct values
-          // for print and test generation purpose
-          refine_abvt_abstraction_by_dumping_all_input_variables_on_trace_bvt();
-
-          does_path_need_to_be_reasoned_by_smt = false;
-
-          witness_profile();
-        }
-      }
+      if (paths == 0) std::cout << exe_name << ": backtracking \n"; else unprint_integer(paths);
+      paths++;
+      print_integer(paths);
+      witness_profile();
 
       backtrack_trace(current_context);
 
@@ -220,7 +202,7 @@ void mit_box_bvt_engine::create_sltu_constraints(std::vector<uint64_t>& lo1_p, s
   }
 
   if (cannot_handle) {
-    if (which_heuristic == 3) {
+    if (which_heuristic == 1) {
       if (apply_sltu_under_approximate_box_decision_procedure_h3(lo1_p, up1_p, lo2_p, up2_p))
         return;
     } else if (which_heuristic == 2){
@@ -232,21 +214,14 @@ void mit_box_bvt_engine::create_sltu_constraints(std::vector<uint64_t>& lo1_p, s
     check_operands_smt_expressions();
 
     true_reachable  = check_sat_true_branch_bvt(boolector_ult(btor, reg_bvts[rs1], reg_bvts[rs2]));
-    if (true_reachable == false) {
-      false_reachable = true;
-      does_path_need_to_be_reasoned_by_smt = true;
-      sltu_instruction = pc; // this is because I need to change pc of the trace entry when dump inputs at end-point (don't want to be exit syscall)
-    } else {
-      false_reachable = check_sat_false_branch_bvt(boolector_ugte(btor, reg_bvts[rs1], reg_bvts[rs2]));
-      does_path_need_to_be_reasoned_by_smt = false;
-    }
+    false_reachable = check_sat_false_branch_bvt(boolector_ugte(btor, reg_bvts[rs1], reg_bvts[rs2]));
 
     if (true_reachable) {
       if (false_reachable) {
         if (check_conditional_type_whether_is_strict_less_than_or_is_less_greater_than_eq() == LGTE) {
           // false
-          dump_involving_input_variables_true_branch_bvt(false);
-          dump_all_input_variables_on_trace_true_branch_bvt(false);
+          dump_involving_input_variables_true_branch_bvt();
+          dump_all_input_variables_on_trace_true_branch_bvt();
           take_branch(1, 1);
           asts[tc-2]               = 0; // important for backtracking
           bvt_false_branches[tc-2] = boolector_ult(btor, reg_bvts[rs1], reg_bvts[rs2]); // careful
@@ -254,13 +229,13 @@ void mit_box_bvt_engine::create_sltu_constraints(std::vector<uint64_t>& lo1_p, s
           // true
           boolector_push(btor, 1);
           boolector_assert(btor, boolector_ugte(btor, reg_bvts[rs1], reg_bvts[rs2]));
-          dump_involving_input_variables_false_branch_bvt(false);
-          dump_all_input_variables_on_trace_false_branch_bvt(false);
+          dump_involving_input_variables_false_branch_bvt();
+          dump_all_input_variables_on_trace_false_branch_bvt();
           take_branch(0, 0);
         } else {
           // false
-          dump_involving_input_variables_false_branch_bvt(false);
-          dump_all_input_variables_on_trace_false_branch_bvt(false);
+          dump_involving_input_variables_false_branch_bvt();
+          dump_all_input_variables_on_trace_false_branch_bvt();
           take_branch(0, 1);
           asts[tc-2]               = 0; // important for backtracking
           bvt_false_branches[tc-2] = boolector_ugte(btor, reg_bvts[rs1], reg_bvts[rs2]); // carefull
@@ -268,18 +243,18 @@ void mit_box_bvt_engine::create_sltu_constraints(std::vector<uint64_t>& lo1_p, s
           // true
           boolector_push(btor, 1);
           boolector_assert(btor, boolector_ult(btor, reg_bvts[rs1], reg_bvts[rs2]));
-          dump_involving_input_variables_true_branch_bvt(false);
-          dump_all_input_variables_on_trace_true_branch_bvt(false);
+          dump_involving_input_variables_true_branch_bvt();
+          dump_all_input_variables_on_trace_true_branch_bvt();
           take_branch(1, 0);
         }
       } else {
-        dump_involving_input_variables_true_branch_bvt(false);
-        dump_all_input_variables_on_trace_true_branch_bvt(false);
+        dump_involving_input_variables_true_branch_bvt();
+        dump_all_input_variables_on_trace_true_branch_bvt();
         take_branch(1, 0);
       }
     } else if (false_reachable) {
-      dump_involving_input_variables_false_branch_bvt(true);
-      dump_all_input_variables_on_trace_false_branch_bvt(true);
+      dump_involving_input_variables_false_branch_bvt();
+      dump_all_input_variables_on_trace_false_branch_bvt();
       take_branch(0, 0);
     } else {
       std::cout << exe_name << ": both branches unreachable! at 0x" << std::hex << pc - entry_point << std::dec << std::endl;
@@ -369,7 +344,7 @@ void mit_box_bvt_engine::create_xor_constraints(std::vector<uint64_t>& lo1_p, st
   }
 
   if (cannot_handle) {
-    if (which_heuristic == 3) {
+    if (which_heuristic == 1) {
       if (apply_diseq_under_approximate_box_decision_procedure_h3(lo1_p, up1_p, lo2_p, up2_p))
         return;
     } else if (which_heuristic == 2){
@@ -382,21 +357,14 @@ void mit_box_bvt_engine::create_xor_constraints(std::vector<uint64_t>& lo1_p, st
     check_operands_smt_expressions();
 
     true_reachable  = check_sat_true_branch_bvt(boolector_ne(btor, reg_bvts[rs1], reg_bvts[rs2]));
-    if (true_reachable == false) {
-      false_reachable = true;
-      does_path_need_to_be_reasoned_by_smt = true;
-      sltu_instruction = pc; // this is because I need to change pc of the trace entry when dump inputs at end-point (don't want to be exit syscall)
-    } else {
-      false_reachable = check_sat_false_branch_bvt(boolector_eq(btor, reg_bvts[rs1], reg_bvts[rs2]));
-      does_path_need_to_be_reasoned_by_smt = false;
-    }
+    false_reachable = check_sat_false_branch_bvt(boolector_eq(btor, reg_bvts[rs1], reg_bvts[rs2]));
 
     if (true_reachable) {
       if (false_reachable) {
         if (check_conditional_type_whether_is_equality_or_disequality() == EQ) {
           // false
-          dump_involving_input_variables_true_branch_bvt(false);
-          dump_all_input_variables_on_trace_true_branch_bvt(false);
+          dump_involving_input_variables_true_branch_bvt();
+          dump_all_input_variables_on_trace_true_branch_bvt();
           take_branch(1, 1);
           asts[tc-2]               = 0; // important for backtracking
           bvt_false_branches[tc-2] = boolector_ne(btor, reg_bvts[rs1], reg_bvts[rs2]); // carefull
@@ -404,13 +372,13 @@ void mit_box_bvt_engine::create_xor_constraints(std::vector<uint64_t>& lo1_p, st
           // true
           boolector_push(btor, 1);
           boolector_assert(btor, boolector_eq(btor, reg_bvts[rs1], reg_bvts[rs2]));
-          dump_involving_input_variables_false_branch_bvt(false);
-          dump_all_input_variables_on_trace_false_branch_bvt(false);
+          dump_involving_input_variables_false_branch_bvt();
+          dump_all_input_variables_on_trace_false_branch_bvt();
           take_branch(0, 0);
         } else {
           // false
-          dump_involving_input_variables_false_branch_bvt(false);
-          dump_all_input_variables_on_trace_false_branch_bvt(false);
+          dump_involving_input_variables_false_branch_bvt();
+          dump_all_input_variables_on_trace_false_branch_bvt();
           take_branch(0, 1);
           asts[tc-2]               = 0; // important for backtracking
           bvt_false_branches[tc-2] = boolector_eq(btor, reg_bvts[rs1], reg_bvts[rs2]); // carefull
@@ -418,18 +386,18 @@ void mit_box_bvt_engine::create_xor_constraints(std::vector<uint64_t>& lo1_p, st
           // true
           boolector_push(btor, 1);
           boolector_assert(btor, boolector_ne(btor, reg_bvts[rs1], reg_bvts[rs2]));
-          dump_involving_input_variables_true_branch_bvt(false);
-          dump_all_input_variables_on_trace_true_branch_bvt(false);
+          dump_involving_input_variables_true_branch_bvt();
+          dump_all_input_variables_on_trace_true_branch_bvt();
           take_branch(1, 0);
         }
       } else {
-        dump_involving_input_variables_true_branch_bvt(false);
-        dump_all_input_variables_on_trace_true_branch_bvt(false);
+        dump_involving_input_variables_true_branch_bvt();
+        dump_all_input_variables_on_trace_true_branch_bvt();
         take_branch(1, 0);
       }
     } else if (false_reachable) {
-      dump_involving_input_variables_false_branch_bvt(true);
-      dump_all_input_variables_on_trace_false_branch_bvt(true);
+      dump_involving_input_variables_false_branch_bvt();
+      dump_all_input_variables_on_trace_false_branch_bvt();
       take_branch(0, 0);
     } else {
       std::cout << exe_name << ": both branches unreachable! at 0x" << std::hex << pc - entry_point << std::dec << std::endl;
@@ -1907,14 +1875,14 @@ bool mit_box_bvt_engine::apply_sltu_under_approximate_box_decision_procedure_h2(
             // true
             boolector_push(btor, 1);
             boolector_assert(btor, boolector_ugte(btor, reg_bvts[rs1], reg_bvts[rs2]));
-            dump_involving_input_variables_false_branch_bvt(false);
-            dump_all_input_variables_on_trace_false_branch_bvt(false);
+            dump_involving_input_variables_false_branch_bvt();
+            dump_all_input_variables_on_trace_false_branch_bvt();
             take_branch(0, 0);
 
           } else {
             // false
-            dump_involving_input_variables_false_branch_bvt(false);
-            dump_all_input_variables_on_trace_false_branch_bvt(false);
+            dump_involving_input_variables_false_branch_bvt();
+            dump_all_input_variables_on_trace_false_branch_bvt();
             uint64_t false_ast_ptr   = add_ast_node(IGTE, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 0, 0, zero_v, BOX, boolector_null); // important: should remain BOX
             take_branch(0, 1);
             asts[tc-2]               = false_ast_ptr;
@@ -1954,8 +1922,8 @@ bool mit_box_bvt_engine::apply_sltu_under_approximate_box_decision_procedure_h2(
       if (true_reachable) {
         if (conditional_type == LGTE) {
           // false
-          dump_involving_input_variables_true_branch_bvt(false);
-          dump_all_input_variables_on_trace_true_branch_bvt(false);
+          dump_involving_input_variables_true_branch_bvt();
+          dump_all_input_variables_on_trace_true_branch_bvt();
           uint64_t false_ast_ptr   = add_ast_node(ILT, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 0, 0, zero_v, BOX, boolector_null); // important: should remain BOX
           take_branch(1, 1);
           asts[tc-2]               = false_ast_ptr;
@@ -1990,8 +1958,8 @@ bool mit_box_bvt_engine::apply_sltu_under_approximate_box_decision_procedure_h2(
           // true
           boolector_push(btor, 1);
           boolector_assert(btor, boolector_ult(btor, reg_bvts[rs1], reg_bvts[rs2]));
-          dump_involving_input_variables_true_branch_bvt(false);
-          dump_all_input_variables_on_trace_true_branch_bvt(false);
+          dump_involving_input_variables_true_branch_bvt();
+          dump_all_input_variables_on_trace_true_branch_bvt();
           take_branch(1, 0);
         }
 
@@ -2118,14 +2086,14 @@ bool mit_box_bvt_engine::apply_sltu_under_approximate_box_decision_procedure_h3(
             // true
             boolector_push(btor, 1);
             boolector_assert(btor, boolector_ugte(btor, reg_bvts[rs1], reg_bvts[rs2]));
-            dump_involving_input_variables_false_branch_bvt(false);
-            dump_all_input_variables_on_trace_false_branch_bvt(false);
+            dump_involving_input_variables_false_branch_bvt();
+            dump_all_input_variables_on_trace_false_branch_bvt();
             take_branch(0, 0);
 
           } else {
             // false
-            dump_involving_input_variables_false_branch_bvt(false);
-            dump_all_input_variables_on_trace_false_branch_bvt(false);
+            dump_involving_input_variables_false_branch_bvt();
+            dump_all_input_variables_on_trace_false_branch_bvt();
             uint64_t false_ast_ptr   = add_ast_node(IGTE, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 0, 0, zero_v, BOX, boolector_null); // important: should remain BOX
             take_branch(0, 1);
             asts[tc-2]               = false_ast_ptr;
@@ -2165,8 +2133,8 @@ bool mit_box_bvt_engine::apply_sltu_under_approximate_box_decision_procedure_h3(
       if (true_reachable) {
         if (conditional_type == LGTE) {
           // false
-          dump_involving_input_variables_true_branch_bvt(false);
-          dump_all_input_variables_on_trace_true_branch_bvt(false);
+          dump_involving_input_variables_true_branch_bvt();
+          dump_all_input_variables_on_trace_true_branch_bvt();
           uint64_t false_ast_ptr   = add_ast_node(ILT, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 0, 0, zero_v, BOX, boolector_null); // important: should remain BOX
           take_branch(1, 1);
           asts[tc-2]               = false_ast_ptr;
@@ -2201,8 +2169,8 @@ bool mit_box_bvt_engine::apply_sltu_under_approximate_box_decision_procedure_h3(
           // true
           boolector_push(btor, 1);
           boolector_assert(btor, boolector_ult(btor, reg_bvts[rs1], reg_bvts[rs2]));
-          dump_involving_input_variables_true_branch_bvt(false);
-          dump_all_input_variables_on_trace_true_branch_bvt(false);
+          dump_involving_input_variables_true_branch_bvt();
+          dump_all_input_variables_on_trace_true_branch_bvt();
           take_branch(1, 0);
         }
 
@@ -3322,14 +3290,14 @@ bool mit_box_bvt_engine::apply_diseq_under_approximate_box_decision_procedure_h2
             // true
             boolector_push(btor, 1);
             boolector_assert(btor, boolector_eq(btor, reg_bvts[rs1], reg_bvts[rs2]));
-            dump_involving_input_variables_false_branch_bvt(false);
-            dump_all_input_variables_on_trace_false_branch_bvt(false);
+            dump_involving_input_variables_false_branch_bvt();
+            dump_all_input_variables_on_trace_false_branch_bvt();
             take_branch(0, 0);
 
           } else {
             // false
-            dump_involving_input_variables_false_branch_bvt(false);
-            dump_all_input_variables_on_trace_false_branch_bvt(false);
+            dump_involving_input_variables_false_branch_bvt();
+            dump_all_input_variables_on_trace_false_branch_bvt();
             uint64_t false_ast_ptr   = add_ast_node(IEQ, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 0, 0, zero_v, BOX, boolector_null); // important: should remain BOX
             take_branch(0, 1);
             asts[tc-2]               = false_ast_ptr;
@@ -3369,8 +3337,8 @@ bool mit_box_bvt_engine::apply_diseq_under_approximate_box_decision_procedure_h2
       if (true_reachable) {
         if (conditional_type == EQ) {
           // false
-          dump_involving_input_variables_true_branch_bvt(false);
-          dump_all_input_variables_on_trace_true_branch_bvt(false);
+          dump_involving_input_variables_true_branch_bvt();
+          dump_all_input_variables_on_trace_true_branch_bvt();
           uint64_t false_ast_ptr   = add_ast_node(INEQ, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 0, 0, zero_v, BOX, boolector_null); // important: should remain BOX
           take_branch(1, 1);
           asts[tc-2]               = false_ast_ptr;
@@ -3401,8 +3369,8 @@ bool mit_box_bvt_engine::apply_diseq_under_approximate_box_decision_procedure_h2
           // true
           boolector_push(btor, 1);
           boolector_assert(btor, boolector_ne(btor, reg_bvts[rs1], reg_bvts[rs2]));
-          dump_involving_input_variables_true_branch_bvt(false);
-          dump_all_input_variables_on_trace_true_branch_bvt(false);
+          dump_involving_input_variables_true_branch_bvt();
+          dump_all_input_variables_on_trace_true_branch_bvt();
           take_branch(1, 0);
         }
 
@@ -3525,14 +3493,14 @@ bool mit_box_bvt_engine::apply_diseq_under_approximate_box_decision_procedure_h3
             // true
             boolector_push(btor, 1);
             boolector_assert(btor, boolector_eq(btor, reg_bvts[rs1], reg_bvts[rs2]));
-            dump_involving_input_variables_false_branch_bvt(false);
-            dump_all_input_variables_on_trace_false_branch_bvt(false);
+            dump_involving_input_variables_false_branch_bvt();
+            dump_all_input_variables_on_trace_false_branch_bvt();
             take_branch(0, 0);
 
           } else {
             // false
-            dump_involving_input_variables_false_branch_bvt(false);
-            dump_all_input_variables_on_trace_false_branch_bvt(false);
+            dump_involving_input_variables_false_branch_bvt();
+            dump_all_input_variables_on_trace_false_branch_bvt();
             uint64_t false_ast_ptr   = add_ast_node(IEQ, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 0, 0, zero_v, BOX, boolector_null); // important: should remain BOX
             take_branch(0, 1);
             asts[tc-2]               = false_ast_ptr;
@@ -3572,8 +3540,8 @@ bool mit_box_bvt_engine::apply_diseq_under_approximate_box_decision_procedure_h3
       if (true_reachable) {
         if (conditional_type == EQ) {
           // false
-          dump_involving_input_variables_true_branch_bvt(false);
-          dump_all_input_variables_on_trace_true_branch_bvt(false);
+          dump_involving_input_variables_true_branch_bvt();
+          dump_all_input_variables_on_trace_true_branch_bvt();
           uint64_t false_ast_ptr   = add_ast_node(INEQ, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 0, 0, zero_v, BOX, boolector_null); // important: should remain BOX
           take_branch(1, 1);
           asts[tc-2]               = false_ast_ptr;
@@ -3604,8 +3572,8 @@ bool mit_box_bvt_engine::apply_diseq_under_approximate_box_decision_procedure_h3
           // true
           boolector_push(btor, 1);
           boolector_assert(btor, boolector_ne(btor, reg_bvts[rs1], reg_bvts[rs2]));
-          dump_involving_input_variables_true_branch_bvt(false);
-          dump_all_input_variables_on_trace_true_branch_bvt(false);
+          dump_involving_input_variables_true_branch_bvt();
+          dump_all_input_variables_on_trace_true_branch_bvt();
           take_branch(1, 0);
         }
 

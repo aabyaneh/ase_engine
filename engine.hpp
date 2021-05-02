@@ -525,7 +525,6 @@ class engine {
     uint64_t queries_reasoned_by_bvt_sat = 0; // number of queries returned sat handled by bvt
     uint64_t paths = 0;
     uint64_t queries_reasoned_by_box = 0; // number of queries handled by box
-    uint64_t queries_reasoned_by_overapprx = 0;
 
     // ----------------------------------------------------------------
     // over-approximating path reasoning

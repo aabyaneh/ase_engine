@@ -159,7 +159,7 @@ class mit_bvt_engine : public engine {
     uint64_t max_number_of_generated_witnesses_among_all_paths = 0;
     bool     is_number_of_generated_witnesses_overflowed       = false;
     unsigned __int128 current_number_of_witnesses;
-    void     print_input_witness(size_t i, size_t j, uint64_t lo, uint64_t up, uint64_t step);
+    void     print_input_witness(size_t i, size_t j, uint64_t input, uint64_t lo, uint64_t up, uint64_t step);
     virtual  void witness_profile();
 
     // -------------------------
@@ -277,10 +277,10 @@ class mit_bvt_engine : public engine {
     virtual  void  create_xor_constraints(std::vector<uint64_t>& lo1_p, std::vector<uint64_t>& up1_p, std::vector<uint64_t>& lo2_p, std::vector<uint64_t>& up2_p, uint64_t trb);
     bool     check_sat_true_branch_bvt(BoolectorNode* assert);
     bool     check_sat_false_branch_bvt(BoolectorNode* assert);
-    void     dump_involving_input_variables_true_branch_bvt(bool);
-    void     dump_involving_input_variables_false_branch_bvt(bool);
-    void     dump_all_input_variables_on_trace_true_branch_bvt(bool);
-    void     dump_all_input_variables_on_trace_false_branch_bvt(bool);
+    void     dump_involving_input_variables_true_branch_bvt();
+    void     dump_involving_input_variables_false_branch_bvt();
+    void     dump_all_input_variables_on_trace_true_branch_bvt();
+    void     dump_all_input_variables_on_trace_false_branch_bvt();
     void     refine_abvt_abstraction_by_dumping_all_input_variables_on_trace_bvt();
     bool     match_addi_instruction();
     bool     match_sub_instruction(uint64_t prev_instr_rd);
@@ -302,4 +302,6 @@ class mit_bvt_engine : public engine {
     uint64_t compute_remu(uint64_t left_operand_ast_tc, uint64_t right_operand_ast_tc, uint64_t old_ast_tc, uint8_t theory_type, uint8_t symbolic_operands);
     uint64_t recompute_operation(uint8_t op, uint64_t left_operand_ast_tc, uint64_t right_operand_ast_tc, uint64_t old_ast_tc, uint8_t theory_type, uint8_t symbolic_operands);
     uint64_t update_current_constraint_on_ast_expression(uint64_t ast_tc);
+
+    std::string get_abstraction(uint8_t abstraction);
 };

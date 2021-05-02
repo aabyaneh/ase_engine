@@ -100,8 +100,6 @@ class bvt_engine : public engine {
 
     uint64_t zero_node;
     uint64_t one_node;
-    // uint64_t queries_reasoned_by_bvt = 0; // number of queries handled by bvt
-    // uint64_t paths = 0;
 
     // detection of symbolic operand in an expression
     enum symbolic_operands_in_an_expression : uint8_t {
@@ -257,10 +255,10 @@ class bvt_engine : public engine {
     void     create_xor_constraints();
     bool     check_sat_true_branch_bvt(BoolectorNode* assert);
     bool     check_sat_false_branch_bvt(BoolectorNode* assert);
-    void     dump_involving_input_variables_true_branch_bvt(bool);
-    void     dump_involving_input_variables_false_branch_bvt(bool);
-    void     dump_all_input_variables_on_trace_true_branch_bvt(bool);
-    void     dump_all_input_variables_on_trace_false_branch_bvt(bool);
+    void     dump_involving_input_variables_true_branch_bvt();
+    void     dump_involving_input_variables_false_branch_bvt();
+    void     dump_all_input_variables_on_trace_true_branch_bvt();
+    void     dump_all_input_variables_on_trace_false_branch_bvt();
     bool     match_addi_instruction();
     bool     match_sub_instruction(uint64_t prev_instr_rd);
     uint8_t  check_conditional_type_whether_is_equality_or_disequality();
