@@ -1661,7 +1661,7 @@ void mit_bvt_engine::apply_sltu() {
 
     if (reg_data_type[rs1] != POINTER_T) {
       if (reg_data_type[rs2] != POINTER_T) {
-        create_sltu_constraints(reg_mintervals_los[rs1], reg_mintervals_ups[rs1], reg_mintervals_los[rs2], reg_mintervals_ups[rs2], mrcc);
+        create_sltu_constraints(reg_mintervals_los[rs1], reg_mintervals_ups[rs1], reg_mintervals_los[rs2], reg_mintervals_ups[rs2], mrcc, false);
       } else
         std::cout << exe_name << ": detected pointer data-type in comparison\n";
     } else
@@ -1729,7 +1729,7 @@ void mit_bvt_engine::apply_xor() {
 
     if (reg_data_type[rs1] != POINTER_T) {
       if (reg_data_type[rs2] != POINTER_T) {
-        create_xor_constraints(reg_mintervals_los[rs1], reg_mintervals_ups[rs1], reg_mintervals_los[rs2], reg_mintervals_ups[rs2], mrcc);
+        create_xor_constraints(reg_mintervals_los[rs1], reg_mintervals_ups[rs1], reg_mintervals_los[rs2], reg_mintervals_ups[rs2], mrcc, false);
       } else
         std::cout << exe_name << ": detected pointer data-type in comparison\n";
     } else
@@ -2386,7 +2386,7 @@ uint8_t mit_bvt_engine::detect_symbolic_operand(uint64_t ast_tc) {
   }
 }
 
-void mit_bvt_engine::backward_propagation_divu_wrapped_mit(uint64_t sym_operand_ast_tc, uint64_t divisor) {
+bool mit_bvt_engine::backward_propagation_divu_wrapped_mit(uint64_t sym_operand_ast_tc, uint64_t divisor) {
   uint64_t lo_1;
   uint64_t up_1;
   uint64_t lo_2;
@@ -2425,8 +2425,8 @@ void mit_bvt_engine::backward_propagation_divu_wrapped_mit(uint64_t sym_operand_
       propagated_minterval_lo[0] = lo_1;
       propagated_minterval_up[0] = up_2;
     } else {
-      std::cout << exe_name << ": detected an unsupported divu in a conditional expression at 0x" << std::hex << pc - entry_point << std::dec << std::endl;
-      exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
+      std::cout << exe_name << ": divu theory upgrade at 0x" << std::hex << pc - entry_point << std::dec << std::endl;
+      return false;
     }
   } else if (which_solution_is_empty == 1) {
     propagated_minterval_lo[0] = lo_2;
@@ -2435,10 +2435,11 @@ void mit_bvt_engine::backward_propagation_divu_wrapped_mit(uint64_t sym_operand_
     propagated_minterval_lo[0] = lo_1;
     propagated_minterval_up[0] = up_1;
   } else if (which_solution_is_empty == 4) {
-    std::cout << exe_name << ": detected empty intervals for reverse of divu in a conditional expression at 0x" << std::hex << pc - entry_point << std::dec << std::endl;
-    exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
+    std::cout << exe_name << ": divu theory upgrade at 0x" << std::hex << pc - entry_point << std::dec << std::endl;
+    return false;
   }
 
+  return true;
 }
 
 uint64_t mit_bvt_engine::backward_propagation_of_value_intervals(uint64_t ast_tc, std::vector<uint64_t>& lo, std::vector<uint64_t>& up, size_t mints_num, uint8_t theory_type) {
@@ -2497,7 +2498,7 @@ uint64_t mit_bvt_engine::backward_propagation_of_value_intervals(uint64_t ast_tc
 
   if (left_or_right_is_sym == BOTH) {
     std::cout << exe_name << ": both operands are symbolic in backward_propagation_of_value_intervals!\n";
-    exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
+    return 0;
   }
 
   for (size_t i = 0; i < mints_num; i++) {
@@ -2541,8 +2542,7 @@ uint64_t mit_bvt_engine::backward_propagation_of_value_intervals(uint64_t ast_tc
     }
     case mit_bvt_engine::DIVU: {
       if (mints_num > 1) {
-        std::cout << exe_name << ": detected an unsupported divu in a conditional expression at 0x" << std::hex << pc - entry_point << std::dec << std::endl;
-        exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
+        return 0;
       }
 
       uint64_t divisor = mintervals_los[crt_operand_ast_tc][0];
@@ -2557,24 +2557,30 @@ uint64_t mit_bvt_engine::backward_propagation_of_value_intervals(uint64_t ast_tc
         propagated_minterval_up[0] = compute_upper_bound_mit(mintervals_los[sym_operand_ast_tc][0], steps[sym_operand_ast_tc], propagated_minterval_up[0] * divisor + reverse_division_up(mintervals_ups[sym_operand_ast_tc][0], propagated_minterval_up[0], divisor));
       } else {
         // wrapped
-        backward_propagation_divu_wrapped_mit(sym_operand_ast_tc, divisor);
+        if (backward_propagation_divu_wrapped_mit(sym_operand_ast_tc, divisor) == false)
+          return 0;
       }
 
       break;
     }
     case mit_bvt_engine::REMU: {
-      std::cout << exe_name << ": detected an unsupported remu in a conditional expression at 0x" << std::hex << pc - entry_point << std::dec << std::endl;
-      exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
+      std::cout << exe_name << ": detected an unsupported remu in backward_propagation_of_value_intervals at 0x" << std::hex << pc - entry_point << std::dec << std::endl;
+      return 0;
+
       break;
     }
     default: {
-      std::cout << exe_name << ": detected an unknown operation during backward propagation at 0x" << std::hex << pc - entry_point << std::dec << std::endl;
+      std::cout << exe_name << ": detected an unknown operation during backward_propagation_of_value_intervals at 0x" << std::hex << pc - entry_point << std::dec << std::endl;
       exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
       break;
     }
   }
 
   uint64_t sym_operand_ptr = backward_propagation_of_value_intervals(sym_operand_ast_tc, propagated_minterval_lo, propagated_minterval_up, mints_num, theory_type);
+
+  if (sym_operand_ptr == 0) {
+    return 0;
+  }
 
   if (left_or_right_is_sym == LEFT)
     ast_ptr = add_ast_node(ast_nodes[ast_tc].type, sym_operand_ptr, ast_nodes[ast_tc].right_node, mints_num, saved_lo, saved_up, steps[ast_tc], involved_sym_inputs_cnts[sym_operand_ptr], involved_sym_inputs_ast_tcs[sym_operand_ptr], MIT, smt_exprs[ast_tc]);
@@ -2592,12 +2598,15 @@ uint64_t mit_bvt_engine::backward_propagation_of_value_intervals(uint64_t ast_tc
   return ast_ptr;
 }
 
-void mit_bvt_engine::constrain_memory_mit(uint64_t reg, std::vector<uint64_t>& lo, std::vector<uint64_t>& up, uint32_t mints_num, uint64_t trb, bool only_reachable_branch) {
+bool mit_bvt_engine::constrain_memory_mit(uint64_t reg, std::vector<uint64_t>& lo, std::vector<uint64_t>& up, uint32_t mints_num, uint64_t trb, bool only_reachable_branch) {
   if (reg_symb_type[reg] == SYMBOLIC) {
     if (only_reachable_branch == false) {
-      backward_propagation_of_value_intervals(reg_asts[reg], lo, up, mints_num, reg_theory_types[reg]);
+      if (backward_propagation_of_value_intervals(reg_asts[reg], lo, up, mints_num, reg_theory_types[reg]) == 0)
+        return false;
     }
   }
+
+  return true;
 }
 
 bool mit_bvt_engine::evaluate_sltu_true_false_branch_mit(uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t up2) {
@@ -2800,8 +2809,7 @@ bool mit_bvt_engine::evaluate_sltu_true_false_branch_mit(uint64_t lo1, uint64_t 
   return cannot_handle;
 }
 
-void mit_bvt_engine::create_sltu_constraints(std::vector<uint64_t>& lo1_p, std::vector<uint64_t>& up1_p, std::vector<uint64_t>& lo2_p, std::vector<uint64_t>& up2_p, uint64_t trb) {
-  bool cannot_handle   = false;
+void mit_bvt_engine::create_sltu_constraints(std::vector<uint64_t>& lo1_p, std::vector<uint64_t>& up1_p, std::vector<uint64_t>& lo2_p, std::vector<uint64_t>& up2_p, uint64_t trb, bool cannot_handle) {
   bool true_reachable  = false;
   bool false_reachable = false;
   uint64_t lo1;
@@ -2816,7 +2824,7 @@ void mit_bvt_engine::create_sltu_constraints(std::vector<uint64_t>& lo1_p, std::
 
   if (reg_theory_types[rs1] > MIT || reg_theory_types[rs2] > MIT) {
     cannot_handle = true;
-  } else {
+  } else if (cannot_handle != true) {
     for (size_t i = 0; i < reg_mintervals_cnts[rs1]; i++) {
       lo1 = lo1_p[i];
       up1 = up1_p[i];
@@ -2890,24 +2898,33 @@ void mit_bvt_engine::create_sltu_constraints(std::vector<uint64_t>& lo1_p, std::
   if (false_branch_rs1_minterval_cnt > 0 && false_branch_rs2_minterval_cnt > 0)
     false_reachable = true;
 
+  save_trace_state();
+  bool is_handled = false;
+
   if (true_reachable) {
     if (false_reachable) {
       if (check_conditional_type_whether_is_strict_less_than_or_is_less_greater_than_eq() == LGTE) {
-        constrain_memory_mit(rs1, true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, true_branch_rs1_minterval_cnt, trb, false);
-        constrain_memory_mit(rs2, true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, true_branch_rs2_minterval_cnt, trb, false);
+        is_handled = constrain_memory_mit(rs1, true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, true_branch_rs1_minterval_cnt, trb, false);
+        if (is_handled == false) { upgrade_to_bvt_sltu(lo1_p, up1_p, lo2_p, up2_p, trb); return; }
+        is_handled = constrain_memory_mit(rs2, true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, true_branch_rs2_minterval_cnt, trb, false);
+        if (is_handled == false) { upgrade_to_bvt_sltu(lo1_p, up1_p, lo2_p, up2_p, trb); return; }
         uint64_t false_ast_ptr   = add_ast_node(ILT, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 0, 0, zero_v, MIT, boolector_null);
         take_branch(1, 1);
         asts[tc-2]               = false_ast_ptr;
-        bvt_false_branches[tc-2] = boolector_null; // important place be careful
+        bvt_false_branches[tc-2] = boolector_null; // careful
 
         path_condition.push_back(add_ast_node(IGTE, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 1, 0, zero_v, MIT, boolector_null));
 
-        constrain_memory_mit(rs1, false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups,false_branch_rs1_minterval_cnt, trb, false);
-        constrain_memory_mit(rs2, false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups,false_branch_rs2_minterval_cnt, trb, false);
+        is_handled = constrain_memory_mit(rs1, false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups,false_branch_rs1_minterval_cnt, trb, false);
+        if (is_handled == false) { upgrade_to_bvt_sltu(lo1_p, up1_p, lo2_p, up2_p, trb); return; }
+        is_handled = constrain_memory_mit(rs2, false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups,false_branch_rs2_minterval_cnt, trb, false);
+        if (is_handled == false) { upgrade_to_bvt_sltu(lo1_p, up1_p, lo2_p, up2_p, trb); return; }
         take_branch(0, 0);
       } else {
-        constrain_memory_mit(rs1, false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups,false_branch_rs1_minterval_cnt, trb, false);
-        constrain_memory_mit(rs2, false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups,false_branch_rs2_minterval_cnt, trb, false);
+        is_handled = constrain_memory_mit(rs1, false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups,false_branch_rs1_minterval_cnt, trb, false);
+        if (is_handled == false) { upgrade_to_bvt_sltu(lo1_p, up1_p, lo2_p, up2_p, trb); return; }
+        is_handled = constrain_memory_mit(rs2, false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups,false_branch_rs2_minterval_cnt, trb, false);
+        if (is_handled == false) { upgrade_to_bvt_sltu(lo1_p, up1_p, lo2_p, up2_p, trb); return; }
         uint64_t false_ast_ptr   = add_ast_node(IGTE, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 0, 0, zero_v, MIT, boolector_null);
         take_branch(0, 1);
         asts[tc-2]               = false_ast_ptr;
@@ -2915,8 +2932,10 @@ void mit_bvt_engine::create_sltu_constraints(std::vector<uint64_t>& lo1_p, std::
 
         path_condition.push_back(add_ast_node(ILT, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 1, 0, zero_v, MIT, boolector_null));
 
-        constrain_memory_mit(rs1, true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, true_branch_rs1_minterval_cnt, trb, false);
-        constrain_memory_mit(rs2, true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, true_branch_rs2_minterval_cnt, trb, false);
+        is_handled = constrain_memory_mit(rs1, true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, true_branch_rs1_minterval_cnt, trb, false);
+        if (is_handled == false) { upgrade_to_bvt_sltu(lo1_p, up1_p, lo2_p, up2_p, trb); return; }
+        is_handled = constrain_memory_mit(rs2, true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, true_branch_rs2_minterval_cnt, trb, false);
+        if (is_handled == false) { upgrade_to_bvt_sltu(lo1_p, up1_p, lo2_p, up2_p, trb); return; }
         take_branch(1, 0);
       }
     } else {
@@ -3095,8 +3114,7 @@ bool mit_bvt_engine::evaluate_xor_true_false_branch_mit(uint64_t lo1, uint64_t u
   return cannot_handle;
 }
 
-void mit_bvt_engine::create_xor_constraints(std::vector<uint64_t>& lo1_p, std::vector<uint64_t>& up1_p, std::vector<uint64_t>& lo2_p, std::vector<uint64_t>& up2_p, uint64_t trb) {
-  bool cannot_handle   = false;
+void mit_bvt_engine::create_xor_constraints(std::vector<uint64_t>& lo1_p, std::vector<uint64_t>& up1_p, std::vector<uint64_t>& lo2_p, std::vector<uint64_t>& up2_p, uint64_t trb, bool cannot_handle) {
   bool true_reachable  = false;
   bool false_reachable = false;
   uint64_t lo1;
@@ -3111,7 +3129,7 @@ void mit_bvt_engine::create_xor_constraints(std::vector<uint64_t>& lo1_p, std::v
 
   if (reg_theory_types[rs1] > MIT || reg_theory_types[rs2] > MIT) {
     cannot_handle = true;
-  } else {
+  } else if (cannot_handle != true) {
     for (size_t i = 0; i < reg_mintervals_cnts[rs1]; i++) {
       lo1 = lo1_p[i];
       up1 = up1_p[i];
@@ -3186,11 +3204,16 @@ void mit_bvt_engine::create_xor_constraints(std::vector<uint64_t>& lo1_p, std::v
   if (false_branch_rs1_minterval_cnt > 0 && false_branch_rs2_minterval_cnt > 0)
     false_reachable = true;
 
+  save_trace_state();
+  bool is_handled = false;
+
   if (true_reachable) {
     if (false_reachable) {
       if (check_conditional_type_whether_is_equality_or_disequality() == EQ) {
-        constrain_memory_mit(rs1, true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, true_branch_rs1_minterval_cnt, trb, false);
-        constrain_memory_mit(rs2, true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, true_branch_rs2_minterval_cnt, trb, false);
+        is_handled = constrain_memory_mit(rs1, true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, true_branch_rs1_minterval_cnt, trb, false);
+        if (is_handled == false) { upgrade_to_bvt_xor(lo1_p, up1_p, lo2_p, up2_p, trb); return; }
+        is_handled = constrain_memory_mit(rs2, true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, true_branch_rs2_minterval_cnt, trb, false);
+        if (is_handled == false) { upgrade_to_bvt_xor(lo1_p, up1_p, lo2_p, up2_p, trb); return; }
         uint64_t false_ast_ptr   = add_ast_node(INEQ, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 0, 0, zero_v, MIT, boolector_null);
         take_branch(1, 1);
         asts[tc-2]               = false_ast_ptr;
@@ -3198,12 +3221,16 @@ void mit_bvt_engine::create_xor_constraints(std::vector<uint64_t>& lo1_p, std::v
 
         path_condition.push_back(add_ast_node(IEQ, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 1, 0, zero_v, MIT, boolector_null));
 
-        constrain_memory_mit(rs1, false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups,false_branch_rs1_minterval_cnt, trb, false);
-        constrain_memory_mit(rs2, false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups,false_branch_rs2_minterval_cnt, trb, false);
+        is_handled = constrain_memory_mit(rs1, false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups,false_branch_rs1_minterval_cnt, trb, false);
+        if (is_handled == false) { upgrade_to_bvt_xor(lo1_p, up1_p, lo2_p, up2_p, trb); return; }
+        is_handled = constrain_memory_mit(rs2, false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups,false_branch_rs2_minterval_cnt, trb, false);
+        if (is_handled == false) { upgrade_to_bvt_xor(lo1_p, up1_p, lo2_p, up2_p, trb); return; }
         take_branch(0, 0);
       } else {
-        constrain_memory_mit(rs1, false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups,false_branch_rs1_minterval_cnt, trb, false);
-        constrain_memory_mit(rs2, false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups,false_branch_rs2_minterval_cnt, trb, false);
+        is_handled = constrain_memory_mit(rs1, false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups,false_branch_rs1_minterval_cnt, trb, false);
+        if (is_handled == false) { upgrade_to_bvt_xor(lo1_p, up1_p, lo2_p, up2_p, trb); return; }
+        is_handled = constrain_memory_mit(rs2, false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups,false_branch_rs2_minterval_cnt, trb, false);
+        if (is_handled == false) { upgrade_to_bvt_xor(lo1_p, up1_p, lo2_p, up2_p, trb); return; }
         uint64_t false_ast_ptr   = add_ast_node(IEQ, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 0, 0, zero_v, MIT, boolector_null);
         take_branch(0, 1);
         asts[tc-2]               = false_ast_ptr;
@@ -3211,8 +3238,10 @@ void mit_bvt_engine::create_xor_constraints(std::vector<uint64_t>& lo1_p, std::v
 
         path_condition.push_back(add_ast_node(INEQ, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 1, 0, zero_v, MIT, boolector_null));
 
-        constrain_memory_mit(rs1, true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, true_branch_rs1_minterval_cnt, trb, false);
-        constrain_memory_mit(rs2, true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, true_branch_rs2_minterval_cnt, trb, false);
+        is_handled = constrain_memory_mit(rs1, true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, true_branch_rs1_minterval_cnt, trb, false);
+        if (is_handled == false) { upgrade_to_bvt_xor(lo1_p, up1_p, lo2_p, up2_p, trb); return; }
+        is_handled = constrain_memory_mit(rs2, true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, true_branch_rs2_minterval_cnt, trb, false);
+        if (is_handled == false) { upgrade_to_bvt_xor(lo1_p, up1_p, lo2_p, up2_p, trb); return; }
         take_branch(1, 0);
       }
     } else {
@@ -3982,4 +4011,80 @@ uint64_t mit_bvt_engine::update_current_constraint_on_ast_expression(uint64_t as
     theory_type = std::max(std::max(theory_type_ast_nodes[left_operand_ast_tc], theory_type_ast_nodes[right_operand_ast_tc]), theory_type_ast_nodes[ast_tc]);
     return recompute_operation(ast_nodes[ast_tc].type, left_operand_ast_tc, right_operand_ast_tc, ast_tc, theory_type, symbolic_operands);
   }
+}
+
+// -----------------------------------------------------------------------------
+// ----------- upgrade theory on backward_propagation failure ------------------
+// -----------------------------------------------------------------------------
+
+void mit_bvt_engine::save_trace_state() {
+  saved_tc_before_branch_evaluation_using_mit = tc;
+  saved_ast_trace_cnt_before_branch_evaluation_using_mit = ast_trace_cnt;
+  saved_path_condition_size_before_branch_evaluation_using_mit = path_condition.size();
+}
+
+void mit_bvt_engine::restore_trace_state() {
+  tc = saved_tc_before_branch_evaluation_using_mit;
+  ast_trace_cnt = saved_ast_trace_cnt_before_branch_evaluation_using_mit;
+
+  while (saved_path_condition_size_before_branch_evaluation_using_mit < path_condition.size()) {
+    path_condition.pop_back();
+  }
+
+  queries_reasoned_by_mit-=2;
+}
+
+void mit_bvt_engine::backtrack_branch_evaluation_effect_on_trace() {
+  while (saved_tc_before_branch_evaluation_using_mit < tc) {
+    undo_effects();
+  }
+}
+
+void mit_bvt_engine::upgrade_to_bvt_sltu(std::vector<uint64_t>& lo1_p, std::vector<uint64_t>& up1_p, std::vector<uint64_t>& lo2_p, std::vector<uint64_t>& up2_p, uint64_t trb) {
+  backtrack_branch_evaluation_effect_on_trace();
+  restore_trace_state();
+  create_sltu_constraints(lo1_p, up1_p, lo2_p, up2_p, trb, true);
+}
+
+void mit_bvt_engine::upgrade_to_bvt_xor(std::vector<uint64_t>& lo1_p, std::vector<uint64_t>& up1_p, std::vector<uint64_t>& lo2_p, std::vector<uint64_t>& up2_p, uint64_t trb) {
+  backtrack_branch_evaluation_effect_on_trace();
+  restore_trace_state();
+  create_xor_constraints(lo1_p, up1_p, lo2_p, up2_p, trb, true);
+}
+
+void mit_bvt_engine::undo_effects() {
+  uint64_t vaddr;
+
+  vaddr = vaddrs[tc];
+
+  if (vaddr < NUMBEROFREGISTERS) {
+    if (vaddr > 0) {
+      if (vaddr == REG_FP) {
+        // restoring mrcc
+        mrcc = tcs[tc];
+
+        // look at store_symbolic_memory for registers
+        if (ast_trace_cnt > most_recent_if_on_ast_trace) {
+          ast_trace_cnt = most_recent_if_on_ast_trace;
+        }
+        most_recent_if_on_ast_trace = asts[tc];
+      }
+    }
+  } else if (vaddr == NUMBEROFREGISTERS) { // means input_t record
+    input_table.at(ast_nodes[asts[tc]].right_node) = values[tc];
+  } else {
+    if (store_trace_ptrs[asts[tc]].size() > 1) {
+      store_trace_ptrs[asts[tc]].pop_back();
+    } else if (store_trace_ptrs[asts[tc]].size() == 1) {
+      if (ast_nodes[asts[tc]].type == VAR) input_table.at(ast_nodes[asts[tc]].right_node) = asts[tcs[tc]];
+      store_trace_ptrs[asts[tc]].pop_back();
+    } else {
+      std::cout << exe_name << ": error occured during sltu backtracking at 0x" << std::hex << pc - entry_point << std::dec << std::endl;
+      exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
+    }
+
+    store_virtual_memory(pt, vaddr, tcs[tc]);
+  }
+
+  efree();
 }

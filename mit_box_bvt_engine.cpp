@@ -173,8 +173,8 @@ uint64_t mit_box_bvt_engine::add_ast_node(uint8_t typ, uint64_t left_node, uint6
   return ast_trace_cnt;
 }
 
-void mit_box_bvt_engine::create_sltu_constraints(std::vector<uint64_t>& lo1_p, std::vector<uint64_t>& up1_p, std::vector<uint64_t>& lo2_p, std::vector<uint64_t>& up2_p, uint64_t trb) {
-  bool cannot_handle   = false;
+void mit_box_bvt_engine::create_sltu_constraints(std::vector<uint64_t>& lo1_p, std::vector<uint64_t>& up1_p, std::vector<uint64_t>& lo2_p, std::vector<uint64_t>& up2_p, uint64_t trb, bool cannot_handle) {
+  bool handle_by_bvt   = cannot_handle;
   bool true_reachable  = false;
   bool false_reachable = false;
   uint64_t lo1;
@@ -189,7 +189,7 @@ void mit_box_bvt_engine::create_sltu_constraints(std::vector<uint64_t>& lo1_p, s
 
   if (reg_theory_types[rs1] > MIT || reg_theory_types[rs2] > MIT) {
     cannot_handle = true;
-  } else {
+  } else if (cannot_handle != true) {
     for (size_t i = 0; i < reg_mintervals_cnts[rs1]; i++) {
       lo1 = lo1_p[i];
       up1 = up1_p[i];
@@ -202,12 +202,14 @@ void mit_box_bvt_engine::create_sltu_constraints(std::vector<uint64_t>& lo1_p, s
   }
 
   if (cannot_handle) {
-    if (which_heuristic == 1) {
-      if (apply_sltu_under_approximate_box_decision_procedure_h3(lo1_p, up1_p, lo2_p, up2_p))
-        return;
-    } else if (which_heuristic == 2){
-      if (apply_sltu_under_approximate_box_decision_procedure_h2(lo1_p, up1_p, lo2_p, up2_p))
-        return;
+    if (handle_by_bvt != true) {
+      if (which_heuristic == 1) {
+        if (apply_sltu_under_approximate_box_decision_procedure_h3(lo1_p, up1_p, lo2_p, up2_p))
+          return;
+      } else if (which_heuristic == 2){
+        if (apply_sltu_under_approximate_box_decision_procedure_h2(lo1_p, up1_p, lo2_p, up2_p))
+          return;
+      }
     }
 
     assert_path_condition_into_smt_expression();
@@ -271,24 +273,33 @@ void mit_box_bvt_engine::create_sltu_constraints(std::vector<uint64_t>& lo1_p, s
   if (false_branch_rs1_minterval_cnt > 0 && false_branch_rs2_minterval_cnt > 0)
     false_reachable = true;
 
+  save_trace_state();
+  bool is_handled = false;
+
   if (true_reachable) {
     if (false_reachable) {
       if (check_conditional_type_whether_is_strict_less_than_or_is_less_greater_than_eq() == LGTE) {
-        constrain_memory_mit(rs1, true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, true_branch_rs1_minterval_cnt, trb, false);
-        constrain_memory_mit(rs2, true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, true_branch_rs2_minterval_cnt, trb, false);
+        is_handled = constrain_memory_mit(rs1, true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, true_branch_rs1_minterval_cnt, trb, false);
+        if (is_handled == false) { upgrade_to_bvt_sltu(lo1_p, up1_p, lo2_p, up2_p, trb); return; }
+        is_handled = constrain_memory_mit(rs2, true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, true_branch_rs2_minterval_cnt, trb, false);
+        if (is_handled == false) { upgrade_to_bvt_sltu(lo1_p, up1_p, lo2_p, up2_p, trb); return; }
         uint64_t false_ast_ptr   = add_ast_node(ILT, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 0, 0, zero_v, MIT, boolector_null);
         take_branch(1, 1);
         asts[tc-2]               = false_ast_ptr;
-        bvt_false_branches[tc-2] = boolector_null; // important place be careful
+        bvt_false_branches[tc-2] = boolector_null; // careful
 
         path_condition.push_back(add_ast_node(IGTE, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 1, 0, zero_v, MIT, boolector_null));
 
-        constrain_memory_mit(rs1, false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups,false_branch_rs1_minterval_cnt, trb, false);
-        constrain_memory_mit(rs2, false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups,false_branch_rs2_minterval_cnt, trb, false);
+        is_handled = constrain_memory_mit(rs1, false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups,false_branch_rs1_minterval_cnt, trb, false);
+        if (is_handled == false) { upgrade_to_bvt_sltu(lo1_p, up1_p, lo2_p, up2_p, trb); return; }
+        is_handled = constrain_memory_mit(rs2, false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups,false_branch_rs2_minterval_cnt, trb, false);
+        if (is_handled == false) { upgrade_to_bvt_sltu(lo1_p, up1_p, lo2_p, up2_p, trb); return; }
         take_branch(0, 0);
       } else {
-        constrain_memory_mit(rs1, false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups,false_branch_rs1_minterval_cnt, trb, false);
-        constrain_memory_mit(rs2, false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups,false_branch_rs2_minterval_cnt, trb, false);
+        is_handled = constrain_memory_mit(rs1, false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups,false_branch_rs1_minterval_cnt, trb, false);
+        if (is_handled == false) { upgrade_to_bvt_sltu(lo1_p, up1_p, lo2_p, up2_p, trb); return; }
+        is_handled = constrain_memory_mit(rs2, false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups,false_branch_rs2_minterval_cnt, trb, false);
+        if (is_handled == false) { upgrade_to_bvt_sltu(lo1_p, up1_p, lo2_p, up2_p, trb); return; }
         uint64_t false_ast_ptr   = add_ast_node(IGTE, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 0, 0, zero_v, MIT, boolector_null);
         take_branch(0, 1);
         asts[tc-2]               = false_ast_ptr;
@@ -296,8 +307,10 @@ void mit_box_bvt_engine::create_sltu_constraints(std::vector<uint64_t>& lo1_p, s
 
         path_condition.push_back(add_ast_node(ILT, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 1, 0, zero_v, MIT, boolector_null));
 
-        constrain_memory_mit(rs1, true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, true_branch_rs1_minterval_cnt, trb, false);
-        constrain_memory_mit(rs2, true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, true_branch_rs2_minterval_cnt, trb, false);
+        is_handled = constrain_memory_mit(rs1, true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, true_branch_rs1_minterval_cnt, trb, false);
+        if (is_handled == false) { upgrade_to_bvt_sltu(lo1_p, up1_p, lo2_p, up2_p, trb); return; }
+        is_handled = constrain_memory_mit(rs2, true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, true_branch_rs2_minterval_cnt, trb, false);
+        if (is_handled == false) { upgrade_to_bvt_sltu(lo1_p, up1_p, lo2_p, up2_p, trb); return; }
         take_branch(1, 0);
       }
     } else {
@@ -315,8 +328,8 @@ void mit_box_bvt_engine::create_sltu_constraints(std::vector<uint64_t>& lo1_p, s
   }
 }
 
-void mit_box_bvt_engine::create_xor_constraints(std::vector<uint64_t>& lo1_p, std::vector<uint64_t>& up1_p, std::vector<uint64_t>& lo2_p, std::vector<uint64_t>& up2_p, uint64_t trb) {
-  bool cannot_handle   = false;
+void mit_box_bvt_engine::create_xor_constraints(std::vector<uint64_t>& lo1_p, std::vector<uint64_t>& up1_p, std::vector<uint64_t>& lo2_p, std::vector<uint64_t>& up2_p, uint64_t trb, bool cannot_handle) {
+  bool handle_by_bvt   = cannot_handle;
   bool true_reachable  = false;
   bool false_reachable = false;
   uint64_t lo1;
@@ -331,7 +344,7 @@ void mit_box_bvt_engine::create_xor_constraints(std::vector<uint64_t>& lo1_p, st
 
   if (reg_theory_types[rs1] > MIT || reg_theory_types[rs2] > MIT) {
     cannot_handle = true;
-  } else {
+  } else if (cannot_handle != true) {
     for (size_t i = 0; i < reg_mintervals_cnts[rs1]; i++) {
       lo1 = lo1_p[i];
       up1 = up1_p[i];
@@ -344,12 +357,14 @@ void mit_box_bvt_engine::create_xor_constraints(std::vector<uint64_t>& lo1_p, st
   }
 
   if (cannot_handle) {
-    if (which_heuristic == 1) {
-      if (apply_diseq_under_approximate_box_decision_procedure_h3(lo1_p, up1_p, lo2_p, up2_p))
-        return;
-    } else if (which_heuristic == 2){
-      if (apply_diseq_under_approximate_box_decision_procedure_h2(lo1_p, up1_p, lo2_p, up2_p))
-        return;
+    if (handle_by_bvt != true) {
+      if (which_heuristic == 1) {
+        if (apply_diseq_under_approximate_box_decision_procedure_h3(lo1_p, up1_p, lo2_p, up2_p))
+          return;
+      } else if (which_heuristic == 2){
+        if (apply_diseq_under_approximate_box_decision_procedure_h2(lo1_p, up1_p, lo2_p, up2_p))
+          return;
+      }
     }
 
     // xor result:
@@ -414,11 +429,16 @@ void mit_box_bvt_engine::create_xor_constraints(std::vector<uint64_t>& lo1_p, st
   if (false_branch_rs1_minterval_cnt > 0 && false_branch_rs2_minterval_cnt > 0)
     false_reachable = true;
 
+  save_trace_state();
+  bool is_handled = false;
+
   if (true_reachable) {
     if (false_reachable) {
       if (check_conditional_type_whether_is_equality_or_disequality() == EQ) {
-        constrain_memory_mit(rs1, true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, true_branch_rs1_minterval_cnt, trb, false);
-        constrain_memory_mit(rs2, true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, true_branch_rs2_minterval_cnt, trb, false);
+        is_handled = constrain_memory_mit(rs1, true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, true_branch_rs1_minterval_cnt, trb, false);
+        if (is_handled == false) { upgrade_to_bvt_xor(lo1_p, up1_p, lo2_p, up2_p, trb); return; }
+        is_handled = constrain_memory_mit(rs2, true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, true_branch_rs2_minterval_cnt, trb, false);
+        if (is_handled == false) { upgrade_to_bvt_xor(lo1_p, up1_p, lo2_p, up2_p, trb); return; }
         uint64_t false_ast_ptr   = add_ast_node(INEQ, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 0, 0, zero_v, MIT, boolector_null);
         take_branch(1, 1);
         asts[tc-2]               = false_ast_ptr;
@@ -426,12 +446,16 @@ void mit_box_bvt_engine::create_xor_constraints(std::vector<uint64_t>& lo1_p, st
 
         path_condition.push_back(add_ast_node(IEQ, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 1, 0, zero_v, MIT, boolector_null));
 
-        constrain_memory_mit(rs1, false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups,false_branch_rs1_minterval_cnt, trb, false);
-        constrain_memory_mit(rs2, false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups,false_branch_rs2_minterval_cnt, trb, false);
+        is_handled = constrain_memory_mit(rs1, false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups,false_branch_rs1_minterval_cnt, trb, false);
+        if (is_handled == false) { upgrade_to_bvt_xor(lo1_p, up1_p, lo2_p, up2_p, trb); return; }
+        is_handled = constrain_memory_mit(rs2, false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups,false_branch_rs2_minterval_cnt, trb, false);
+        if (is_handled == false) { upgrade_to_bvt_xor(lo1_p, up1_p, lo2_p, up2_p, trb); return; }
         take_branch(0, 0);
       } else {
-        constrain_memory_mit(rs1, false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups,false_branch_rs1_minterval_cnt, trb, false);
-        constrain_memory_mit(rs2, false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups,false_branch_rs2_minterval_cnt, trb, false);
+        is_handled = constrain_memory_mit(rs1, false_branch_rs1_minterval_los, false_branch_rs1_minterval_ups,false_branch_rs1_minterval_cnt, trb, false);
+        if (is_handled == false) { upgrade_to_bvt_xor(lo1_p, up1_p, lo2_p, up2_p, trb); return; }
+        is_handled = constrain_memory_mit(rs2, false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups,false_branch_rs2_minterval_cnt, trb, false);
+        if (is_handled == false) { upgrade_to_bvt_xor(lo1_p, up1_p, lo2_p, up2_p, trb); return; }
         uint64_t false_ast_ptr   = add_ast_node(IEQ, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 0, 0, zero_v, MIT, boolector_null);
         take_branch(0, 1);
         asts[tc-2]               = false_ast_ptr;
@@ -439,8 +463,10 @@ void mit_box_bvt_engine::create_xor_constraints(std::vector<uint64_t>& lo1_p, st
 
         path_condition.push_back(add_ast_node(INEQ, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 1, 0, zero_v, MIT, boolector_null));
 
-        constrain_memory_mit(rs1, true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, true_branch_rs1_minterval_cnt, trb, false);
-        constrain_memory_mit(rs2, true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, true_branch_rs2_minterval_cnt, trb, false);
+        is_handled = constrain_memory_mit(rs1, true_branch_rs1_minterval_los, true_branch_rs1_minterval_ups, true_branch_rs1_minterval_cnt, trb, false);
+        if (is_handled == false) { upgrade_to_bvt_xor(lo1_p, up1_p, lo2_p, up2_p, trb); return; }
+        is_handled = constrain_memory_mit(rs2, true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, true_branch_rs2_minterval_cnt, trb, false);
+        if (is_handled == false) { upgrade_to_bvt_xor(lo1_p, up1_p, lo2_p, up2_p, trb); return; }
         take_branch(1, 0);
       }
     } else {

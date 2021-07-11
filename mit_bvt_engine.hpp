@@ -272,13 +272,13 @@ class mit_bvt_engine : public engine {
     void     set_involved_inputs(uint64_t reg, std::vector<uint64_t>& involved_inputs, size_t vaddr_num);
     void     set_involved_inputs_two_symbolic_operands();
     void     take_branch(uint64_t b, uint64_t how_many_more);
-    void     backward_propagation_divu_wrapped_mit(uint64_t sym_operand_ast_tc, uint64_t divisor);
+    bool     backward_propagation_divu_wrapped_mit(uint64_t sym_operand_ast_tc, uint64_t divisor);
     uint64_t backward_propagation_of_value_intervals(uint64_t ast_tc, std::vector<uint64_t>& lo, std::vector<uint64_t>& up, size_t mints_num, uint8_t theory_type);
-    void     constrain_memory_mit(uint64_t reg, std::vector<uint64_t>& lo, std::vector<uint64_t>& up, uint32_t mints_num, uint64_t trb, bool only_reachable_branch);
+    bool     constrain_memory_mit(uint64_t reg, std::vector<uint64_t>& lo, std::vector<uint64_t>& up, uint32_t mints_num, uint64_t trb, bool only_reachable_branch);
     bool     evaluate_sltu_true_false_branch_mit(uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t up2);
-    virtual  void create_sltu_constraints(std::vector<uint64_t>& lo1_p, std::vector<uint64_t>& up1_p, std::vector<uint64_t>& lo2_p, std::vector<uint64_t>& up2_p, uint64_t trb);
+    virtual  void create_sltu_constraints(std::vector<uint64_t>& lo1_p, std::vector<uint64_t>& up1_p, std::vector<uint64_t>& lo2_p, std::vector<uint64_t>& up2_p, uint64_t trb, bool cannot_handle);
     bool     evaluate_xor_true_false_branch_mit(uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t up2);
-    virtual  void  create_xor_constraints(std::vector<uint64_t>& lo1_p, std::vector<uint64_t>& up1_p, std::vector<uint64_t>& lo2_p, std::vector<uint64_t>& up2_p, uint64_t trb);
+    virtual  void  create_xor_constraints(std::vector<uint64_t>& lo1_p, std::vector<uint64_t>& up1_p, std::vector<uint64_t>& lo2_p, std::vector<uint64_t>& up2_p, uint64_t trb, bool cannot_handle);
     bool     check_sat_true_branch_bvt(BoolectorNode* assert);
     bool     check_sat_false_branch_bvt(BoolectorNode* assert);
     void     dump_involving_input_variables_true_branch_bvt();
@@ -309,4 +309,17 @@ class mit_bvt_engine : public engine {
     bool compute_divu_mit(uint64_t left_operand_ast_tc, uint64_t right_operand_ast_tc);
 
     std::string get_abstraction(uint8_t abstraction);
+
+    // ---------------------------
+    // upgrade theory on backward_propagation failure
+    // ---------------------------
+    uint64_t saved_tc_before_branch_evaluation_using_mit;
+    uint64_t saved_ast_trace_cnt_before_branch_evaluation_using_mit;
+    uint64_t saved_path_condition_size_before_branch_evaluation_using_mit;
+    void save_trace_state();
+    void restore_trace_state();
+    void backtrack_branch_evaluation_effect_on_trace();
+    void upgrade_to_bvt_sltu(std::vector<uint64_t>& lo1_p, std::vector<uint64_t>& up1_p, std::vector<uint64_t>& lo2_p, std::vector<uint64_t>& up2_p, uint64_t trb);
+    void upgrade_to_bvt_xor(std::vector<uint64_t>& lo1_p, std::vector<uint64_t>& up1_p, std::vector<uint64_t>& lo2_p, std::vector<uint64_t>& up2_p, uint64_t trb);
+    void undo_effects();
 };
