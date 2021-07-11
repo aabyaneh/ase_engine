@@ -140,6 +140,7 @@ class mit_bvt_engine : public engine {
     // temporary data-structure to pass values targeting propagations
     std::vector<uint64_t> propagated_minterval_lo;
     std::vector<uint64_t> propagated_minterval_up;
+    uint64_t propagated_step;
 
     std::vector<uint64_t> involved_inputs_in_current_conditional_expression_rs1_operand;
     std::vector<uint64_t> involved_inputs_in_current_conditional_expression_rs2_operand;
@@ -228,6 +229,8 @@ class mit_bvt_engine : public engine {
     bool apply_add_pointer();
     bool apply_sub_pointer();
     void apply_mul_zero();
+    bool apply_divu_mit();
+
     void apply_lui();
     void apply_addi();
     void apply_add();
@@ -269,6 +272,7 @@ class mit_bvt_engine : public engine {
     void     set_involved_inputs(uint64_t reg, std::vector<uint64_t>& involved_inputs, size_t vaddr_num);
     void     set_involved_inputs_two_symbolic_operands();
     void     take_branch(uint64_t b, uint64_t how_many_more);
+    void     backward_propagation_divu_wrapped_mit(uint64_t sym_operand_ast_tc, uint64_t divisor);
     uint64_t backward_propagation_of_value_intervals(uint64_t ast_tc, std::vector<uint64_t>& lo, std::vector<uint64_t>& up, size_t mints_num, uint8_t theory_type);
     void     constrain_memory_mit(uint64_t reg, std::vector<uint64_t>& lo, std::vector<uint64_t>& up, uint32_t mints_num, uint64_t trb, bool only_reachable_branch);
     bool     evaluate_sltu_true_false_branch_mit(uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t up2);
@@ -302,6 +306,7 @@ class mit_bvt_engine : public engine {
     uint64_t compute_remu(uint64_t left_operand_ast_tc, uint64_t right_operand_ast_tc, uint64_t old_ast_tc, uint8_t theory_type, uint8_t symbolic_operands);
     uint64_t recompute_operation(uint8_t op, uint64_t left_operand_ast_tc, uint64_t right_operand_ast_tc, uint64_t old_ast_tc, uint8_t theory_type, uint8_t symbolic_operands);
     uint64_t update_current_constraint_on_ast_expression(uint64_t ast_tc);
+    bool compute_divu_mit(uint64_t left_operand_ast_tc, uint64_t right_operand_ast_tc);
 
     std::string get_abstraction(uint8_t abstraction);
 };

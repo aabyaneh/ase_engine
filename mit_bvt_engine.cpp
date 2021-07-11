@@ -517,8 +517,14 @@ void mit_bvt_engine::implement_symbolic_input(uint64_t* context) {
   // >= lo
   boolector_assert(btor, boolector_ugte(btor, in, boolector_unsigned_int_64(lo)));
 
-  if (step > 1) {
-    std::cout << exe_name << ": engine doesn't support steps of more than 1 for bit-vector theory\n";
+  if (step != 1) {
+    std::cout << exe_name << ": the step of an input interval has to be 1; try to create a step using the multiplication operation. \n";
+    exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
+  }
+
+  if (lo > up) {
+    std::cout << exe_name << ": an input interval cannot be wrapped; try to create a wrapped interval using the addition operation. \n";
+    exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
   }
 
   // create AST node
@@ -570,9 +576,6 @@ void mit_bvt_engine::implement_write(uint64_t* context) {
         if (size < bytes_to_write)
           bytes_to_write = size;
 
-        // TODO: What should symbolically executed code output?
-        // buffer points to a trace counter that refers to the actual value
-        // actually_written = sign_extend(write(fd, values + load_physical_memory(buffer), bytes_to_write), SYSCALL_BITWIDTH);
         actually_written = bytes_to_write;
 
         if (actually_written == bytes_to_write) {
@@ -841,12 +844,12 @@ uint64_t compute_lower_bound_mit(uint64_t lo, uint64_t step, uint64_t value) {
     return value;
 }
 
-// uint64_t reverse_division_up(uint64_t ups_mrvc, uint64_t up, uint64_t codiv) {
-//   if (ups_mrvc < up * codiv + (codiv - 1))
-//     return ups_mrvc - up * codiv;
-//   else
-//     return codiv - 1;
-// }
+uint64_t reverse_division_up(uint64_t up_ast_tc, uint64_t up, uint64_t codiv) {
+  if (up_ast_tc < up * codiv + (codiv - 1))
+    return up_ast_tc - up * codiv;
+  else
+    return codiv - 1;
+}
 
 // ---------------------------- corrections ------------------------------------
 
@@ -1408,6 +1411,64 @@ void mit_bvt_engine::apply_mul() {
   }
 }
 
+bool mit_bvt_engine::apply_divu_mit() {
+  uint64_t div_lo;
+  uint64_t div_up;
+  uint64_t k;
+  uint64_t step;
+  uint64_t step_rd;
+
+  if (reg_theory_types[rs1] != MIT || reg_mintervals_cnts[rs1] > 1 || reg_mintervals_cnts[rs2] > 1)
+    return false;
+
+  k = reg_mintervals_los[rs2][0];
+  div_lo = reg_mintervals_los[rs1][0] / k;
+  div_up = reg_mintervals_ups[rs1][0] / k;
+  step = reg_steps[rs1];
+
+  // step computation
+  if (reg_steps[rs1] < k) {
+    if (k % reg_steps[rs1] != 0) {
+      // steps in divison are not consistent
+      return false;
+    }
+    step_rd = 1;
+  } else {
+    if (reg_steps[rs1] % k != 0) {
+      // steps in divison are not consistent
+      return false;
+    }
+    step_rd = reg_steps[rs1] / k;
+  }
+
+  // interval semantics of divu
+  if (reg_mintervals_los[rs1][0] > reg_mintervals_ups[rs1][0]) {
+    // rs1 constraint is wrapped
+
+    // lo/k == up/k (or) == up/k + step_rd ==> ok
+    if (div_lo != div_up)
+      if (div_lo != div_up + step_rd) {
+        // wrapped divison results two intervals
+        return false;
+      }
+
+    uint64_t max = compute_upper_bound_mit(reg_mintervals_los[rs1][0], step, UINT64_MAX_T);
+    reg_mintervals_los[rd][0] = (max + step) / k;
+    reg_mintervals_ups[rd][0] = max          / k;
+
+  } else {
+    // rs1 constraint is not wrapped
+    reg_mintervals_los[rd][0] = div_lo;
+    reg_mintervals_ups[rd][0] = div_up;
+  }
+
+  reg_steps[rd]           = step_rd;
+  reg_mintervals_cnts[rd] = 1;
+  reg_theory_types[rd]    = reg_theory_types[rs1];
+
+  return true;
+}
+
 void mit_bvt_engine::apply_divu() {
   // TODO: if theory is ABVT may raise an unreal divison by zero
   do_divu();
@@ -1433,12 +1494,15 @@ void mit_bvt_engine::apply_divu() {
 
         set_involved_inputs(rd, reg_involved_inputs[rs1], reg_involved_inputs_cnts[rs1]);
 
-        reg_mintervals_los[rd][0] = registers[rd]; // one witness
-        reg_mintervals_ups[rd][0] = registers[rd];
-        reg_mintervals_cnts[rd]   = 1;
-        reg_steps[rd]             = 1;
-        reg_theory_types[rd]      = std::max(reg_theory_types[rs1], BVT);
-        reg_asts[rd]              = add_ast_node(DIVU, reg_asts[rs1], reg_asts[rs2], reg_mintervals_cnts[rd], reg_mintervals_los[rd], reg_mintervals_ups[rd], reg_steps[rd], reg_involved_inputs_cnts[rd], reg_involved_inputs[rd], reg_theory_types[rd], reg_bvts[rd]);
+        if (apply_divu_mit() == false) {
+          reg_mintervals_los[rd][0] = registers[rd]; // one witness
+          reg_mintervals_ups[rd][0] = registers[rd];
+          reg_mintervals_cnts[rd]   = 1;
+          reg_steps[rd]             = 1;
+          reg_theory_types[rd]      = std::max(reg_theory_types[rs1], BVT);
+        }
+
+        reg_asts[rd] = add_ast_node(DIVU, reg_asts[rs1], reg_asts[rs2], reg_mintervals_cnts[rd], reg_mintervals_los[rd], reg_mintervals_ups[rd], reg_steps[rd], reg_involved_inputs_cnts[rd], reg_involved_inputs[rd], reg_theory_types[rd], reg_bvts[rd]);
       }
     } else if (reg_symb_type[rs2] == SYMBOLIC) {
       // rd inherits rs2 constraint since rs1 has none
@@ -2322,6 +2386,61 @@ uint8_t mit_bvt_engine::detect_symbolic_operand(uint64_t ast_tc) {
   }
 }
 
+void mit_bvt_engine::backward_propagation_divu_wrapped_mit(uint64_t sym_operand_ast_tc, uint64_t divisor) {
+  uint64_t lo_1;
+  uint64_t up_1;
+  uint64_t lo_2;
+  uint64_t up_2;
+
+  uint64_t max = compute_upper_bound_mit(mintervals_los[sym_operand_ast_tc][0], steps[sym_operand_ast_tc], UINT64_MAX_T);
+  uint64_t min = max + steps[sym_operand_ast_tc];
+  uint64_t  which_solution_is_empty;
+
+  if (propagated_minterval_lo[0] * divisor > min)
+    propagated_minterval_lo[0] = compute_lower_bound_mit(mintervals_los[sym_operand_ast_tc][0], steps[sym_operand_ast_tc], propagated_minterval_lo[0] * divisor);
+  else
+    propagated_minterval_lo[0] = min;
+
+  propagated_minterval_up[0] = compute_upper_bound_mit(mintervals_los[sym_operand_ast_tc][0], steps[sym_operand_ast_tc], propagated_minterval_up[0] * divisor + reverse_division_up(max, propagated_minterval_up[0], divisor));
+
+  // intersection of [propagated_minterval_lo, propagated_minterval_up] with the original sub-intervals
+
+  which_solution_is_empty = 0;
+  if (propagated_minterval_lo[0] <= mintervals_ups[sym_operand_ast_tc][0]) {
+    lo_1 = propagated_minterval_lo[0];
+    up_1 = (propagated_minterval_up[0] < mintervals_ups[sym_operand_ast_tc][0]) ? propagated_minterval_up[0] : mintervals_ups[sym_operand_ast_tc][0];
+  } else {
+    which_solution_is_empty = 1;
+  }
+
+  if (propagated_minterval_up[0] >= mintervals_los[sym_operand_ast_tc][0]) {
+    lo_2 = (propagated_minterval_lo[0] > mintervals_los[sym_operand_ast_tc][0]) ? propagated_minterval_lo[0] : mintervals_los[sym_operand_ast_tc][0];
+    up_2 = propagated_minterval_up[0];
+  } else {
+    which_solution_is_empty = (which_solution_is_empty == 1) ? 4 : 2;
+  }
+
+  if (which_solution_is_empty == 0) {
+    if (up_1 + steps[sym_operand_ast_tc] >= lo_2) {
+      propagated_minterval_lo[0] = lo_1;
+      propagated_minterval_up[0] = up_2;
+    } else {
+      std::cout << exe_name << ": detected an unsupported divu in a conditional expression at 0x" << std::hex << pc - entry_point << std::dec << std::endl;
+      exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
+    }
+  } else if (which_solution_is_empty == 1) {
+    propagated_minterval_lo[0] = lo_2;
+    propagated_minterval_up[0] = up_2;
+  } else if (which_solution_is_empty == 2) {
+    propagated_minterval_lo[0] = lo_1;
+    propagated_minterval_up[0] = up_1;
+  } else if (which_solution_is_empty == 4) {
+    std::cout << exe_name << ": detected empty intervals for reverse of divu in a conditional expression at 0x" << std::hex << pc - entry_point << std::dec << std::endl;
+    exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
+  }
+
+}
+
 uint64_t mit_bvt_engine::backward_propagation_of_value_intervals(uint64_t ast_tc, std::vector<uint64_t>& lo, std::vector<uint64_t>& up, size_t mints_num, uint8_t theory_type) {
   std::vector<uint64_t> saved_lo;
   std::vector<uint64_t> saved_up;
@@ -2421,9 +2540,26 @@ uint64_t mit_bvt_engine::backward_propagation_of_value_intervals(uint64_t ast_tc
       break;
     }
     case mit_bvt_engine::DIVU: {
-      // backward propagation of divu is omitted due to simplicity
-      std::cout << exe_name << ": detected an unsupported divu in a conditional expression at 0x" << std::hex << pc - entry_point << std::dec << std::endl;
-      exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
+      if (mints_num > 1) {
+        std::cout << exe_name << ": detected an unsupported divu in a conditional expression at 0x" << std::hex << pc - entry_point << std::dec << std::endl;
+        exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
+      }
+
+      uint64_t divisor = mintervals_los[crt_operand_ast_tc][0];
+
+      if (mintervals_los[sym_operand_ast_tc][0] <= mintervals_ups[sym_operand_ast_tc][0]) {
+        // non-wrapped
+        if (propagated_minterval_lo[0] * divisor > mintervals_los[sym_operand_ast_tc][0])
+          propagated_minterval_lo[0] = compute_lower_bound_mit(mintervals_los[sym_operand_ast_tc][0], steps[sym_operand_ast_tc], propagated_minterval_lo[0] * divisor);
+        else
+          propagated_minterval_lo[0] = mintervals_los[sym_operand_ast_tc][0];
+
+        propagated_minterval_up[0] = compute_upper_bound_mit(mintervals_los[sym_operand_ast_tc][0], steps[sym_operand_ast_tc], propagated_minterval_up[0] * divisor + reverse_division_up(mintervals_ups[sym_operand_ast_tc][0], propagated_minterval_up[0], divisor));
+      } else {
+        // wrapped
+        backward_propagation_divu_wrapped_mit(sym_operand_ast_tc, divisor);
+      }
+
       break;
     }
     case mit_bvt_engine::REMU: {
@@ -3665,15 +3801,54 @@ uint64_t mit_bvt_engine::compute_mul(uint64_t left_operand_ast_tc, uint64_t righ
   return ast_ptr;
 }
 
+bool mit_bvt_engine::compute_divu_mit(uint64_t left_operand_ast_tc, uint64_t right_operand_ast_tc) {
+  uint64_t divisor = mintervals_los[right_operand_ast_tc][0];
+  uint64_t div_lo = mintervals_los[left_operand_ast_tc][0] / divisor;
+  uint64_t div_up = mintervals_ups[left_operand_ast_tc][0] / divisor;
+
+  // step computation
+  if (steps[left_operand_ast_tc] < divisor) {
+    if (divisor % steps[left_operand_ast_tc] != 0) {
+      // steps in divison are not consistent
+      return false;
+    }
+    propagated_step = 1;
+  } else {
+    if (steps[left_operand_ast_tc] % divisor != 0) {
+      // steps in divison are not consistent
+      return false;
+    }
+    propagated_step = steps[left_operand_ast_tc] / divisor;
+  }
+
+  // interval semantics of divu
+  if (mintervals_los[left_operand_ast_tc][0] > mintervals_ups[left_operand_ast_tc][0]) {
+    // rs1 constraint is wrapped
+
+    // lo/k == up/k (or) == up/k + step_rd ==> mergable
+    if (div_lo != div_up)
+      if (div_lo != div_up + propagated_step) {
+        // wrapped divison results two intervals
+        return false;
+      }
+
+    uint64_t max = compute_upper_bound_mit(mintervals_los[left_operand_ast_tc][0], steps[left_operand_ast_tc], UINT64_MAX_T);
+    propagated_minterval_lo[0] = (max + steps[left_operand_ast_tc]) / divisor;
+    propagated_minterval_up[0] = max          / divisor;
+
+  } else {
+    // rs1 constraint is not wrapped
+    propagated_minterval_lo[0] = div_lo;
+    propagated_minterval_up[0] = div_up;
+  }
+
+  return true;
+}
+
 uint64_t mit_bvt_engine::compute_divu(uint64_t left_operand_ast_tc, uint64_t right_operand_ast_tc, uint64_t old_ast_tc, uint8_t theory_type, uint8_t symbolic_operands) {
   uint64_t dividend;
   uint64_t divisor;
   uint64_t stored_to_tc, mr_stored_to_tc;
-
-  // assert: symbolic division is always covered by BVT
-  // therefore intervals contain a witness or nothing
-  if (theory_type < BVT)
-    std::cout << exe_name << ": detected an error in compute_divu at 0x" << std::hex << pc - entry_point << std::dec << std::endl;
 
   if (symbolic_operands == LEFT) {
     sym_operand_ast_tc = left_operand_ast_tc;
@@ -3686,13 +3861,24 @@ uint64_t mit_bvt_engine::compute_divu(uint64_t left_operand_ast_tc, uint64_t rig
     exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
   }
 
-  dividend = mintervals_los[left_operand_ast_tc][0];
-  divisor  = mintervals_los[right_operand_ast_tc][0];
-  uint64_t resulting_witness = dividend / divisor;
-  propagated_minterval_lo[0] = resulting_witness;
-  propagated_minterval_up[0] = resulting_witness;
+  bool is_handled = false;
+  if (theory_type == MIT && symbolic_operands == LEFT && mintervals_los[left_operand_ast_tc].size() == 1) {
+    is_handled = compute_divu_mit(left_operand_ast_tc, right_operand_ast_tc);
+  }
 
-  uint64_t ast_ptr = add_ast_node(DIVU, left_operand_ast_tc, right_operand_ast_tc, 1, propagated_minterval_lo, propagated_minterval_up, 1, involved_sym_inputs_cnts[sym_operand_ast_tc], involved_sym_inputs_ast_tcs[sym_operand_ast_tc], theory_type, smt_exprs[old_ast_tc]);
+  if (is_handled == true) {
+    theory_type = MIT;
+  } else {
+    dividend = mintervals_los[left_operand_ast_tc][0];
+    divisor  = mintervals_los[right_operand_ast_tc][0];
+    uint64_t resulting_witness = dividend / divisor;
+    propagated_minterval_lo[0] = resulting_witness;
+    propagated_minterval_up[0] = resulting_witness;
+    propagated_step = 1;
+    theory_type = BVT;
+  }
+
+  uint64_t ast_ptr = add_ast_node(DIVU, left_operand_ast_tc, right_operand_ast_tc, 1, propagated_minterval_lo, propagated_minterval_up, propagated_step, involved_sym_inputs_cnts[sym_operand_ast_tc], involved_sym_inputs_ast_tcs[sym_operand_ast_tc], theory_type, smt_exprs[old_ast_tc]);
 
   for (size_t i = 0; i < store_trace_ptrs[old_ast_tc].size(); i++) {
     stored_to_tc    = store_trace_ptrs[old_ast_tc][i];

@@ -486,8 +486,14 @@ void bvt_engine::implement_symbolic_input(uint64_t* context) {
   // >= lo
   boolector_assert(btor, boolector_ugte(btor, in, boolector_unsigned_int_64(lo)));
 
-  if (step > 1) {
-    std::cout << exe_name << ": engine doesn't support steps of more than 1 for bit-vector theory\n";
+  if (step != 1) {
+    std::cout << exe_name << ": the step of an input interval has to be 1; try to create a step using the multiplication operation. \n";
+    exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
+  }
+
+  if (lo > up) {
+    std::cout << exe_name << ": an input interval cannot be wrapped; try to create a wrapped interval using the addition operation. \n";
+    exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
   }
 
   // create AST node
@@ -539,9 +545,6 @@ void bvt_engine::implement_write(uint64_t* context) {
         if (size < bytes_to_write)
           bytes_to_write = size;
 
-        // TODO: What should symbolically executed code output?
-        // buffer points to a trace counter that refers to the actual value
-        // actually_written = sign_extend(write(fd, values + load_physical_memory(buffer), bytes_to_write), SYSCALL_BITWIDTH);
         actually_written = bytes_to_write;
 
         if (actually_written == bytes_to_write) {
