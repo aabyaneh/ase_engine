@@ -230,6 +230,7 @@ class mit_bvt_engine : public engine {
     bool apply_sub_pointer();
     void apply_mul_zero();
     bool apply_divu_mit();
+    bool apply_remu_mit();
 
     void apply_lui();
     void apply_addi();
@@ -307,6 +308,7 @@ class mit_bvt_engine : public engine {
     uint64_t recompute_operation(uint8_t op, uint64_t left_operand_ast_tc, uint64_t right_operand_ast_tc, uint64_t old_ast_tc, uint8_t theory_type, uint8_t symbolic_operands);
     uint64_t update_current_constraint_on_ast_expression(uint64_t ast_tc);
     bool compute_divu_mit(uint64_t left_operand_ast_tc, uint64_t right_operand_ast_tc);
+    bool compute_remu_mit(uint64_t left_operand_ast_tc, uint64_t right_operand_ast_tc);
 
     std::string get_abstraction(uint8_t abstraction);
 

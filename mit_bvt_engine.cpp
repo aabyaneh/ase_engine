@@ -772,12 +772,12 @@ void mit_bvt_engine::implement_brk(uint64_t* context) {
 
 // --------------------------- auxiliary functions -----------------------------
 
-// uint64_t gcd(uint64_t n1, uint64_t n2) {
-//   if (n1 == 0)
-//     return n2;
-//
-//   return gcd(n2 % n1, n1);
-// }
+uint64_t gcd(uint64_t n1, uint64_t n2) {
+  if (n1 == 0)
+    return n2;
+
+  return gcd(n2 % n1, n1);
+}
 
 // uint64_t lcm(uint64_t n1, uint64_t n2) {
 //   if (n1 > n2)
@@ -786,9 +786,9 @@ void mit_bvt_engine::implement_brk(uint64_t* context) {
 //     return (n2 / gcd(n1, n2)) * n1;
 // }
 
-// bool is_power_of_two(uint64_t v) {
-//   return v && (!(v & (v - 1)));
-// }
+bool is_power_of_two(uint64_t v) {
+  return v && (!(v & (v - 1)));
+}
 
 // bool add_sub_condition(uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t up2) {
 //   uint64_t c1;
@@ -819,19 +819,19 @@ bool mul_condition_mit(uint64_t lo, uint64_t up, uint64_t k) {
   return false;
 }
 
-// int remu_condition(uint64_t lo, uint64_t up, uint64_t step, uint64_t k) {
-//   uint64_t lcm;
-//
-//   lcm = (step * k) / gcd(step, k);
-//   if (up/k == lo/k)
-//     return 0;
-//   else if (up - lo >= lcm - step)
-//     return 2;
-//   else if (up/k - lo/k == 1)
-//     return 1;
-//   else
-//     return -1;
-// }
+int remu_condition(uint64_t lo, uint64_t up, uint64_t step, uint64_t k) {
+  uint64_t lcm;
+
+  lcm = (step * k) / gcd(step, k);
+  if (up/k == lo/k)
+    return 0;
+  else if (up - lo >= lcm - step)
+    return 2;
+  else if (up/k - lo/k == 1)
+    return 1;
+  else
+    return -1;
+}
 
 uint64_t compute_upper_bound_mit(uint64_t lo, uint64_t step, uint64_t value) {
   return lo + ((value - lo) / step) * step;
@@ -1538,8 +1538,60 @@ void mit_bvt_engine::apply_divu() {
   }
 }
 
+bool mit_bvt_engine::apply_remu_mit() {
+  uint64_t rem_lo;
+  uint64_t rem_up;
+  uint64_t step_rd;
+  uint64_t divisor = reg_mintervals_los[rs2][0];
+  uint64_t step    = reg_steps[rs1];
+
+  if (reg_theory_types[rs1] != MIT || reg_mintervals_cnts[rs1] > 1 || reg_mintervals_cnts[rs2] > 1)
+    return false;
+
+  if (reg_mintervals_los[rs1][0] <= reg_mintervals_ups[rs1][0]) {
+    // rs1 interval is not wrapped
+    int rem_typ = remu_condition(reg_mintervals_los[rs1][0], reg_mintervals_ups[rs1][0], step, divisor);
+    if (rem_typ == 0) {
+      rem_lo  = reg_mintervals_los[rs1][0] % divisor;
+      rem_up  = reg_mintervals_ups[rs1][0] % divisor;
+      step_rd = step;
+    } else if (rem_typ == 1) {
+      return false;
+    } else if (rem_typ == 2) {
+      uint64_t gcd_step_k = gcd(step, divisor);
+      rem_lo  = reg_mintervals_los[rs1][0]%divisor - ((reg_mintervals_los[rs1][0]%divisor) / gcd_step_k) * gcd_step_k;
+      rem_up  = compute_upper_bound_mit(rem_lo, gcd_step_k, divisor - 1);
+      step_rd = gcd_step_k;
+    } else {
+      return false;
+    }
+
+  } else if (is_power_of_two(divisor)) {
+    // rs1 interval is wrapped
+    uint64_t gcd_step_k = gcd(step, divisor);
+    uint64_t lcm        = (step * divisor) / gcd_step_k;
+
+    if (reg_mintervals_ups[rs1][0] - reg_mintervals_los[rs1][0] < lcm - step)
+      return false;
+
+    rem_lo  = reg_mintervals_los[rs1][0]%divisor - ((reg_mintervals_los[rs1][0]%divisor) / gcd_step_k) * gcd_step_k;
+    rem_up  = compute_upper_bound_mit(rem_lo, gcd_step_k, divisor - 1);
+    step_rd = gcd_step_k;
+
+  } else {
+    return false;
+  }
+
+  reg_mintervals_los[rd][0] = rem_lo;
+  reg_mintervals_ups[rd][0] = rem_up;
+  reg_mintervals_cnts[rd]   = 1;
+  reg_steps[rd]             = step_rd;
+  reg_theory_types[rd]      = MIT;
+
+  return true;
+}
+
 void mit_bvt_engine::apply_remu() {
-  // TODO: if theory is ABVT may raise an unreal remainder by zero
   do_remu();
 
   if (rd != REG_ZR) {
@@ -1563,12 +1615,15 @@ void mit_bvt_engine::apply_remu() {
 
         set_involved_inputs(rd, reg_involved_inputs[rs1], reg_involved_inputs_cnts[rs1]);
 
-        reg_mintervals_los[rd][0] = registers[rd]; // one witness
-        reg_mintervals_ups[rd][0] = registers[rd];
-        reg_mintervals_cnts[rd]   = 1;
-        reg_steps[rd]             = 1;
-        reg_theory_types[rd]      = std::max(reg_theory_types[rs1], BVT);
-        reg_asts[rd]              = add_ast_node(REMU, reg_asts[rs1], reg_asts[rs2], reg_mintervals_cnts[rd], reg_mintervals_los[rd], reg_mintervals_ups[rd], reg_steps[rd], reg_involved_inputs_cnts[rd], reg_involved_inputs[rd], reg_theory_types[rd], reg_bvts[rd]);
+        if (apply_remu_mit() == false) {
+          reg_mintervals_los[rd][0] = registers[rd]; // one witness
+          reg_mintervals_ups[rd][0] = registers[rd];
+          reg_mintervals_cnts[rd]   = 1;
+          reg_steps[rd]             = 1;
+          reg_theory_types[rd]      = std::max(reg_theory_types[rs1], BVT);
+        }
+
+        reg_asts[rd] = add_ast_node(REMU, reg_asts[rs1], reg_asts[rs2], reg_mintervals_cnts[rd], reg_mintervals_los[rd], reg_mintervals_ups[rd], reg_steps[rd], reg_involved_inputs_cnts[rd], reg_involved_inputs[rd], reg_theory_types[rd], reg_bvts[rd]);
       }
     } else if (reg_symb_type[rs2] == SYMBOLIC) {
       // rd inherits rs2 constraint since rs1 has none
@@ -2564,7 +2619,6 @@ uint64_t mit_bvt_engine::backward_propagation_of_value_intervals(uint64_t ast_tc
       break;
     }
     case mit_bvt_engine::REMU: {
-      std::cout << exe_name << ": detected an unsupported remu in backward_propagation_of_value_intervals at 0x" << std::hex << pc - entry_point << std::dec << std::endl;
       return 0;
 
       break;
@@ -3920,15 +3974,58 @@ uint64_t mit_bvt_engine::compute_divu(uint64_t left_operand_ast_tc, uint64_t rig
   return ast_ptr;
 }
 
+bool mit_bvt_engine::compute_remu_mit(uint64_t left_operand_ast_tc, uint64_t right_operand_ast_tc) {
+  uint64_t rem_lo;
+  uint64_t rem_up;
+  uint64_t step_rd;
+  uint64_t divisor = mintervals_los[right_operand_ast_tc][0];
+  uint64_t step    = steps[left_operand_ast_tc];
+
+  if (mintervals_los[left_operand_ast_tc][0] <= mintervals_ups[left_operand_ast_tc][0]) {
+    // rs1 interval is not wrapped
+    int rem_typ = remu_condition(mintervals_los[left_operand_ast_tc][0], mintervals_ups[left_operand_ast_tc][0], step, divisor);
+    if (rem_typ == 0) {
+      rem_lo  = mintervals_los[left_operand_ast_tc][0] % divisor;
+      rem_up  = mintervals_ups[left_operand_ast_tc][0] % divisor;
+      step_rd = step;
+    } else if (rem_typ == 1) {
+      return false;
+    } else if (rem_typ == 2) {
+      uint64_t gcd_step_k = gcd(step, divisor);
+      rem_lo  = mintervals_los[left_operand_ast_tc][0]%divisor - ((mintervals_los[left_operand_ast_tc][0]%divisor) / gcd_step_k) * gcd_step_k;
+      rem_up  = compute_upper_bound_mit(rem_lo, gcd_step_k, divisor - 1);
+      step_rd = gcd_step_k;
+    } else {
+      return false;
+    }
+
+  } else if (is_power_of_two(divisor)) {
+    // rs1 interval is wrapped
+    uint64_t gcd_step_k = gcd(step, divisor);
+    uint64_t lcm        = (step * divisor) / gcd_step_k;
+
+    if (mintervals_ups[left_operand_ast_tc][0] - mintervals_los[left_operand_ast_tc][0] < lcm - step)
+      return false;
+
+    rem_lo  = mintervals_los[left_operand_ast_tc][0]%divisor - ((mintervals_los[left_operand_ast_tc][0]%divisor) / gcd_step_k) * gcd_step_k;
+    rem_up  = compute_upper_bound_mit(rem_lo, gcd_step_k, divisor - 1);
+    step_rd = gcd_step_k;
+
+  } else {
+    return false;
+  }
+
+  propagated_minterval_lo[0] = rem_lo;
+  propagated_minterval_up[0] = rem_up;
+  propagated_step            = step_rd;
+
+  return true;
+}
+
 uint64_t mit_bvt_engine::compute_remu(uint64_t left_operand_ast_tc, uint64_t right_operand_ast_tc, uint64_t old_ast_tc, uint8_t theory_type, uint8_t symbolic_operands) {
   uint64_t remaindend;
   uint64_t divisor;
   uint64_t stored_to_tc, mr_stored_to_tc;
-
-  // assert: symbolic remainder is always covered by BVT
-  // therefore intervals contain a witness
-  if (theory_type < BVT)
-    std::cout << exe_name << ": detected an error in compute_remu at 0x" << std::hex << pc - entry_point << std::dec << std::endl;
 
   if (symbolic_operands == LEFT) {
     sym_operand_ast_tc = left_operand_ast_tc;
@@ -3941,13 +4038,24 @@ uint64_t mit_bvt_engine::compute_remu(uint64_t left_operand_ast_tc, uint64_t rig
     exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
   }
 
-  remaindend = mintervals_los[left_operand_ast_tc][0];
-  divisor    = mintervals_los[right_operand_ast_tc][0];
-  uint64_t resulting_witness = remaindend % divisor;
-  propagated_minterval_lo[0] = resulting_witness;
-  propagated_minterval_up[0] = resulting_witness;
+  bool is_handled = false;
+  if (theory_type == MIT && symbolic_operands == LEFT && mintervals_los[left_operand_ast_tc].size() == 1) {
+    is_handled = compute_remu_mit(left_operand_ast_tc, right_operand_ast_tc);
+  }
 
-  uint64_t ast_ptr = add_ast_node(REMU, left_operand_ast_tc, right_operand_ast_tc, 1, propagated_minterval_lo, propagated_minterval_up, 1, involved_sym_inputs_cnts[sym_operand_ast_tc], involved_sym_inputs_ast_tcs[sym_operand_ast_tc], theory_type, smt_exprs[old_ast_tc]);
+  if (is_handled == true) {
+    theory_type = MIT;
+  } else {
+    remaindend = mintervals_los[left_operand_ast_tc][0];
+    divisor    = mintervals_los[right_operand_ast_tc][0];
+    uint64_t resulting_witness = remaindend % divisor;
+    propagated_minterval_lo[0] = resulting_witness;
+    propagated_minterval_up[0] = resulting_witness;
+    propagated_step = 1;
+    theory_type = BVT;
+  }
+
+  uint64_t ast_ptr = add_ast_node(REMU, left_operand_ast_tc, right_operand_ast_tc, 1, propagated_minterval_lo, propagated_minterval_up, propagated_step, involved_sym_inputs_cnts[sym_operand_ast_tc], involved_sym_inputs_ast_tcs[sym_operand_ast_tc], theory_type, smt_exprs[old_ast_tc]);
 
   for (size_t i = 0; i < store_trace_ptrs[old_ast_tc].size(); i++) {
     stored_to_tc    = store_trace_ptrs[old_ast_tc][i];
