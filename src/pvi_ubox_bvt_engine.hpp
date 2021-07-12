@@ -19,7 +19,7 @@ class pvi_ubox_bvt_engine : public pvi_bvt_engine {
     // ---------------------------
     // under_approximate box decision procedure
     // ---------------------------
-    uint8_t   which_heuristic = 1;
+    uint8_t   which_observation = 1;
     uint64_t* boxes;
     uint32_t  NUMBER_OF_HEURISTIC_UNDER_APPROX_BOXES = 2;
 

@@ -37,8 +37,19 @@ void run_timeout_thread() {
   }
 }
 
-void write_to_csv() {
-  output_csv.open("output.csv", std::ofstream::app);
+void write_header_to_csv_detailed() {
+  std::ifstream ifile;
+  ifile.open("output_detailed.csv");
+  if (!ifile) {
+    ifile.close();
+    output_csv.open("output_detailed.csv", std::ofstream::trunc);
+    output_csv << "benchmark," << "method," << "is_finished," << "#paths," << "time (s)," << "#queries_pvi," << "#queries_ubox," << "#queries_bvi" << std::endl;
+    output_csv.close();
+  }
+}
+
+void write_to_csv_detailed() {
+  output_csv.open("output_detailed.csv", std::ofstream::app);
   output_csv << file_name << ","
              << method_name << ","
              << current_engine->is_execution_finished << ","
@@ -46,9 +57,29 @@ void write_to_csv() {
              << (current_engine->is_execution_timeout == false ? time_elapsed_in_seconds : (double)-1) << ","
              << current_engine->queries_reasoned_by_mit << ","
              << current_engine->queries_reasoned_by_box << ","
-             << current_engine->queries_reasoned_by_bvt << ","
-             << current_engine->queries_reasoned_by_bvt_sat << ","
-             << current_engine->queries_reasoned_by_bvt - current_engine->queries_reasoned_by_bvt_sat << std::endl;
+             << current_engine->queries_reasoned_by_bvt << std::endl;
+  output_csv.close();
+}
+
+void write_header_to_csv() {
+  std::ifstream ifile;
+  ifile.open("output.csv");
+  if (!ifile) {
+    ifile.close();
+    output_csv.open("output.csv", std::ofstream::app);
+    output_csv << "benchmark," << "method," << "is_finished," << "#paths," << "time (s)," << "#queries" << std::endl;
+    output_csv.close();
+  }
+}
+
+void write_to_csv() {
+  output_csv.open("output.csv", std::ofstream::app);
+  output_csv << file_name << ","
+             << method_name << ","
+             << current_engine->is_execution_finished << ","
+             << current_engine->paths << ","
+             << (current_engine->is_execution_timeout == false ? time_elapsed_in_seconds : (double)-1) << ","
+             << current_engine->queries_reasoned_by_bvt << std::endl;
   output_csv.close();
 }
 
@@ -65,6 +96,8 @@ uint64_t run() {
 
     return EXITCODE_BADARGUMENTS;
   }
+
+  write_header_to_csv();
 
   std::thread timeout_thread(run_timeout_thread);
 
@@ -109,7 +142,7 @@ uint64_t run() {
   time_elapsed_in_seconds = time_elapsed_in_mcseconds / 1000000;
   std::cout << CYAN "\ntotal time (second): " << time_elapsed_in_seconds << RESET << "\n\n";
 
-  // write_to_csv();
+  write_to_csv();
 
   timeout_thread.join();
 
@@ -218,7 +251,7 @@ int main(int argc, char* argv[]) {
       if (print_witness) current_engine->IS_PRINT_INPUT_WITNESSES_AT_ENDPOINT = true;
       return run();
     } else if (!strcmp(option, "-bvt")) {
-      method_name = "bvt";
+      method_name = "baseline";
       current_engine = new bvt_engine();
       current_engine->exe_name = exe_name;
       current_engine->init_engine(running_arg);
@@ -237,9 +270,21 @@ int main(int argc, char* argv[]) {
     }
     else if (!strcmp(option, "-pvi_ubox_bvt")) {
       char* arg = get_argument();
-      running_arg = arg != (char*)0 ? std::atoi(arg) : -1;
-      method_name = "pvi_ubox_bvt_";
+
+      try {
+        running_arg = arg != (char*)0 ? std::atoi(arg) : -1;
+      } catch (...) {
+        running_arg = -1;
+      }
+
+      if (running_arg != 1 && running_arg != 2) {
+        print_usage();
+        return EXITCODE_BADARGUMENTS;
+      }
+
+      method_name = "ASE (O";
       method_name.append((running_arg == 1 ? "1" : "2"));
+      method_name.append(")");
       current_engine = new pvi_ubox_bvt_engine();
       current_engine->exe_name = exe_name;
       current_engine->init_engine(running_arg);

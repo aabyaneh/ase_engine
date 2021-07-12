@@ -3,7 +3,7 @@
 // ------------------------------ INITIALIZATION -------------------------------
 
 void pvi_ubox_bvt_engine::init_engine(uint64_t peek_argument) {
-  which_heuristic = peek_argument != -1 ? peek_argument : which_heuristic;
+  which_observation = peek_argument != -1 ? peek_argument : which_observation;
 
   // AST nodes trace
   boxes    = (uint64_t*) malloc(MAX_AST_NODES_TRACE_LENGTH  * sizeof(uint64_t));
@@ -173,10 +173,10 @@ void pvi_ubox_bvt_engine::create_sltu_constraints(std::vector<uint64_t>& lo1_p, 
 
   if (cannot_handle) {
     if (handle_by_bvt != true) {
-      if (which_heuristic == 1) {
+      if (which_observation == 2) {
         if (apply_sltu_under_approximate_box_decision_procedure_h3(lo1_p, up1_p, lo2_p, up2_p))
           return;
-      } else if (which_heuristic == 2){
+      } else if (which_observation == 1){
         if (apply_sltu_under_approximate_box_decision_procedure_h2(lo1_p, up1_p, lo2_p, up2_p))
           return;
       }
@@ -328,10 +328,10 @@ void pvi_ubox_bvt_engine::create_xor_constraints(std::vector<uint64_t>& lo1_p, s
 
   if (cannot_handle) {
     if (handle_by_bvt != true) {
-      if (which_heuristic == 1) {
+      if (which_observation == 2) {
         if (apply_diseq_under_approximate_box_decision_procedure_h3(lo1_p, up1_p, lo2_p, up2_p))
           return;
-      } else if (which_heuristic == 2){
+      } else if (which_observation == 1){
         if (apply_diseq_under_approximate_box_decision_procedure_h2(lo1_p, up1_p, lo2_p, up2_p))
           return;
       }
