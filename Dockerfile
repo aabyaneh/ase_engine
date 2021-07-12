@@ -36,4 +36,4 @@ RUN cd $TOP \
   && make selfie
 
 RUN cd ase_engine \
-  && g++ -w -g -O3 -m64 -std=c++11 -I../boolector/src/ -I../boolector/deps/cadical/src/ -L../boolector/build/lib/ -L../boolector/deps/cadical/build/ -L../boolector/deps/btor2tools/build/ ase.cpp engine.cpp bvt_engine.cpp mit_bvt_engine.cpp mit_box_bvt_engine.cpp -o ase -lboolector -lbtor2parser -lcadical -lpthread
+  && g++ -w -g -O3 -m64 -std=c++11 -I../boolector/src/ -I../boolector/deps/cadical/src/ -L../boolector/build/lib/ -L../boolector/deps/cadical/build/ -L../boolector/deps/btor2tools/build/ src/ase.cpp src/engine.cpp src/bvt_engine.cpp src/pvi_bvt_engine.cpp src/pvi_ubox_bvt_engine.cpp -o ase -lboolector -lbtor2parser -lcadical -lpthread

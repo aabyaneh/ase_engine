@@ -1,10 +1,10 @@
-#include "mit_bvt_engine.hpp"
+#include "pvi_bvt_engine.hpp"
 
 // ---------------------------- auxiliary functions ----------------------------
 
 uint64_t compute_upper_bound_mit(uint64_t lo, uint64_t step, uint64_t value);
 
-bool mit_bvt_engine::vector_contains_element(std::vector<uint64_t>& vector, uint64_t element) {
+bool pvi_bvt_engine::vector_contains_element(std::vector<uint64_t>& vector, uint64_t element) {
   for (std::vector<uint64_t>::iterator it = vector.begin(); it != vector.end(); ++it) {
     if (*it == element)
       return true;
@@ -13,7 +13,7 @@ bool mit_bvt_engine::vector_contains_element(std::vector<uint64_t>& vector, uint
   return false;
 }
 
-void mit_bvt_engine::merge_arrays(std::vector<uint64_t>& vector_1, std::vector<uint64_t>& vector_2, size_t vector_1_size, size_t vector_2_size) {
+void pvi_bvt_engine::merge_arrays(std::vector<uint64_t>& vector_1, std::vector<uint64_t>& vector_2, size_t vector_1_size, size_t vector_2_size) {
   merged_array.clear();
   for (size_t i = 0; i < vector_1_size; i++) {
     merged_array.push_back(vector_1[i]);
@@ -26,7 +26,7 @@ void mit_bvt_engine::merge_arrays(std::vector<uint64_t>& vector_1, std::vector<u
 
 // ------------------------- INITIALIZATION ------------------------
 
-void mit_bvt_engine::init_engine(uint64_t peek_argument) {
+void pvi_bvt_engine::init_engine(uint64_t peek_argument) {
   init_library();
   init_interpreter();
   init_memory(round_up(10 * MAX_TRACE_LENGTH * SIZEOFUINT64, MEGABYTE) / MEGABYTE + 1);
@@ -159,57 +159,27 @@ void mit_bvt_engine::init_engine(uint64_t peek_argument) {
   }
 }
 
-void mit_bvt_engine::print_input_witness(size_t i, size_t j, uint64_t input, uint64_t lo, uint64_t up, uint64_t step) {
+void pvi_bvt_engine::print_input_witness(size_t i, size_t j, uint64_t input, uint64_t lo, uint64_t up, uint64_t step) {
   std::cout << std::left << MAGENTA "--INPUT :=  id: " << std::setw(3) << i+1 << ", #: " << std::setw(2) << j << " , abstraction: " << get_abstraction(theory_type_ast_nodes[input]) << " => [lo: " << std::setw(5) << lo << ", up: " << std::setw(5) << up << ", step: " << step << "]" << RESET << std::endl;
 }
 
-void mit_bvt_engine::witness_profile() {
-  // uint64_t cardinality;
-
-  current_number_of_witnesses = 1;
-
+void pvi_bvt_engine::witness_profile() {
   if (IS_PRINT_INPUT_WITNESSES_AT_ENDPOINT) std::cout << "\n-------------------------------------------------------------\n";
 
   for (size_t i = 0; i < input_table.size(); i++) {
-    // cardinality = 0;
     for (size_t j = 0; j < mintervals_los[input_table[i]].size(); j++) {
-      // cardinality += (mintervals_ups[input_table[i]][j] - mintervals_los[input_table[i]][j]) / steps[input_table[i]] + 1;
-
       if (IS_PRINT_INPUT_WITNESSES_AT_ENDPOINT) print_input_witness(i, j, input_table[i], mintervals_los[input_table[i]][j], mintervals_ups[input_table[i]][j], steps[input_table[i]]);
     }
-
-    // if (cardinality > 0) {
-    //   if (is_number_of_generated_witnesses_overflowed == false) {
-    //     if (current_number_of_witnesses * cardinality > UINT64_MAX_T) // overflow?
-    //       is_number_of_generated_witnesses_overflowed = true;
-    //     else
-    //       current_number_of_witnesses *= cardinality;
-    //   }
-    // } else
-    //   std::cout << exe_name << ": cardinality of an input is == zero! " << std::endl;
   }
-
-  // if (current_number_of_witnesses > max_number_of_generated_witnesses_among_all_paths)
-  //   max_number_of_generated_witnesses_among_all_paths = current_number_of_witnesses;
-  //
-  // total_number_of_generated_witnesses_for_all_paths += current_number_of_witnesses;
-  // if (total_number_of_generated_witnesses_for_all_paths < current_number_of_witnesses) // overflow?
-  //   is_number_of_generated_witnesses_overflowed = true;
 }
 
 void print_execution_info(uint64_t paths, uint64_t total_number_of_generated_witnesses_for_all_paths, uint64_t max_number_of_generated_witnesses_among_all_paths, uint64_t queries_reasoned_by_mit, uint64_t queries_reasoned_by_bvt, bool is_number_of_generated_witnesses_overflowed) {
   std::cout << "\n\n";
   std::cout << YELLOW "number of explored paths:= " << paths << RESET << std::endl;
-
-  // if (is_number_of_generated_witnesses_overflowed == false)
-  //   std::cout << "number of witnesses:= total: " << total_number_of_generated_witnesses_for_all_paths << ", max: " << max_number_of_generated_witnesses_among_all_paths << std::endl;
-  // else
-  //   std::cout << "number of witnesses:= total: > " << UINT64_MAX << ", max: !" << std::endl;
-
-  std::cout << GREEN "number of queries:= mit: " << queries_reasoned_by_mit << ", bvt: " << queries_reasoned_by_bvt << RESET << "\n\n";
+  std::cout << GREEN "number of queries:= pvi: " << queries_reasoned_by_mit << ", bvt: " << queries_reasoned_by_bvt << RESET << "\n\n";
 }
 
-uint64_t mit_bvt_engine::run_engine(uint64_t* to_context) {
+uint64_t pvi_bvt_engine::run_engine(uint64_t* to_context) {
   registers = get_regs(to_context);
   pt        = get_pt(to_context);
 
@@ -264,7 +234,7 @@ uint64_t mit_bvt_engine::run_engine(uint64_t* to_context) {
 // ---------------------------- KERNEL -----------------------------
 // -----------------------------------------------------------------
 
-void mit_bvt_engine::init_interpreter() {
+void pvi_bvt_engine::init_interpreter() {
   EXCEPTIONS = smalloc((EXCEPTION_MAXTRACE + 1) * SIZEOFUINT64STAR);
 
   *(EXCEPTIONS + EXCEPTION_NOEXCEPTION)        = (uint64_t) "no exception";
@@ -277,7 +247,7 @@ void mit_bvt_engine::init_interpreter() {
   *(EXCEPTIONS + EXCEPTION_MAXTRACE)           = (uint64_t) "trace length exceeded";
 }
 
-void mit_bvt_engine::map_and_store(uint64_t* context, uint64_t vaddr, uint64_t data) {
+void pvi_bvt_engine::map_and_store(uint64_t* context, uint64_t vaddr, uint64_t data) {
   // assert: is_valid_virtual_address(vaddr) == 1
   uint64_t ast_ptr;
 
@@ -296,7 +266,7 @@ void mit_bvt_engine::map_and_store(uint64_t* context, uint64_t vaddr, uint64_t d
   }
 }
 
-void mit_bvt_engine::set_SP(uint64_t* context) {
+void pvi_bvt_engine::set_SP(uint64_t* context) {
   uint64_t SP;
 
   // the call stack grows top down
@@ -317,7 +287,7 @@ void mit_bvt_engine::set_SP(uint64_t* context) {
   set_correction(REG_SP, 0, 0, 0);
 }
 
-void mit_bvt_engine::up_load_binary(uint64_t* context) {
+void pvi_bvt_engine::up_load_binary(uint64_t* context) {
   uint64_t baddr;
 
   // assert: entry_point is multiple of PAGESIZE and REGISTERSIZE
@@ -345,7 +315,7 @@ void mit_bvt_engine::up_load_binary(uint64_t* context) {
   set_name(context, binary_name);
 }
 
-uint64_t mit_bvt_engine::handle_system_call(uint64_t* context) {
+uint64_t pvi_bvt_engine::handle_system_call(uint64_t* context) {
   uint64_t a7;
 
   set_exception(context, EXCEPTION_NOEXCEPTION);
@@ -386,7 +356,7 @@ uint64_t mit_bvt_engine::handle_system_call(uint64_t* context) {
     return DONOTEXIT;
 }
 
-uint64_t mit_bvt_engine::handle_max_trace(uint64_t* context) {
+uint64_t pvi_bvt_engine::handle_max_trace(uint64_t* context) {
   set_exception(context, EXCEPTION_NOEXCEPTION);
 
   set_exit_code(context, EXITCODE_OUTOFTRACEMEMORY);
@@ -398,7 +368,7 @@ uint64_t mit_bvt_engine::handle_max_trace(uint64_t* context) {
   return EXIT;
 }
 
-uint64_t mit_bvt_engine::handle_exception(uint64_t* context) {
+uint64_t pvi_bvt_engine::handle_exception(uint64_t* context) {
   uint64_t exception;
 
   exception = get_exception(context);
@@ -428,7 +398,7 @@ uint64_t mit_bvt_engine::handle_exception(uint64_t* context) {
 // ------------------------- SMT Solver ----------------------------
 // -----------------------------------------------------------------
 
-BoolectorNode* mit_bvt_engine::boolector_unsigned_int_64(uint64_t value) {
+BoolectorNode* pvi_bvt_engine::boolector_unsigned_int_64(uint64_t value) {
   if (value < TWO_TO_THE_POWER_OF_32) {
     return boolector_unsigned_int(btor, value, bv_sort);
   } else {
@@ -441,15 +411,15 @@ BoolectorNode* mit_bvt_engine::boolector_unsigned_int_64(uint64_t value) {
 // --------------------------- SYSCALLS ----------------------------
 // -----------------------------------------------------------------
 
-void mit_bvt_engine::implement_exit(uint64_t* context) {
+void pvi_bvt_engine::implement_exit(uint64_t* context) {
   set_exit_code(context, sign_shrink(get_regs(context)[REG_A0], SYSCALL_BITWIDTH));
 }
 
-void mit_bvt_engine::implement_read(uint64_t* context) {
+void pvi_bvt_engine::implement_read(uint64_t* context) {
   std::cout << exe_name << ": symbolic read is not implemented yet\n";
 }
 
-std::string mit_bvt_engine::get_abstraction(uint8_t abstraction) {
+std::string pvi_bvt_engine::get_abstraction(uint8_t abstraction) {
   if (abstraction == MIT)
     return "MIT";
   else if (abstraction == BOX)
@@ -460,7 +430,7 @@ std::string mit_bvt_engine::get_abstraction(uint8_t abstraction) {
     return "UNKNOWN";
 }
 
-void mit_bvt_engine::implement_printsv(uint64_t* context) {
+void pvi_bvt_engine::implement_printsv(uint64_t* context) {
   uint64_t id;
 
   id = get_regs(context)[REG_A0];
@@ -486,7 +456,7 @@ void mit_bvt_engine::implement_printsv(uint64_t* context) {
   set_pc(context, get_pc(context) + INSTRUCTIONSIZE);
 }
 
-void mit_bvt_engine::implement_symbolic_input(uint64_t* context) {
+void pvi_bvt_engine::implement_symbolic_input(uint64_t* context) {
   uint64_t lo;
   uint64_t up;
   uint64_t step;
@@ -546,7 +516,7 @@ void mit_bvt_engine::implement_symbolic_input(uint64_t* context) {
   set_pc(context, get_pc(context) + INSTRUCTIONSIZE);
 }
 
-void mit_bvt_engine::implement_write(uint64_t* context) {
+void pvi_bvt_engine::implement_write(uint64_t* context) {
   // parameters
   uint64_t fd;
   uint64_t vbuffer;
@@ -623,7 +593,7 @@ void mit_bvt_engine::implement_write(uint64_t* context) {
   set_pc(context, get_pc(context) + INSTRUCTIONSIZE);
 }
 
-uint64_t mit_bvt_engine::down_load_string(uint64_t* table, uint64_t vaddr, uint64_t* s) {
+uint64_t pvi_bvt_engine::down_load_string(uint64_t* table, uint64_t vaddr, uint64_t* s) {
   uint64_t mrvc;
   uint64_t i;
   uint64_t j;
@@ -664,7 +634,7 @@ uint64_t mit_bvt_engine::down_load_string(uint64_t* table, uint64_t vaddr, uint6
   return 0;
 }
 
-void mit_bvt_engine::implement_open(uint64_t* context) {
+void pvi_bvt_engine::implement_open(uint64_t* context) {
   // parameters
   uint64_t vfilename;
   uint64_t flags;
@@ -700,7 +670,7 @@ void mit_bvt_engine::implement_open(uint64_t* context) {
   set_pc(context, get_pc(context) + INSTRUCTIONSIZE);
 }
 
-void mit_bvt_engine::implement_brk(uint64_t* context) {
+void pvi_bvt_engine::implement_brk(uint64_t* context) {
   // parameter
   uint64_t program_break;
 
@@ -853,13 +823,13 @@ uint64_t reverse_division_up(uint64_t up_ast_tc, uint64_t up, uint64_t codiv) {
 
 // ---------------------------- corrections ------------------------------------
 
-void mit_bvt_engine::set_correction(uint64_t reg, uint8_t hasmn, uint64_t addsub_corr, uint8_t corr_validity) {
+void pvi_bvt_engine::set_correction(uint64_t reg, uint8_t hasmn, uint64_t addsub_corr, uint8_t corr_validity) {
   reg_hasmn[reg]          = hasmn;
   reg_addsub_corr[reg]    = addsub_corr;
   reg_corr_validity[reg]  = corr_validity;
 }
 
-void mit_bvt_engine::create_ast_node_entry_for_accumulated_corr(uint64_t sym_reg) {
+void pvi_bvt_engine::create_ast_node_entry_for_accumulated_corr(uint64_t sym_reg) {
   value_v[0] = reg_addsub_corr[sym_reg];
   uint64_t crt_ptr = add_ast_node(CONST, 0, 0, 1, value_v, value_v, 1, 0, zero_v, MIT, boolector_null);
   if (reg_hasmn[sym_reg]) {
@@ -869,12 +839,12 @@ void mit_bvt_engine::create_ast_node_entry_for_accumulated_corr(uint64_t sym_reg
   }
 }
 
-void mit_bvt_engine::create_ast_node_entry_for_concrete_operand(uint64_t crt_reg) {
+void pvi_bvt_engine::create_ast_node_entry_for_concrete_operand(uint64_t crt_reg) {
   value_v[0]        = reg_mintervals_los[crt_reg][0];
   reg_asts[crt_reg] = add_ast_node(CONST, 0, 0, 1, value_v, value_v, 1, 0, zero_v, MIT, reg_bvts[crt_reg]);
 }
 
-void mit_bvt_engine::evaluate_correction(uint64_t reg) {
+void pvi_bvt_engine::evaluate_correction(uint64_t reg) {
   if (reg_addsub_corr[reg] || reg_hasmn[reg]) {
     create_ast_node_entry_for_accumulated_corr(reg);
   }
@@ -884,7 +854,7 @@ void mit_bvt_engine::evaluate_correction(uint64_t reg) {
 // ------------------------- INSTRUCTIONS --------------------------
 // -----------------------------------------------------------------
 
-void mit_bvt_engine::apply_lui() {
+void pvi_bvt_engine::apply_lui() {
   do_lui();
 
   if (rd != REG_ZR) {
@@ -904,7 +874,7 @@ void mit_bvt_engine::apply_lui() {
   }
 }
 
-void mit_bvt_engine::apply_addi() {
+void pvi_bvt_engine::apply_addi() {
   uint64_t crt_ptr;
 
   do_addi();
@@ -970,7 +940,7 @@ void mit_bvt_engine::apply_addi() {
   }
 }
 
-bool mit_bvt_engine::apply_add_pointer() {
+bool pvi_bvt_engine::apply_add_pointer() {
   if (reg_data_type[rs1] == POINTER_T) {
     if (reg_data_type[rs2] == POINTER_T) {
       // adding two pointers is undefined
@@ -1012,7 +982,7 @@ bool mit_bvt_engine::apply_add_pointer() {
   return 0;
 }
 
-void mit_bvt_engine::apply_add() {
+void pvi_bvt_engine::apply_add() {
   uint64_t add_lo;
   uint64_t add_up;
 
@@ -1110,7 +1080,7 @@ void mit_bvt_engine::apply_add() {
   }
 }
 
-bool mit_bvt_engine::apply_sub_pointer() {
+bool pvi_bvt_engine::apply_sub_pointer() {
   if (reg_data_type[rs1] == POINTER_T) {
     if (reg_data_type[rs2] == POINTER_T) {
       if (reg_mintervals_los[rs1][0] == reg_mintervals_los[rs2][0])
@@ -1172,7 +1142,7 @@ bool mit_bvt_engine::apply_sub_pointer() {
   return 0;
 }
 
-void mit_bvt_engine::apply_sub() {
+void pvi_bvt_engine::apply_sub() {
   uint64_t sub_tmp;
 
   do_sub();
@@ -1275,7 +1245,7 @@ void mit_bvt_engine::apply_sub() {
   }
 }
 
-void mit_bvt_engine::apply_mul_zero() {
+void pvi_bvt_engine::apply_mul_zero() {
   reg_symb_type[rd] = CONCRETE;
   reg_mintervals_los[rd][0]    = 0;
   reg_mintervals_ups[rd][0]    = 0;
@@ -1288,7 +1258,7 @@ void mit_bvt_engine::apply_mul_zero() {
   set_correction(rd, 0, 0, 0);
 }
 
-void mit_bvt_engine::apply_mul() {
+void pvi_bvt_engine::apply_mul() {
   uint64_t multiplier;
 
   do_mul();
@@ -1411,7 +1381,7 @@ void mit_bvt_engine::apply_mul() {
   }
 }
 
-bool mit_bvt_engine::apply_divu_mit() {
+bool pvi_bvt_engine::apply_divu_mit() {
   uint64_t div_lo;
   uint64_t div_up;
   uint64_t k;
@@ -1469,8 +1439,7 @@ bool mit_bvt_engine::apply_divu_mit() {
   return true;
 }
 
-void mit_bvt_engine::apply_divu() {
-  // TODO: if theory is ABVT may raise an unreal divison by zero
+void pvi_bvt_engine::apply_divu() {
   do_divu();
 
   if (rd != REG_ZR) {
@@ -1538,7 +1507,7 @@ void mit_bvt_engine::apply_divu() {
   }
 }
 
-bool mit_bvt_engine::apply_remu_mit() {
+bool pvi_bvt_engine::apply_remu_mit() {
   uint64_t rem_lo;
   uint64_t rem_up;
   uint64_t step_rd;
@@ -1591,7 +1560,7 @@ bool mit_bvt_engine::apply_remu_mit() {
   return true;
 }
 
-void mit_bvt_engine::apply_remu() {
+void pvi_bvt_engine::apply_remu() {
   do_remu();
 
   if (rd != REG_ZR) {
@@ -1659,7 +1628,7 @@ void mit_bvt_engine::apply_remu() {
   }
 }
 
-void mit_bvt_engine::apply_sltu() {
+void pvi_bvt_engine::apply_sltu() {
   if (backtrack) { backtrack_sltu(); return; }
 
   if (rd != REG_ZR) {
@@ -1727,7 +1696,7 @@ void mit_bvt_engine::apply_sltu() {
   ic_sltu = ic_sltu + 1;
 }
 
-void mit_bvt_engine::apply_xor() {
+void pvi_bvt_engine::apply_xor() {
   if (backtrack) { backtrack_sltu(); return; }
 
   if (rd != REG_ZR) {
@@ -1795,7 +1764,7 @@ void mit_bvt_engine::apply_xor() {
   ic_xor = ic_xor + 1;
 }
 
-uint64_t mit_bvt_engine::check_memory_vaddr_whether_represents_most_recent_constraint(uint64_t mrvc) {
+uint64_t pvi_bvt_engine::check_memory_vaddr_whether_represents_most_recent_constraint(uint64_t mrvc) {
   uint64_t ast_tc = asts[mrvc];
   uint64_t most_recent_input;
   uint64_t input_ast_tc;
@@ -1817,7 +1786,7 @@ uint64_t mit_bvt_engine::check_memory_vaddr_whether_represents_most_recent_const
     return mrvc;
 }
 
-uint64_t mit_bvt_engine::apply_ld() {
+uint64_t pvi_bvt_engine::apply_ld() {
   uint64_t vaddr;
   uint64_t mrvc;
   uint64_t a;
@@ -1890,7 +1859,7 @@ uint64_t mit_bvt_engine::apply_ld() {
   return vaddr;
 }
 
-uint64_t mit_bvt_engine::apply_sd() {
+uint64_t pvi_bvt_engine::apply_sd() {
   uint64_t vaddr;
   uint64_t a;
 
@@ -1932,7 +1901,7 @@ uint64_t mit_bvt_engine::apply_sd() {
   return vaddr;
 }
 
-void mit_bvt_engine::apply_jal() {
+void pvi_bvt_engine::apply_jal() {
   do_jal();
 
   if (rd != REG_ZR) {
@@ -1951,7 +1920,7 @@ void mit_bvt_engine::apply_jal() {
   }
 }
 
-void mit_bvt_engine::apply_jalr() {
+void pvi_bvt_engine::apply_jalr() {
   do_jalr();
 
   if (rd != REG_ZR) {
@@ -1970,7 +1939,7 @@ void mit_bvt_engine::apply_jalr() {
   }
 }
 
-void mit_bvt_engine::apply_ecall() {
+void pvi_bvt_engine::apply_ecall() {
   if (backtrack) { backtrack_ecall(); return; }
 
   do_ecall();
@@ -1980,7 +1949,7 @@ void mit_bvt_engine::apply_ecall() {
 // ----------------------------- backtracking ----------------------------------
 // -----------------------------------------------------------------------------
 
-void mit_bvt_engine::backtrack_sltu() {
+void pvi_bvt_engine::backtrack_sltu() {
   uint64_t vaddr;
 
   vaddr = vaddrs[tc];
@@ -2066,7 +2035,7 @@ void mit_bvt_engine::backtrack_sltu() {
   efree();
 }
 
-void mit_bvt_engine::backtrack_sd() {
+void pvi_bvt_engine::backtrack_sd() {
   if (theory_types[tc] < BVT) {
     if (store_trace_ptrs[asts[tc]].size() >= 1) {
       store_trace_ptrs[asts[tc]].pop_back();
@@ -2089,7 +2058,7 @@ void mit_bvt_engine::backtrack_sd() {
   efree();
 }
 
-void mit_bvt_engine::backtrack_ld() {
+void pvi_bvt_engine::backtrack_ld() {
   if (store_trace_ptrs[asts[tc]].size() > 1) {
     store_trace_ptrs[asts[tc]].pop_back();
   } else if (store_trace_ptrs[asts[tc]].size() == 1) {
@@ -2105,7 +2074,7 @@ void mit_bvt_engine::backtrack_ld() {
   efree();
 }
 
-void mit_bvt_engine::backtrack_ecall() {
+void pvi_bvt_engine::backtrack_ecall() {
   if (vaddrs[tc] == 0) {
     // backtracking malloc
     if (get_program_break(current_context) == mintervals_los[asts[tc]][0] + mintervals_ups[asts[tc]][0])
@@ -2132,7 +2101,7 @@ void mit_bvt_engine::backtrack_ecall() {
   efree();
 }
 
-void mit_bvt_engine::backtrack_trace(uint64_t* context) {
+void pvi_bvt_engine::backtrack_trace(uint64_t* context) {
   uint64_t savepc;
 
   backtrack = 1;
@@ -2162,7 +2131,7 @@ void mit_bvt_engine::backtrack_trace(uint64_t* context) {
 // ------------------------- SYMBOLIC functions --------------------------------
 // -----------------------------------------------------------------------------
 
-uint8_t mit_bvt_engine::is_symbolic_value(uint8_t type, uint32_t mints_num, uint64_t lo, uint64_t up, uint8_t theory_type) {
+uint8_t pvi_bvt_engine::is_symbolic_value(uint8_t type, uint32_t mints_num, uint64_t lo, uint64_t up, uint8_t theory_type) {
   if (type == POINTER_T)
     // memory range
     return CONCRETE;
@@ -2178,7 +2147,7 @@ uint8_t mit_bvt_engine::is_symbolic_value(uint8_t type, uint32_t mints_num, uint
     return SYMBOLIC;
 }
 
-uint64_t mit_bvt_engine::is_safe_address(uint64_t vaddr, uint64_t reg) {
+uint64_t pvi_bvt_engine::is_safe_address(uint64_t vaddr, uint64_t reg) {
   if (reg_data_type[reg] == POINTER_T) {
     if (vaddr < reg_mintervals_los[reg][0])
       // memory access below start address of mallocated block
@@ -2196,7 +2165,7 @@ uint64_t mit_bvt_engine::is_safe_address(uint64_t vaddr, uint64_t reg) {
   }
 }
 
-uint64_t mit_bvt_engine::load_symbolic_memory(uint64_t* pt, uint64_t vaddr) {
+uint64_t pvi_bvt_engine::load_symbolic_memory(uint64_t* pt, uint64_t vaddr) {
   uint64_t mrvc;
 
   // assert: vaddr is valid and mapped
@@ -2210,24 +2179,24 @@ uint64_t mit_bvt_engine::load_symbolic_memory(uint64_t* pt, uint64_t vaddr) {
   }
 }
 
-uint64_t mit_bvt_engine::is_trace_space_available() {
+uint64_t pvi_bvt_engine::is_trace_space_available() {
   return tc + 1 < MAX_TRACE_LENGTH;
 }
 
-uint64_t mit_bvt_engine::get_current_tc() {
+uint64_t pvi_bvt_engine::get_current_tc() {
   return tc;
 }
 
-void mit_bvt_engine::ealloc() {
+void pvi_bvt_engine::ealloc() {
   tc = tc + 1;
 }
 
-void mit_bvt_engine::efree() {
+void pvi_bvt_engine::efree() {
   // assert: tc > 0
   tc = tc - 1;
 }
 
-void mit_bvt_engine::store_symbolic_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, uint8_t data_type, uint64_t ast_ptr, uint64_t trb, uint64_t is_store, uint8_t theory_type) {
+void pvi_bvt_engine::store_symbolic_memory(uint64_t* pt, uint64_t vaddr, uint64_t value, uint8_t data_type, uint64_t ast_ptr, uint64_t trb, uint64_t is_store, uint8_t theory_type) {
   uint64_t mrvc;
 
   if (vaddr == 0)
@@ -2315,12 +2284,12 @@ void mit_bvt_engine::store_symbolic_memory(uint64_t* pt, uint64_t vaddr, uint64_
   }
 }
 
-void mit_bvt_engine::store_register_memory(uint64_t reg, std::vector<uint64_t>& value) {
+void pvi_bvt_engine::store_register_memory(uint64_t reg, std::vector<uint64_t>& value) {
   // always track register memory by using tc as most recent branch
   store_symbolic_memory(pt, reg, value[0], VALUE_T, 0, tc, 1, MIT);
 }
 
-void mit_bvt_engine::store_input_record(uint64_t ast_ptr, uint64_t prev_input_record, uint8_t theory_type) {
+void pvi_bvt_engine::store_input_record(uint64_t ast_ptr, uint64_t prev_input_record, uint8_t theory_type) {
   store_symbolic_memory(pt, NUMBEROFREGISTERS, prev_input_record, INPUT_T, ast_ptr, tc, 0, theory_type);
 }
 
@@ -2328,7 +2297,7 @@ void mit_bvt_engine::store_input_record(uint64_t ast_ptr, uint64_t prev_input_re
 // ------------------------ reasoning/decision core ----------------------------
 // -----------------------------------------------------------------------------
 
-uint64_t mit_bvt_engine::add_ast_node(uint8_t typ, uint64_t left_node, uint64_t right_node, uint32_t mints_num, std::vector<uint64_t>& lo, std::vector<uint64_t>& up, uint64_t step, uint64_t sym_input_num, std::vector<uint64_t>& sym_input_ast_tcs, uint8_t theory_type, BoolectorNode* smt_expr) {
+uint64_t pvi_bvt_engine::add_ast_node(uint8_t typ, uint64_t left_node, uint64_t right_node, uint32_t mints_num, std::vector<uint64_t>& lo, std::vector<uint64_t>& up, uint64_t step, uint64_t sym_input_num, std::vector<uint64_t>& sym_input_ast_tcs, uint8_t theory_type, BoolectorNode* smt_expr) {
   ast_trace_cnt++;
 
   if (ast_trace_cnt >= AST_NODES_TRACE_LENGTH) {
@@ -2384,14 +2353,14 @@ uint64_t mit_bvt_engine::add_ast_node(uint8_t typ, uint64_t left_node, uint64_t 
   return ast_trace_cnt;
 }
 
-void mit_bvt_engine::set_involved_inputs(uint64_t reg, std::vector<uint64_t>& involved_inputs, size_t in_num) {
+void pvi_bvt_engine::set_involved_inputs(uint64_t reg, std::vector<uint64_t>& involved_inputs, size_t in_num) {
   reg_involved_inputs_cnts[reg] = in_num;
   for (size_t i = 0; i < in_num; i++) {
     reg_involved_inputs[reg][i] = involved_inputs[i];
   }
 }
 
-void mit_bvt_engine::set_involved_inputs_two_symbolic_operands() {
+void pvi_bvt_engine::set_involved_inputs_two_symbolic_operands() {
   merge_arrays(reg_involved_inputs[rs1], reg_involved_inputs[rs2], reg_involved_inputs_cnts[rs1], reg_involved_inputs_cnts[rs2]);
   for (size_t i = 0; i < merged_array.size(); i++) {
     reg_involved_inputs[rd][i] = merged_array[i];
@@ -2399,7 +2368,7 @@ void mit_bvt_engine::set_involved_inputs_two_symbolic_operands() {
   reg_involved_inputs_cnts[rd] = merged_array.size();
 }
 
-void mit_bvt_engine::take_branch(uint64_t b, uint64_t how_many_more) {
+void pvi_bvt_engine::take_branch(uint64_t b, uint64_t how_many_more) {
   if (how_many_more > 0) {
     value_v[0] = b;
     store_register_memory(rd, value_v);     // record that we need to set rd to true
@@ -2424,7 +2393,7 @@ void mit_bvt_engine::take_branch(uint64_t b, uint64_t how_many_more) {
   }
 }
 
-uint8_t mit_bvt_engine::detect_symbolic_operand(uint64_t ast_tc) {
+uint8_t pvi_bvt_engine::detect_symbolic_operand(uint64_t ast_tc) {
   uint8_t left_typ = is_symbolic_value(VALUE_T, mintervals_los[ast_nodes[ast_tc].left_node].size(), mintervals_los[ast_nodes[ast_tc].left_node][0], mintervals_ups[ast_nodes[ast_tc].left_node][0], theory_type_ast_nodes[ast_nodes[ast_tc].left_node]);
   uint8_t right_typ = is_symbolic_value(VALUE_T, mintervals_los[ast_nodes[ast_tc].right_node].size(), mintervals_los[ast_nodes[ast_tc].right_node][0], mintervals_ups[ast_nodes[ast_tc].right_node][0], theory_type_ast_nodes[ast_nodes[ast_tc].right_node]);
 
@@ -2441,7 +2410,7 @@ uint8_t mit_bvt_engine::detect_symbolic_operand(uint64_t ast_tc) {
   }
 }
 
-bool mit_bvt_engine::backward_propagation_divu_wrapped_mit(uint64_t sym_operand_ast_tc, uint64_t divisor) {
+bool pvi_bvt_engine::backward_propagation_divu_wrapped_mit(uint64_t sym_operand_ast_tc, uint64_t divisor) {
   uint64_t lo_1;
   uint64_t up_1;
   uint64_t lo_2;
@@ -2497,7 +2466,7 @@ bool mit_bvt_engine::backward_propagation_divu_wrapped_mit(uint64_t sym_operand_
   return true;
 }
 
-uint64_t mit_bvt_engine::backward_propagation_of_value_intervals(uint64_t ast_tc, std::vector<uint64_t>& lo, std::vector<uint64_t>& up, size_t mints_num, uint8_t theory_type) {
+uint64_t pvi_bvt_engine::backward_propagation_of_value_intervals(uint64_t ast_tc, std::vector<uint64_t>& lo, std::vector<uint64_t>& up, size_t mints_num, uint8_t theory_type) {
   std::vector<uint64_t> saved_lo;
   std::vector<uint64_t> saved_up;
   std::vector<uint32_t> idxs;
@@ -2562,14 +2531,14 @@ uint64_t mit_bvt_engine::backward_propagation_of_value_intervals(uint64_t ast_tc
   }
 
   switch (ast_nodes[ast_tc].type) {
-    case mit_bvt_engine::ADD: {
+    case pvi_bvt_engine::ADD: {
       for (size_t i = 0; i < mints_num; i++) {
         propagated_minterval_lo[i] = propagated_minterval_lo[i] - mintervals_los[crt_operand_ast_tc][0];
         propagated_minterval_up[i] = propagated_minterval_up[i] - mintervals_los[crt_operand_ast_tc][0];
       }
       break;
     }
-    case mit_bvt_engine::SUB: {
+    case pvi_bvt_engine::SUB: {
       if (left_or_right_is_sym == RIGHT) {
         // minuend
         uint64_t tmp;
@@ -2586,7 +2555,7 @@ uint64_t mit_bvt_engine::backward_propagation_of_value_intervals(uint64_t ast_tc
       }
       break;
     }
-    case mit_bvt_engine::MUL: {
+    case pvi_bvt_engine::MUL: {
       // <9223372036854775808, 2^64 - 1, 1> * 2 = <0, 2^64 - 2, 2>
       // <9223372036854775809, 15372286728091293014, 1> * 3 = <9223372036854775811, 9223372036854775810, 3>
       for (size_t i = 0; i < mints_num; i++) {
@@ -2595,7 +2564,7 @@ uint64_t mit_bvt_engine::backward_propagation_of_value_intervals(uint64_t ast_tc
       }
       break;
     }
-    case mit_bvt_engine::DIVU: {
+    case pvi_bvt_engine::DIVU: {
       if (mints_num > 1) {
         return 0;
       }
@@ -2618,7 +2587,7 @@ uint64_t mit_bvt_engine::backward_propagation_of_value_intervals(uint64_t ast_tc
 
       break;
     }
-    case mit_bvt_engine::REMU: {
+    case pvi_bvt_engine::REMU: {
       return 0;
 
       break;
@@ -2652,7 +2621,7 @@ uint64_t mit_bvt_engine::backward_propagation_of_value_intervals(uint64_t ast_tc
   return ast_ptr;
 }
 
-bool mit_bvt_engine::constrain_memory_mit(uint64_t reg, std::vector<uint64_t>& lo, std::vector<uint64_t>& up, uint32_t mints_num, uint64_t trb, bool only_reachable_branch) {
+bool pvi_bvt_engine::constrain_memory_mit(uint64_t reg, std::vector<uint64_t>& lo, std::vector<uint64_t>& up, uint32_t mints_num, uint64_t trb, bool only_reachable_branch) {
   if (reg_symb_type[reg] == SYMBOLIC) {
     if (only_reachable_branch == false) {
       if (backward_propagation_of_value_intervals(reg_asts[reg], lo, up, mints_num, reg_theory_types[reg]) == 0)
@@ -2663,7 +2632,7 @@ bool mit_bvt_engine::constrain_memory_mit(uint64_t reg, std::vector<uint64_t>& l
   return true;
 }
 
-bool mit_bvt_engine::evaluate_sltu_true_false_branch_mit(uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t up2) {
+bool pvi_bvt_engine::evaluate_sltu_true_false_branch_mit(uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t up2) {
   bool cannot_handle = false;
 
   if (lo1 <= up1) {
@@ -2863,7 +2832,7 @@ bool mit_bvt_engine::evaluate_sltu_true_false_branch_mit(uint64_t lo1, uint64_t 
   return cannot_handle;
 }
 
-void mit_bvt_engine::create_sltu_constraints(std::vector<uint64_t>& lo1_p, std::vector<uint64_t>& up1_p, std::vector<uint64_t>& lo2_p, std::vector<uint64_t>& up2_p, uint64_t trb, bool cannot_handle) {
+void pvi_bvt_engine::create_sltu_constraints(std::vector<uint64_t>& lo1_p, std::vector<uint64_t>& up1_p, std::vector<uint64_t>& lo2_p, std::vector<uint64_t>& up2_p, uint64_t trb, bool cannot_handle) {
   bool true_reachable  = false;
   bool false_reachable = false;
   uint64_t lo1;
@@ -3007,7 +2976,7 @@ void mit_bvt_engine::create_sltu_constraints(std::vector<uint64_t>& lo1_p, std::
   }
 }
 
-bool mit_bvt_engine::evaluate_xor_true_false_branch_mit(uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t up2) {
+bool pvi_bvt_engine::evaluate_xor_true_false_branch_mit(uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t up2) {
   bool cannot_handle = false;
 
   if (lo1 <= up1) {
@@ -3168,7 +3137,7 @@ bool mit_bvt_engine::evaluate_xor_true_false_branch_mit(uint64_t lo1, uint64_t u
   return cannot_handle;
 }
 
-void mit_bvt_engine::create_xor_constraints(std::vector<uint64_t>& lo1_p, std::vector<uint64_t>& up1_p, std::vector<uint64_t>& lo2_p, std::vector<uint64_t>& up2_p, uint64_t trb, bool cannot_handle) {
+void pvi_bvt_engine::create_xor_constraints(std::vector<uint64_t>& lo1_p, std::vector<uint64_t>& up1_p, std::vector<uint64_t>& lo2_p, std::vector<uint64_t>& up2_p, uint64_t trb, bool cannot_handle) {
   bool true_reachable  = false;
   bool false_reachable = false;
   uint64_t lo1;
@@ -3313,7 +3282,7 @@ void mit_bvt_engine::create_xor_constraints(std::vector<uint64_t>& lo1_p, std::v
   }
 }
 
-bool mit_bvt_engine::check_sat_true_branch_bvt(BoolectorNode* assert) {
+bool pvi_bvt_engine::check_sat_true_branch_bvt(BoolectorNode* assert) {
   bool result = false;
   boolector_push(btor, 1);
   boolector_assert(btor, assert);
@@ -3331,7 +3300,7 @@ bool mit_bvt_engine::check_sat_true_branch_bvt(BoolectorNode* assert) {
   return result;
 }
 
-bool mit_bvt_engine::check_sat_false_branch_bvt(BoolectorNode* assert) {
+bool pvi_bvt_engine::check_sat_false_branch_bvt(BoolectorNode* assert) {
   bool result = false;
   boolector_push(btor, 1);
   boolector_assert(btor, assert);
@@ -3349,7 +3318,7 @@ bool mit_bvt_engine::check_sat_false_branch_bvt(BoolectorNode* assert) {
   return result;
 }
 
-void mit_bvt_engine::dump_involving_input_variables_true_branch_bvt() {
+void pvi_bvt_engine::dump_involving_input_variables_true_branch_bvt() {
   uint64_t ast_ptr, involved_input_ast_tc, stored_to_tc, mr_stored_to_tc;
   bool is_assigned;
 
@@ -3404,7 +3373,7 @@ void mit_bvt_engine::dump_involving_input_variables_true_branch_bvt() {
   }
 }
 
-void mit_bvt_engine::dump_involving_input_variables_false_branch_bvt() {
+void pvi_bvt_engine::dump_involving_input_variables_false_branch_bvt() {
   uint64_t ast_ptr, involved_input_ast_tc, stored_to_tc, mr_stored_to_tc;
   bool is_assigned;
 
@@ -3459,7 +3428,7 @@ void mit_bvt_engine::dump_involving_input_variables_false_branch_bvt() {
   }
 }
 
-void mit_bvt_engine::dump_all_input_variables_on_trace_true_branch_bvt() {
+void pvi_bvt_engine::dump_all_input_variables_on_trace_true_branch_bvt() {
   uint64_t ast_ptr, involved_input_ast_tc, stored_to_tc, mr_stored_to_tc;
   bool is_assigned;
 
@@ -3488,7 +3457,7 @@ void mit_bvt_engine::dump_all_input_variables_on_trace_true_branch_bvt() {
 
 }
 
-void mit_bvt_engine::dump_all_input_variables_on_trace_false_branch_bvt() {
+void pvi_bvt_engine::dump_all_input_variables_on_trace_false_branch_bvt() {
   uint64_t ast_ptr, involved_input_ast_tc, stored_to_tc, mr_stored_to_tc;
   bool is_assigned;
 
@@ -3516,7 +3485,7 @@ void mit_bvt_engine::dump_all_input_variables_on_trace_false_branch_bvt() {
   }
 }
 
-void mit_bvt_engine::refine_abvt_abstraction_by_dumping_all_input_variables_on_trace_bvt() {
+void pvi_bvt_engine::refine_abvt_abstraction_by_dumping_all_input_variables_on_trace_bvt() {
   uint64_t ast_ptr, involved_input, stored_to_tc, mr_stored_to_tc;
   bool is_assigned;
 
@@ -3549,7 +3518,7 @@ void mit_bvt_engine::refine_abvt_abstraction_by_dumping_all_input_variables_on_t
 
 // --------------------------- conditional expression --------------------------
 
-bool mit_bvt_engine::match_addi_instruction() {
+bool pvi_bvt_engine::match_addi_instruction() {
   uint64_t rs1_;
   uint64_t rd_;
   uint64_t funct3_;
@@ -3570,7 +3539,7 @@ bool mit_bvt_engine::match_addi_instruction() {
   return false;
 }
 
-bool mit_bvt_engine::match_sub_instruction(uint64_t prev_instr_rd) {
+bool pvi_bvt_engine::match_sub_instruction(uint64_t prev_instr_rd) {
   uint64_t rs1_;
   uint64_t rs2_;
   uint64_t rd_;
@@ -3594,7 +3563,7 @@ bool mit_bvt_engine::match_sub_instruction(uint64_t prev_instr_rd) {
   return false;
 }
 
-uint8_t mit_bvt_engine::check_conditional_type_whether_is_equality_or_disequality() {
+uint8_t pvi_bvt_engine::check_conditional_type_whether_is_equality_or_disequality() {
   uint64_t saved_pc = pc;
   uint64_t op_code;
   uint64_t funct_3;
@@ -3617,7 +3586,7 @@ uint8_t mit_bvt_engine::check_conditional_type_whether_is_equality_or_disequalit
   return 0;
 }
 
-uint8_t mit_bvt_engine::check_conditional_type_whether_is_strict_less_than_or_is_less_greater_than_eq() {
+uint8_t pvi_bvt_engine::check_conditional_type_whether_is_strict_less_than_or_is_less_greater_than_eq() {
   uint64_t saved_pc = pc;
 
   pc = saved_pc + INSTRUCTIONSIZE;
@@ -3640,7 +3609,7 @@ uint8_t mit_bvt_engine::check_conditional_type_whether_is_strict_less_than_or_is
 // ------------------------- on-demand bvt layer -------------------------------
 // -----------------------------------------------------------------------------
 
-BoolectorNode* mit_bvt_engine::boolector_op(uint8_t op, uint64_t ast_tc) {
+BoolectorNode* pvi_bvt_engine::boolector_op(uint8_t op, uint64_t ast_tc) {
   switch (op) {
     case CONST: {
       return smt_exprs[ast_tc] = boolector_unsigned_int_64(mintervals_los[ast_tc][0]);
@@ -3679,7 +3648,7 @@ BoolectorNode* mit_bvt_engine::boolector_op(uint8_t op, uint64_t ast_tc) {
   }
 }
 
-BoolectorNode* mit_bvt_engine::create_smt_expression(uint64_t ast_tc) {
+BoolectorNode* pvi_bvt_engine::create_smt_expression(uint64_t ast_tc) {
   if (ast_tc == 0) {
     std::cout << exe_name << ": detected error, ast_tc = 0 in create_smt_expression at 0x" << std::hex << pc - entry_point << std::dec << std::endl;
     exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
@@ -3699,19 +3668,19 @@ BoolectorNode* mit_bvt_engine::create_smt_expression(uint64_t ast_tc) {
   return boolector_op(ast_nodes[ast_tc].type, ast_tc);
 }
 
-void mit_bvt_engine::check_operands_smt_expressions() {
+void pvi_bvt_engine::check_operands_smt_expressions() {
   reg_bvts[rs1] = create_smt_expression(reg_asts[rs1]);
   reg_bvts[rs2] = create_smt_expression(reg_asts[rs2]);
 }
 
-BoolectorNode* mit_bvt_engine::create_smt_expression_of_the_conditional_expression(uint64_t ast_tc) {
+BoolectorNode* pvi_bvt_engine::create_smt_expression_of_the_conditional_expression(uint64_t ast_tc) {
   create_smt_expression(ast_nodes[ast_tc].left_node);
   create_smt_expression(ast_nodes[ast_tc].right_node);
 
   return boolector_op(ast_nodes[ast_tc].type, ast_tc);
 }
 
-void mit_bvt_engine::assert_path_condition_into_smt_expression() {
+void pvi_bvt_engine::assert_path_condition_into_smt_expression() {
   for (size_t i = 0; i < path_condition.size(); i++) {
     if (steps[path_condition[i]] == 1) {
       theory_type_ast_nodes[path_condition[i] - 1] = BVT;
@@ -3726,7 +3695,7 @@ void mit_bvt_engine::assert_path_condition_into_smt_expression() {
 // ----------------------- on-demand propagation on ld -------------------------
 // -----------------------------------------------------------------------------
 
-uint64_t mit_bvt_engine::compute_add(uint64_t left_operand_ast_tc, uint64_t right_operand_ast_tc, uint64_t old_ast_tc, uint8_t theory_type, uint8_t symbolic_operands) {
+uint64_t pvi_bvt_engine::compute_add(uint64_t left_operand_ast_tc, uint64_t right_operand_ast_tc, uint64_t old_ast_tc, uint8_t theory_type, uint8_t symbolic_operands) {
   uint64_t addend, ast_ptr;
   uint64_t stored_to_tc, mr_stored_to_tc;
 
@@ -3755,7 +3724,7 @@ uint64_t mit_bvt_engine::compute_add(uint64_t left_operand_ast_tc, uint64_t righ
     ast_ptr = add_ast_node(ADD, sym_operand_ast_tc, crt_operand_ast_tc, mintervals_los[sym_operand_ast_tc].size(), propagated_minterval_lo, propagated_minterval_up, steps[old_ast_tc], involved_sym_inputs_cnts[sym_operand_ast_tc], involved_sym_inputs_ast_tcs[sym_operand_ast_tc], theory_type, smt_exprs[old_ast_tc]);
 
   } else {
-    // the result is of either BVT or ABVT
+    // the result is of either BVT
     // thus the value interval for the result contain *one* witness.
 
     uint64_t resulting_witness = mintervals_los[left_operand_ast_tc][0] + mintervals_los[right_operand_ast_tc][0];
@@ -3778,7 +3747,7 @@ uint64_t mit_bvt_engine::compute_add(uint64_t left_operand_ast_tc, uint64_t righ
   return ast_ptr;
 }
 
-uint64_t mit_bvt_engine::compute_sub(uint64_t left_operand_ast_tc, uint64_t right_operand_ast_tc, uint64_t old_ast_tc, uint8_t theory_type, uint8_t symbolic_operands) {
+uint64_t pvi_bvt_engine::compute_sub(uint64_t left_operand_ast_tc, uint64_t right_operand_ast_tc, uint64_t old_ast_tc, uint8_t theory_type, uint8_t symbolic_operands) {
   uint64_t sub_lo, sub_up, ast_ptr;
   uint64_t stored_to_tc, mr_stored_to_tc;
 
@@ -3803,7 +3772,7 @@ uint64_t mit_bvt_engine::compute_sub(uint64_t left_operand_ast_tc, uint64_t righ
     ast_ptr = add_ast_node(SUB, left_operand_ast_tc, right_operand_ast_tc, mintervals_los[right_operand_ast_tc].size(), propagated_minterval_lo, propagated_minterval_up, steps[old_ast_tc], involved_sym_inputs_cnts[right_operand_ast_tc], involved_sym_inputs_ast_tcs[right_operand_ast_tc], theory_type, smt_exprs[old_ast_tc]);
 
   } else {
-    // the result is of either BVT or ABVT
+    // the result is of either BVT
     // thus the value interval for the result contain *one* witness.
 
     uint64_t resulting_witness = mintervals_los[left_operand_ast_tc][0] - mintervals_los[right_operand_ast_tc][0];
@@ -3826,7 +3795,7 @@ uint64_t mit_bvt_engine::compute_sub(uint64_t left_operand_ast_tc, uint64_t righ
   return ast_ptr;
 }
 
-uint64_t mit_bvt_engine::compute_mul(uint64_t left_operand_ast_tc, uint64_t right_operand_ast_tc, uint64_t old_ast_tc, uint8_t theory_type, uint8_t symbolic_operands) {
+uint64_t pvi_bvt_engine::compute_mul(uint64_t left_operand_ast_tc, uint64_t right_operand_ast_tc, uint64_t old_ast_tc, uint8_t theory_type, uint8_t symbolic_operands) {
   bool cnd = false;
   uint64_t multiplier;
   uint64_t stored_to_tc, mr_stored_to_tc;
@@ -3884,7 +3853,7 @@ uint64_t mit_bvt_engine::compute_mul(uint64_t left_operand_ast_tc, uint64_t righ
   return ast_ptr;
 }
 
-bool mit_bvt_engine::compute_divu_mit(uint64_t left_operand_ast_tc, uint64_t right_operand_ast_tc) {
+bool pvi_bvt_engine::compute_divu_mit(uint64_t left_operand_ast_tc, uint64_t right_operand_ast_tc) {
   uint64_t divisor = mintervals_los[right_operand_ast_tc][0];
   uint64_t div_lo = mintervals_los[left_operand_ast_tc][0] / divisor;
   uint64_t div_up = mintervals_ups[left_operand_ast_tc][0] / divisor;
@@ -3928,7 +3897,7 @@ bool mit_bvt_engine::compute_divu_mit(uint64_t left_operand_ast_tc, uint64_t rig
   return true;
 }
 
-uint64_t mit_bvt_engine::compute_divu(uint64_t left_operand_ast_tc, uint64_t right_operand_ast_tc, uint64_t old_ast_tc, uint8_t theory_type, uint8_t symbolic_operands) {
+uint64_t pvi_bvt_engine::compute_divu(uint64_t left_operand_ast_tc, uint64_t right_operand_ast_tc, uint64_t old_ast_tc, uint8_t theory_type, uint8_t symbolic_operands) {
   uint64_t dividend;
   uint64_t divisor;
   uint64_t stored_to_tc, mr_stored_to_tc;
@@ -3974,7 +3943,7 @@ uint64_t mit_bvt_engine::compute_divu(uint64_t left_operand_ast_tc, uint64_t rig
   return ast_ptr;
 }
 
-bool mit_bvt_engine::compute_remu_mit(uint64_t left_operand_ast_tc, uint64_t right_operand_ast_tc) {
+bool pvi_bvt_engine::compute_remu_mit(uint64_t left_operand_ast_tc, uint64_t right_operand_ast_tc) {
   uint64_t rem_lo;
   uint64_t rem_up;
   uint64_t step_rd;
@@ -4022,7 +3991,7 @@ bool mit_bvt_engine::compute_remu_mit(uint64_t left_operand_ast_tc, uint64_t rig
   return true;
 }
 
-uint64_t mit_bvt_engine::compute_remu(uint64_t left_operand_ast_tc, uint64_t right_operand_ast_tc, uint64_t old_ast_tc, uint8_t theory_type, uint8_t symbolic_operands) {
+uint64_t pvi_bvt_engine::compute_remu(uint64_t left_operand_ast_tc, uint64_t right_operand_ast_tc, uint64_t old_ast_tc, uint8_t theory_type, uint8_t symbolic_operands) {
   uint64_t remaindend;
   uint64_t divisor;
   uint64_t stored_to_tc, mr_stored_to_tc;
@@ -4068,7 +4037,7 @@ uint64_t mit_bvt_engine::compute_remu(uint64_t left_operand_ast_tc, uint64_t rig
   return ast_ptr;
 }
 
-uint64_t mit_bvt_engine::recompute_operation(uint8_t op, uint64_t left_operand_ast_tc, uint64_t right_operand_ast_tc, uint64_t old_ast_tc, uint8_t theory_type, uint8_t symbolic_operands) {
+uint64_t pvi_bvt_engine::recompute_operation(uint8_t op, uint64_t left_operand_ast_tc, uint64_t right_operand_ast_tc, uint64_t old_ast_tc, uint8_t theory_type, uint8_t symbolic_operands) {
   switch (op) {
     case ADD:
       return compute_add(left_operand_ast_tc, right_operand_ast_tc, old_ast_tc, theory_type, symbolic_operands);
@@ -4087,7 +4056,7 @@ uint64_t mit_bvt_engine::recompute_operation(uint8_t op, uint64_t left_operand_a
   }
 }
 
-uint64_t mit_bvt_engine::update_current_constraint_on_ast_expression(uint64_t ast_tc) {
+uint64_t pvi_bvt_engine::update_current_constraint_on_ast_expression(uint64_t ast_tc) {
   uint64_t left_operand_ast_tc;
   uint64_t right_operand_ast_tc;
   uint64_t ast_ptr;
@@ -4125,13 +4094,13 @@ uint64_t mit_bvt_engine::update_current_constraint_on_ast_expression(uint64_t as
 // ----------- upgrade theory on backward_propagation failure ------------------
 // -----------------------------------------------------------------------------
 
-void mit_bvt_engine::save_trace_state() {
+void pvi_bvt_engine::save_trace_state() {
   saved_tc_before_branch_evaluation_using_mit = tc;
   saved_ast_trace_cnt_before_branch_evaluation_using_mit = ast_trace_cnt;
   saved_path_condition_size_before_branch_evaluation_using_mit = path_condition.size();
 }
 
-void mit_bvt_engine::restore_trace_state() {
+void pvi_bvt_engine::restore_trace_state() {
   tc = saved_tc_before_branch_evaluation_using_mit;
   ast_trace_cnt = saved_ast_trace_cnt_before_branch_evaluation_using_mit;
 
@@ -4142,25 +4111,25 @@ void mit_bvt_engine::restore_trace_state() {
   queries_reasoned_by_mit-=2;
 }
 
-void mit_bvt_engine::backtrack_branch_evaluation_effect_on_trace() {
+void pvi_bvt_engine::backtrack_branch_evaluation_effect_on_trace() {
   while (saved_tc_before_branch_evaluation_using_mit < tc) {
     undo_effects();
   }
 }
 
-void mit_bvt_engine::upgrade_to_bvt_sltu(std::vector<uint64_t>& lo1_p, std::vector<uint64_t>& up1_p, std::vector<uint64_t>& lo2_p, std::vector<uint64_t>& up2_p, uint64_t trb) {
+void pvi_bvt_engine::upgrade_to_bvt_sltu(std::vector<uint64_t>& lo1_p, std::vector<uint64_t>& up1_p, std::vector<uint64_t>& lo2_p, std::vector<uint64_t>& up2_p, uint64_t trb) {
   backtrack_branch_evaluation_effect_on_trace();
   restore_trace_state();
   create_sltu_constraints(lo1_p, up1_p, lo2_p, up2_p, trb, true);
 }
 
-void mit_bvt_engine::upgrade_to_bvt_xor(std::vector<uint64_t>& lo1_p, std::vector<uint64_t>& up1_p, std::vector<uint64_t>& lo2_p, std::vector<uint64_t>& up2_p, uint64_t trb) {
+void pvi_bvt_engine::upgrade_to_bvt_xor(std::vector<uint64_t>& lo1_p, std::vector<uint64_t>& up1_p, std::vector<uint64_t>& lo2_p, std::vector<uint64_t>& up2_p, uint64_t trb) {
   backtrack_branch_evaluation_effect_on_trace();
   restore_trace_state();
   create_xor_constraints(lo1_p, up1_p, lo2_p, up2_p, trb, true);
 }
 
-void mit_bvt_engine::undo_effects() {
+void pvi_bvt_engine::undo_effects() {
   uint64_t vaddr;
 
   vaddr = vaddrs[tc];

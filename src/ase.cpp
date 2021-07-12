@@ -5,7 +5,7 @@
   selfie.cs.uni-salzburg.at
 */
 
-#include "mit_box_bvt_engine.hpp"
+#include "pvi_ubox_bvt_engine.hpp"
 #include "bvt_engine.hpp"
 #include <sys/time.h>
 #include <thread>
@@ -162,16 +162,16 @@ void print_usage() {
   std::cout << "- concrete engine:                               executable -l binary -concrete \"memory\"\n";
   std::cout << "- ase engine\n";
   std::cout << "   bit-vector abstraction:                       executable -l binary -bvt\n";
-  std::cout << "   mit, bit-vector abstractions:                 executable -l binary -mit_bvt\n";
-  std::cout << "   mit, box, bit-vector abstractions:            executable -l binary -mit_box_bvt \"heuristic\"\n";
+  std::cout << "   pvi, bit-vector abstractions:                 executable -l binary -pvi_bvt\n";
+  std::cout << "   pvi, ubox, bit-vector abstractions:           executable -l binary -pvi_ubox_bvt \"heuristic_number\"\n";
   std::cout << "- ase engine with printing witnesses\n";
   std::cout << "   bit-vector abstraction:                       executable -l binary -witness -bvt\n";
-  std::cout << "   mit, bit-vector abstractions:                 executable -l binary -witness -mit_bvt\n";
-  std::cout << "   mit, box, bit-vector abstractions:            executable -l binary -witness -mit_box_bvt \"heuristic\"\n";
+  std::cout << "   pvi, bit-vector abstractions:                 executable -l binary -witness -pvi_bvt\n";
+  std::cout << "   pvi, ubox, bit-vector abstractions:           executable -l binary -witness -pvi_ubox_bvt \"heuristic_number\"\n";
   std::cout << "- ase engine with printing witnesses and timeout\n";
   std::cout << "   bit-vector abstraction:                       executable -l binary -witness -timeout \"seconds\" -bvt\n";
-  std::cout << "   mit, bit-vector abstractions:                 executable -l binary -witness -timeout \"seconds\" -mit_bvt\n";
-  std::cout << "   mit, box, bit-vector abstractions:            executable -l binary -witness -timeout \"seconds\" -mit_box_bvt \"heuristic\"\n";
+  std::cout << "   pvi, bit-vector abstractions:                 executable -l binary -witness -timeout \"seconds\" -pvi_bvt\n";
+  std::cout << "   pvi, ubox, bit-vector abstractions:           executable -l binary -witness -timeout \"seconds\" -pvi_ubox_bvt \"heuristic_number\"\n";
   std::cout << RESET << '\n';
 }
 
@@ -226,21 +226,21 @@ int main(int argc, char* argv[]) {
       if (print_witness) current_engine->IS_PRINT_INPUT_WITNESSES_AT_ENDPOINT = true;
       return run();
     }
-    else if (!strcmp(option, "-mit_bvt")) {
-      method_name = "mit_bvt";
-      current_engine = new mit_bvt_engine();
+    else if (!strcmp(option, "-pvi_bvt")) {
+      method_name = "pvi_bvt";
+      current_engine = new pvi_bvt_engine();
       current_engine->exe_name = exe_name;
       current_engine->init_engine(running_arg);
       current_engine->selfie_load(load_file_name);
       if (print_witness) current_engine->IS_PRINT_INPUT_WITNESSES_AT_ENDPOINT = true;
       return run();
     }
-    else if (!strcmp(option, "-mit_box_bvt")) {
+    else if (!strcmp(option, "-pvi_ubox_bvt")) {
       char* arg = get_argument();
       running_arg = arg != (char*)0 ? std::atoi(arg) : -1;
-      method_name = "mit_box_bvt_";
+      method_name = "pvi_ubox_bvt_";
       method_name.append((running_arg == 1 ? "1" : "2"));
-      current_engine = new mit_box_bvt_engine();
+      current_engine = new pvi_ubox_bvt_engine();
       current_engine->exe_name = exe_name;
       current_engine->init_engine(running_arg);
       current_engine->selfie_load(load_file_name);

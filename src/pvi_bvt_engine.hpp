@@ -1,6 +1,6 @@
 #include "engine.hpp"
 
-class mit_bvt_engine : public engine {
+class pvi_bvt_engine : public engine {
   public:
     // extra syscalls
     uint64_t SYSCALL_SYMPOLIC_INPUT = 42;
@@ -16,7 +16,7 @@ class mit_bvt_engine : public engine {
     // -------------------------
 
     // abstraction_layers
-    uint8_t MIT = 0, BOX = 1, BVT = 2, ABVT = 3; // modular interval theory, box, bit-vector theory, approximate bit-vector theory
+    uint8_t MIT = 0, BOX = 1, BVT = 2; // modular interval theory, box, bit-vector theory
 
     // -------------------------
     // the trace data structure
@@ -40,7 +40,7 @@ class mit_bvt_engine : public engine {
     uint8_t*  data_types;    // VALUE_T, POINTER_T, INPUT_T
     uint64_t* asts;          // trace of pointers to the AST nodes
     uint64_t* mr_sds;        // trace of most recent stores to memory addresses
-    uint8_t*  theory_types;  // MIT, BOX, BVT, ABVT
+    uint8_t*  theory_types;  // MIT, BOX, BVT
     BoolectorNode** bvt_false_branches; // trace of pointers to boolector expressions for keeping track of false branch expressions
 
     enum data_type : uint8_t {

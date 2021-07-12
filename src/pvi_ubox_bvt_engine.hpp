@@ -1,6 +1,6 @@
-#include "mit_bvt_engine.hpp"
+#include "pvi_bvt_engine.hpp"
 
-class mit_box_bvt_engine : public mit_bvt_engine {
+class pvi_ubox_bvt_engine : public pvi_bvt_engine {
   public:
     // ---------------------------
     // run-time functions

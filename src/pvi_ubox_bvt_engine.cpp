@@ -1,66 +1,36 @@
-#include "mit_box_bvt_engine.hpp"
+#include "pvi_ubox_bvt_engine.hpp"
 
 // ------------------------------ INITIALIZATION -------------------------------
 
-void mit_box_bvt_engine::init_engine(uint64_t peek_argument) {
+void pvi_ubox_bvt_engine::init_engine(uint64_t peek_argument) {
   which_heuristic = peek_argument != -1 ? peek_argument : which_heuristic;
 
   // AST nodes trace
   boxes    = (uint64_t*) malloc(MAX_AST_NODES_TRACE_LENGTH  * sizeof(uint64_t));
   boxes[0] = 0;
 
-  mit_bvt_engine::init_engine(peek_argument);
+  pvi_bvt_engine::init_engine(peek_argument);
 }
 
-void mit_box_bvt_engine::witness_profile() {
-  // uint64_t cardinality;
-
-  current_number_of_witnesses = 1;
-
+void pvi_ubox_bvt_engine::witness_profile() {
   if (IS_PRINT_INPUT_WITNESSES_AT_ENDPOINT) std::cout << "\n-------------------------------------------------------------\n";
 
   for (size_t i = 0; i < input_table.size(); i++) {
-    // cardinality = 0;
     for (size_t j = 0; j < mintervals_los[input_table[i]].size(); j++) {
-      // cardinality += (mintervals_ups[input_table[i]][j] - mintervals_los[input_table[i]][j]) / steps[input_table[i]] + 1;
-
-      if (IS_PRINT_INPUT_WITNESSES_AT_ENDPOINT) mit_bvt_engine::print_input_witness(i, j, input_table[i], mintervals_los[input_table[i]][j], mintervals_ups[input_table[i]][j], steps[input_table[i]]);
+      if (IS_PRINT_INPUT_WITNESSES_AT_ENDPOINT) pvi_bvt_engine::print_input_witness(i, j, input_table[i], mintervals_los[input_table[i]][j], mintervals_ups[input_table[i]][j], steps[input_table[i]]);
 
       if (theory_type_ast_nodes[input_table[i]] == BOX) break;
     }
-
-    // if (cardinality > 0) {
-    //   if (is_number_of_generated_witnesses_overflowed == false) {
-    //     if (current_number_of_witnesses * cardinality > UINT64_MAX_T) // overflow?
-    //       is_number_of_generated_witnesses_overflowed = true;
-    //     else
-    //       current_number_of_witnesses *= cardinality;
-    //   }
-    // } else
-    //   std::cout << exe_name << ": cardinality of an input is == zero! " << std::endl;
   }
-
-  // if (current_number_of_witnesses > max_number_of_generated_witnesses_among_all_paths)
-  //   max_number_of_generated_witnesses_among_all_paths = current_number_of_witnesses;
-  //
-  // total_number_of_generated_witnesses_for_all_paths += current_number_of_witnesses;
-  // if (total_number_of_generated_witnesses_for_all_paths < current_number_of_witnesses) // overflow?
-  //   is_number_of_generated_witnesses_overflowed = true;
 }
 
 void print_execution_info(uint64_t paths, uint64_t total_number_of_generated_witnesses_for_all_paths, uint64_t max_number_of_generated_witnesses_among_all_paths, uint64_t queries_reasoned_by_mit, uint64_t queries_reasoned_by_box, uint64_t queries_reasoned_by_bvt, bool is_number_of_generated_witnesses_overflowed) {
   std::cout << "\n\n";
   std::cout << YELLOW "number of explored paths:= " << paths << RESET << std::endl;
-
-  // if (is_number_of_generated_witnesses_overflowed == false)
-  //   std::cout << CYAN "number of witnesses:= total: " << total_number_of_generated_witnesses_for_all_paths << ", max: " << max_number_of_generated_witnesses_among_all_paths << RESET << std::endl;
-  // else
-  //   std::cout << CYAN "number of witnesses:= total: > " << UINT64_MAX << ", max: !" << RESET << std::endl;
-
-  std::cout << GREEN "number of queries:= mit: " << queries_reasoned_by_mit << ", box: " << queries_reasoned_by_box << ", bvt: " << queries_reasoned_by_bvt << RESET << "\n\n";
+  std::cout << GREEN "number of queries:= pvi: " << queries_reasoned_by_mit << ", ubox: " << queries_reasoned_by_box << ", bvt: " << queries_reasoned_by_bvt << RESET << "\n\n";
 }
 
-uint64_t mit_box_bvt_engine::run_engine(uint64_t* to_context) {
+uint64_t pvi_ubox_bvt_engine::run_engine(uint64_t* to_context) {
   registers = get_regs(to_context);
   pt        = get_pt(to_context);
 
@@ -115,7 +85,7 @@ uint64_t mit_box_bvt_engine::run_engine(uint64_t* to_context) {
 // ------------------------ reasoning/decision core ----------------------------
 // -----------------------------------------------------------------------------
 
-uint64_t mit_box_bvt_engine::add_ast_node(uint8_t typ, uint64_t left_node, uint64_t right_node, uint32_t mints_num, std::vector<uint64_t>& lo, std::vector<uint64_t>& up, uint64_t step, uint64_t sym_input_num, std::vector<uint64_t>& sym_input_ast_tcs, uint8_t theory_type, BoolectorNode* smt_expr) {
+uint64_t pvi_ubox_bvt_engine::add_ast_node(uint8_t typ, uint64_t left_node, uint64_t right_node, uint32_t mints_num, std::vector<uint64_t>& lo, std::vector<uint64_t>& up, uint64_t step, uint64_t sym_input_num, std::vector<uint64_t>& sym_input_ast_tcs, uint8_t theory_type, BoolectorNode* smt_expr) {
   ast_trace_cnt++;
 
   if (ast_trace_cnt >= AST_NODES_TRACE_LENGTH) {
@@ -173,7 +143,7 @@ uint64_t mit_box_bvt_engine::add_ast_node(uint8_t typ, uint64_t left_node, uint6
   return ast_trace_cnt;
 }
 
-void mit_box_bvt_engine::create_sltu_constraints(std::vector<uint64_t>& lo1_p, std::vector<uint64_t>& up1_p, std::vector<uint64_t>& lo2_p, std::vector<uint64_t>& up2_p, uint64_t trb, bool cannot_handle) {
+void pvi_ubox_bvt_engine::create_sltu_constraints(std::vector<uint64_t>& lo1_p, std::vector<uint64_t>& up1_p, std::vector<uint64_t>& lo2_p, std::vector<uint64_t>& up2_p, uint64_t trb, bool cannot_handle) {
   bool handle_by_bvt   = cannot_handle;
   bool true_reachable  = false;
   bool false_reachable = false;
@@ -328,7 +298,7 @@ void mit_box_bvt_engine::create_sltu_constraints(std::vector<uint64_t>& lo1_p, s
   }
 }
 
-void mit_box_bvt_engine::create_xor_constraints(std::vector<uint64_t>& lo1_p, std::vector<uint64_t>& up1_p, std::vector<uint64_t>& lo2_p, std::vector<uint64_t>& up2_p, uint64_t trb, bool cannot_handle) {
+void pvi_ubox_bvt_engine::create_xor_constraints(std::vector<uint64_t>& lo1_p, std::vector<uint64_t>& up1_p, std::vector<uint64_t>& lo2_p, std::vector<uint64_t>& up2_p, uint64_t trb, bool cannot_handle) {
   bool handle_by_bvt   = cannot_handle;
   bool true_reachable  = false;
   bool false_reachable = false;
@@ -488,13 +458,13 @@ void mit_box_bvt_engine::create_xor_constraints(std::vector<uint64_t>& lo1_p, st
 // ------------------- under_approximate decision procedure --------------------
 // -----------------------------------------------------------------------------
 
-void mit_box_bvt_engine::constrain_memory_under_approximate_box(uint64_t reg, uint64_t ast_tc, std::vector<uint64_t>& lo, std::vector<uint64_t>& up, size_t mints_num, uint64_t input_box) {
+void pvi_ubox_bvt_engine::constrain_memory_under_approximate_box(uint64_t reg, uint64_t ast_tc, std::vector<uint64_t>& lo, std::vector<uint64_t>& up, size_t mints_num, uint64_t input_box) {
   if (reg_symb_type[reg] == SYMBOLIC) {
     backward_propagation_of_under_approximate_box(ast_tc, lo, up, mints_num, input_box);
   }
 }
 
-uint64_t mit_box_bvt_engine::backward_propagation_of_under_approximate_box(uint64_t ast_tc, std::vector<uint64_t>& lo, std::vector<uint64_t>& up, size_t mints_num, uint64_t input_box) {
+uint64_t pvi_ubox_bvt_engine::backward_propagation_of_under_approximate_box(uint64_t ast_tc, std::vector<uint64_t>& lo, std::vector<uint64_t>& up, size_t mints_num, uint64_t input_box) {
   uint8_t  left_or_right_is_sym;
   uint64_t ast_ptr;
   bool     is_assigned = false;
@@ -610,7 +580,7 @@ uint64_t mit_box_bvt_engine::backward_propagation_of_under_approximate_box(uint6
   return ast_ptr;
 }
 
-void mit_box_bvt_engine::evaluate_sltu_true_branch_under_approximate_box_h2(uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t up2) {
+void pvi_ubox_bvt_engine::evaluate_sltu_true_branch_under_approximate_box_h2(uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t up2) {
   // std::cout << "-- evaluate_sltu_true_branch_under_approximate_box_h2 -- \n";
 
   // box1: . < priority
@@ -651,7 +621,7 @@ void mit_box_bvt_engine::evaluate_sltu_true_branch_under_approximate_box_h2(uint
   constrain_memory_under_approximate_box(rs2, reg_asts[rs2], true_branch_rs2_minterval_los, true_branch_rs2_minterval_ups, 2, involved_sym_inputs_ast_tcs[reg_asts[rs1]][0]);
 }
 
-void mit_box_bvt_engine::evaluate_sltu_false_branch_under_approximate_box_h2(uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t up2) {
+void pvi_ubox_bvt_engine::evaluate_sltu_false_branch_under_approximate_box_h2(uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t up2) {
   // std::cout << "-- evaluate_sltu_false_branch_under_approximate_box_h2 -- \n";
 
   // box1: priority >= .
@@ -692,7 +662,7 @@ void mit_box_bvt_engine::evaluate_sltu_false_branch_under_approximate_box_h2(uin
   constrain_memory_under_approximate_box(rs2, reg_asts[rs2], false_branch_rs2_minterval_los, false_branch_rs2_minterval_ups, 2, involved_sym_inputs_ast_tcs[reg_asts[rs1]][0]);
 }
 
-bool mit_box_bvt_engine::evaluate_sltu_true_branch_under_approximate_box_h3(uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t up2) {
+bool pvi_ubox_bvt_engine::evaluate_sltu_true_branch_under_approximate_box_h3(uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t up2) {
   // std::cout << "-- evaluate_sltu_true_branch_under_approximate_box_h3 -- \n";
 
   uint64_t intersection_lo = std::max(lo1, lo2);
@@ -717,7 +687,7 @@ bool mit_box_bvt_engine::evaluate_sltu_true_branch_under_approximate_box_h3(uint
   return true;
 }
 
-bool mit_box_bvt_engine::evaluate_sltu_false_branch_under_approximate_box_h3(uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t up2) {
+bool pvi_ubox_bvt_engine::evaluate_sltu_false_branch_under_approximate_box_h3(uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t up2) {
   // std::cout << "-- evaluate_sltu_false_branch_under_approximate_box_h3 -- \n";
 
   uint64_t intersection_lo = std::max(lo1, lo2);
@@ -742,7 +712,7 @@ bool mit_box_bvt_engine::evaluate_sltu_false_branch_under_approximate_box_h3(uin
   return true;
 }
 
-void mit_box_bvt_engine::choose_best_local_choice_between_boxes(size_t index_true_i, size_t index_true_j) {
+void pvi_ubox_bvt_engine::choose_best_local_choice_between_boxes(size_t index_true_i, size_t index_true_j) {
   uint64_t ast_ptr, involved_input, related_input, stored_to_tc, mr_stored_to_tc;
   bool is_assigned;
 
@@ -795,7 +765,7 @@ void mit_box_bvt_engine::choose_best_local_choice_between_boxes(size_t index_tru
   }
 }
 
-void mit_box_bvt_engine::generate_and_apply_sltu_boxes_h2(uint8_t conditional_type, uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t up2) {
+void pvi_ubox_bvt_engine::generate_and_apply_sltu_boxes_h2(uint8_t conditional_type, uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t up2) {
 
   if (conditional_type == LGTE) {
     evaluate_sltu_true_branch_under_approximate_box_h2(lo1, up1, lo2, up2);
@@ -824,7 +794,7 @@ void mit_box_bvt_engine::generate_and_apply_sltu_boxes_h2(uint8_t conditional_ty
   queries_reasoned_by_box+=2;
 }
 
-bool mit_box_bvt_engine::generate_and_apply_sltu_boxes_h3(uint8_t conditional_type, uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t up2) {
+bool pvi_ubox_bvt_engine::generate_and_apply_sltu_boxes_h3(uint8_t conditional_type, uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t up2) {
 
   if (conditional_type == LGTE) {
     if (evaluate_sltu_true_branch_under_approximate_box_h3(lo1, up1, lo2, up2) == false)
@@ -863,7 +833,7 @@ bool mit_box_bvt_engine::generate_and_apply_sltu_boxes_h3(uint8_t conditional_ty
   return true;
 }
 
-uint8_t mit_box_bvt_engine::sltu_box_decision_heuristic_1(std::vector<uint64_t>& lo1, std::vector<uint64_t>& up1, std::vector<uint64_t>& lo2, std::vector<uint64_t>& up2, bool& true_reachable, bool& false_reachable) {
+uint8_t pvi_ubox_bvt_engine::sltu_box_decision_heuristic_1(std::vector<uint64_t>& lo1, std::vector<uint64_t>& up1, std::vector<uint64_t>& lo2, std::vector<uint64_t>& up2, bool& true_reachable, bool& false_reachable) {
   /* TODO: improve the heuristic, for example
    box < box and operands are not related.
   */
@@ -1078,7 +1048,7 @@ uint8_t mit_box_bvt_engine::sltu_box_decision_heuristic_1(std::vector<uint64_t>&
   return CAN_BE_HANDLED;
 }
 
-uint8_t mit_box_bvt_engine::sltu_box_decision_heuristic_2(uint8_t conditional_type, std::vector<uint64_t>& lo1, std::vector<uint64_t>& up1, std::vector<uint64_t>& lo2, std::vector<uint64_t>& up2, bool& true_reachable, bool& false_reachable) {
+uint8_t pvi_ubox_bvt_engine::sltu_box_decision_heuristic_2(uint8_t conditional_type, std::vector<uint64_t>& lo1, std::vector<uint64_t>& up1, std::vector<uint64_t>& lo2, std::vector<uint64_t>& up2, bool& true_reachable, bool& false_reachable) {
   /* TODO: improve the heuristic, for example
    box < box and operands are not related.
   */
@@ -1433,7 +1403,7 @@ uint8_t mit_box_bvt_engine::sltu_box_decision_heuristic_2(uint8_t conditional_ty
   return CAN_BE_HANDLED;
 }
 
-uint8_t mit_box_bvt_engine::sltu_box_decision_heuristic_3(uint8_t conditional_type, std::vector<uint64_t>& lo1, std::vector<uint64_t>& up1, std::vector<uint64_t>& lo2, std::vector<uint64_t>& up2, bool& true_reachable, bool& false_reachable) {
+uint8_t pvi_ubox_bvt_engine::sltu_box_decision_heuristic_3(uint8_t conditional_type, std::vector<uint64_t>& lo1, std::vector<uint64_t>& up1, std::vector<uint64_t>& lo2, std::vector<uint64_t>& up2, bool& true_reachable, bool& false_reachable) {
   /* TODO: improve the heuristic, for example
    box < box and operands are not related.
   */
@@ -1792,7 +1762,7 @@ uint8_t mit_box_bvt_engine::sltu_box_decision_heuristic_3(uint8_t conditional_ty
   return CAN_BE_HANDLED;
 }
 
-bool mit_box_bvt_engine::apply_sltu_under_approximate_box_decision_procedure_h2(std::vector<uint64_t>& lo1, std::vector<uint64_t>& up1, std::vector<uint64_t>& lo2, std::vector<uint64_t>& up2) {
+bool pvi_ubox_bvt_engine::apply_sltu_under_approximate_box_decision_procedure_h2(std::vector<uint64_t>& lo1, std::vector<uint64_t>& up1, std::vector<uint64_t>& lo2, std::vector<uint64_t>& up2) {
   bool true_reachable  = false;
   bool false_reachable = false;
 
@@ -2005,7 +1975,7 @@ bool mit_box_bvt_engine::apply_sltu_under_approximate_box_decision_procedure_h2(
   }
 }
 
-bool mit_box_bvt_engine::apply_sltu_under_approximate_box_decision_procedure_h3(std::vector<uint64_t>& lo1, std::vector<uint64_t>& up1, std::vector<uint64_t>& lo2, std::vector<uint64_t>& up2) {
+bool pvi_ubox_bvt_engine::apply_sltu_under_approximate_box_decision_procedure_h3(std::vector<uint64_t>& lo1, std::vector<uint64_t>& up1, std::vector<uint64_t>& lo2, std::vector<uint64_t>& up2) {
   bool true_reachable  = false;
   bool false_reachable = false;
 
@@ -2216,7 +2186,7 @@ bool mit_box_bvt_engine::apply_sltu_under_approximate_box_decision_procedure_h3(
   }
 }
 
-uint8_t mit_box_bvt_engine::diseq_box_decision_heuristic_1(std::vector<uint64_t>& lo1, std::vector<uint64_t>& up1, std::vector<uint64_t>& lo2, std::vector<uint64_t>& up2, bool& true_reachable, bool& false_reachable) {
+uint8_t pvi_ubox_bvt_engine::diseq_box_decision_heuristic_1(std::vector<uint64_t>& lo1, std::vector<uint64_t>& up1, std::vector<uint64_t>& lo2, std::vector<uint64_t>& up2, bool& true_reachable, bool& false_reachable) {
   bool cannot_handle = false;
   std::vector<uint64_t> box_true_case_rs1_lo;
   std::vector<uint64_t> box_true_case_rs1_up;
@@ -2428,7 +2398,7 @@ uint8_t mit_box_bvt_engine::diseq_box_decision_heuristic_1(std::vector<uint64_t>
   return CAN_BE_HANDLED;
 }
 
-uint8_t mit_box_bvt_engine::diseq_box_decision_heuristic_2(uint8_t conditional_type, std::vector<uint64_t>& lo1, std::vector<uint64_t>& up1, std::vector<uint64_t>& lo2, std::vector<uint64_t>& up2, bool& true_reachable, bool& false_reachable) {
+uint8_t pvi_ubox_bvt_engine::diseq_box_decision_heuristic_2(uint8_t conditional_type, std::vector<uint64_t>& lo1, std::vector<uint64_t>& up1, std::vector<uint64_t>& lo2, std::vector<uint64_t>& up2, bool& true_reachable, bool& false_reachable) {
   bool cannot_handle = false;
   std::vector<uint64_t> box_true_case_rs1_lo(2, 0);
   std::vector<uint64_t> box_true_case_rs1_up(2, 0);
@@ -2783,7 +2753,7 @@ uint8_t mit_box_bvt_engine::diseq_box_decision_heuristic_2(uint8_t conditional_t
   return CAN_BE_HANDLED;
 }
 
-uint8_t mit_box_bvt_engine::diseq_box_decision_heuristic_3(uint8_t conditional_type, std::vector<uint64_t>& lo1, std::vector<uint64_t>& up1, std::vector<uint64_t>& lo2, std::vector<uint64_t>& up2, bool& true_reachable, bool& false_reachable) {
+uint8_t pvi_ubox_bvt_engine::diseq_box_decision_heuristic_3(uint8_t conditional_type, std::vector<uint64_t>& lo1, std::vector<uint64_t>& up1, std::vector<uint64_t>& lo2, std::vector<uint64_t>& up2, bool& true_reachable, bool& false_reachable) {
   bool cannot_handle = false;
   std::vector<uint64_t> box_true_case_rs1_lo(2, 0);
   std::vector<uint64_t> box_true_case_rs1_up(2, 0);
@@ -3138,7 +3108,7 @@ uint8_t mit_box_bvt_engine::diseq_box_decision_heuristic_3(uint8_t conditional_t
   return CAN_BE_HANDLED;
 }
 
-bool mit_box_bvt_engine::generate_and_apply_diseq_boxes_h2(uint8_t conditional_type, uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t up2) {
+bool pvi_ubox_bvt_engine::generate_and_apply_diseq_boxes_h2(uint8_t conditional_type, uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t up2) {
 
   if (conditional_type == EQ) {
     evaluate_sltu_true_branch_under_approximate_box_h2(lo1, up1, lo2, up2);
@@ -3174,7 +3144,7 @@ bool mit_box_bvt_engine::generate_and_apply_diseq_boxes_h2(uint8_t conditional_t
   return true;
 }
 
-bool mit_box_bvt_engine::generate_and_apply_diseq_boxes_h3(uint8_t conditional_type, uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t up2) {
+bool pvi_ubox_bvt_engine::generate_and_apply_diseq_boxes_h3(uint8_t conditional_type, uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t up2) {
 
   if (conditional_type == EQ) {
     evaluate_sltu_true_branch_under_approximate_box_h3(lo1, up1, lo2, up2);
@@ -3210,7 +3180,7 @@ bool mit_box_bvt_engine::generate_and_apply_diseq_boxes_h3(uint8_t conditional_t
   return true;
 }
 
-bool mit_box_bvt_engine::apply_diseq_under_approximate_box_decision_procedure_h2(std::vector<uint64_t>& lo1, std::vector<uint64_t>& up1, std::vector<uint64_t>& lo2, std::vector<uint64_t>& up2) {
+bool pvi_ubox_bvt_engine::apply_diseq_under_approximate_box_decision_procedure_h2(std::vector<uint64_t>& lo1, std::vector<uint64_t>& up1, std::vector<uint64_t>& lo2, std::vector<uint64_t>& up2) {
   bool true_reachable  = false;
   bool false_reachable = false;
 
@@ -3416,7 +3386,7 @@ bool mit_box_bvt_engine::apply_diseq_under_approximate_box_decision_procedure_h2
   }
 }
 
-bool mit_box_bvt_engine::apply_diseq_under_approximate_box_decision_procedure_h3(std::vector<uint64_t>& lo1, std::vector<uint64_t>& up1, std::vector<uint64_t>& lo2, std::vector<uint64_t>& up2) {
+bool pvi_ubox_bvt_engine::apply_diseq_under_approximate_box_decision_procedure_h3(std::vector<uint64_t>& lo1, std::vector<uint64_t>& up1, std::vector<uint64_t>& lo2, std::vector<uint64_t>& up2) {
   bool true_reachable  = false;
   bool false_reachable = false;
 
@@ -3619,7 +3589,7 @@ bool mit_box_bvt_engine::apply_diseq_under_approximate_box_decision_procedure_h3
   }
 }
 
-bool mit_box_bvt_engine::evaluate_diseq_false_branch_under_approximate_box(uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t up2) {
+bool pvi_ubox_bvt_engine::evaluate_diseq_false_branch_under_approximate_box(uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t up2) {
   // std::cout << "-- evaluate_diseq_false_branch_under_approximate_box -- \n";
 
   // assert: intervals have intersection, non-wrapped
@@ -3645,7 +3615,7 @@ bool mit_box_bvt_engine::evaluate_diseq_false_branch_under_approximate_box(uint6
   return true;
 }
 
-void mit_box_bvt_engine::restore_input_table_to_before_applying_bvt_dumps() {
+void pvi_ubox_bvt_engine::restore_input_table_to_before_applying_bvt_dumps() {
   uint64_t involved_input_ast_tc, stored_to_tc, mr_stored_to_tc, ast_ptr;
   bool is_assigned;
 
