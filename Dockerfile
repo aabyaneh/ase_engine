@@ -19,9 +19,15 @@ RUN apt-get update \
   && rm -rf /var/lib/apt/lists/*
 
 RUN g++ --version
-RUN git clone https://github.com/Boolector/boolector
 
-RUN cd boolector \
+RUN cd $TOP \
+  && git clone https://github.com/aabyaneh/ase_artifact
+
+RUN cd ase_artifact \
+  && git clone https://github.com/Boolector/boolector
+
+RUN cd ase_artifact \
+  && cd boolector \
   && git checkout 4999474f4e717c206577fd2b1549bd4a9f4a36e7 \
   && ./contrib/setup-cadical.sh \
   && ./contrib/setup-btor2tools.sh \
@@ -31,9 +37,5 @@ RUN cd boolector \
   && make install
 
 RUN cd $TOP \
-  && git clone https://github.com/aabyaneh/ase_engine \
-  && cd ase_engine \
-  && make selfie
-
-RUN cd ase_engine \
-  && g++ -w -g -O3 -m64 -std=c++11 -I../boolector/src/ -I../boolector/deps/cadical/src/ -L../boolector/build/lib/ -L../boolector/deps/cadical/build/ -L../boolector/deps/btor2tools/build/ src/ase.cpp src/engine.cpp src/bvt_engine.cpp src/pvi_bvt_engine.cpp src/pvi_ubox_bvt_engine.cpp -o ase -lboolector -lbtor2parser -lcadical -lpthread
+  && cd ase_artifact \
+  && make all

@@ -2,6 +2,9 @@
 
 class pvi_bvt_engine : public engine {
   public:
+    pvi_bvt_engine();
+    pvi_bvt_engine(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
+
     // extra syscalls
     uint64_t SYSCALL_SYMPOLIC_INPUT = 42;
     uint64_t SYSCALL_PRINTSV        = 43;
@@ -16,7 +19,7 @@ class pvi_bvt_engine : public engine {
     // -------------------------
 
     // abstraction_layers
-    uint8_t MIT = 0, BOX = 1, BVT = 2; // modular interval theory, box, bit-vector theory
+    uint8_t MIT = 0, BOX = 1, BVT = 2; // modular interval theory (precise strided value interval), under-approximating box, bit-vector theory
 
     // -------------------------
     // the trace data structure
@@ -37,11 +40,11 @@ class pvi_bvt_engine : public engine {
     uint64_t* tcs;           // trace of trace counters to previous values
     uint64_t* vaddrs;        // trace of virtual addresses
     uint64_t* values;        // trace of values
-    uint8_t*  data_types;    // VALUE_T, POINTER_T, INPUT_T
-    uint64_t* asts;          // trace of pointers to the AST nodes
-    uint64_t* mr_sds;        // trace of most recent stores to memory addresses
-    uint8_t*  theory_types;  // MIT, BOX, BVT
-    BoolectorNode** bvt_false_branches; // trace of pointers to boolector expressions for keeping track of false branch expressions
+    uint8_t*  data_types;    // trace of data types (VALUE_T, POINTER_T, INPUT_T)
+    uint64_t* asts;          // trace of pointers to AST nodes
+    uint64_t* mr_sds;        // trace of pointers to most recent store to memory addresses
+    uint8_t*  theory_types;  // trace of used abstractions for reasoning
+    BoolectorNode** bvt_false_branches; // trace of SMT expressions for keeping track of false branch expressions
 
     enum data_type : uint8_t {
       VALUE_T = 0, POINTER_T = 1, INPUT_T = 2
@@ -58,30 +61,32 @@ class pvi_bvt_engine : public engine {
     // -------------------------
     // registers
     // -------------------------
-    uint8_t*                            reg_data_type;     // VALUE_T, POINTER_T, INPUT_T
-    uint8_t*                            reg_symb_type;     // CONCRETE, SYMBOLIC
-    std::vector<std::vector<uint64_t> > reg_mintervals_los;
-    std::vector<std::vector<uint64_t> > reg_mintervals_ups;
-    uint32_t*                           reg_mintervals_cnts;
-    uint64_t*                           reg_steps;
-    std::vector<std::vector<uint64_t> > reg_involved_inputs;
-    uint32_t*                           reg_involved_inputs_cnts;
-    uint64_t*                           reg_asts;
-    uint8_t*                            reg_theory_types;
-    BoolectorNode**                     reg_bvts;          // array of pointers to SMT expressions
-    uint8_t*                            reg_hasmn;         // corrections -> constant folding
-    uint64_t*                           reg_addsub_corr;   // corrections -> constant folding
-    uint8_t*                            reg_corr_validity; // corrections -> constant folding
+    uint8_t*                            reg_data_type;       // data types of registers
+    uint8_t*                            reg_symb_type;       // symbolic/concrete types of registers
+    std::vector<std::vector<uint64_t> > reg_mintervals_los;  // lower bounds of value intervals for registers
+    std::vector<std::vector<uint64_t> > reg_mintervals_ups;  // upper bounds of value intervals for registers
+    uint32_t*                           reg_mintervals_cnts; // number of value intervals used to represent values for registers
+    uint64_t*                           reg_steps;           // steps (strides) of value intervals for registers
+    std::vector<std::vector<uint64_t> > reg_involved_inputs; // involved input variables for registers
+    uint32_t*                           reg_involved_inputs_cnts; // number of involved input variables for registers
+    uint64_t*                           reg_asts;            // pointers to AST nodes for registers
+    uint8_t*                            reg_theory_types;    // used abstractions for registers
+    BoolectorNode**                     reg_bvts;            // SMT expressions for registers
+    uint8_t*                            reg_hasmn;           // has minuends (used for constant folding)
+    uint64_t*                           reg_addsub_corr;     // addition/subtraction corrections (used for constant folding)
+    uint8_t*                            reg_corr_validity;   // can't correction be applied? (used for constant folding)
 
     enum symbolic_type : uint8_t {
-      CONCRETE = 0, SYMBOLIC = 2  // CONCRETE must be zero look is_symbolic_value()
+      CONCRETE = 0, SYMBOLIC = 2  // CONCRETE must be zero
     };
 
     // -------------------------
     // ASTs (Abstract Syntax Tree)
     // -------------------------
+
     enum ast_node_type {
       CONST = 0, VAR = 1, ADDI = 2, ADD = 3, SUB = 4, MUL = 5, DIVU = 6, REMU = 7, ILT = 8, IGTE = 9, IEQ = 10, INEQ = 11
+      // constant (concrete) value, input variable, addi, add, sub, mul, divu, remu, integer less-than, integer greater-than-equal, integer equal, integer not-equal
     };
 
     struct node {
@@ -90,21 +95,21 @@ class pvi_bvt_engine : public engine {
       uint64_t right_node;
     };
 
-    uint64_t ast_trace_cnt = 0;
-    struct node*                        ast_nodes;
-    std::vector<std::vector<uint64_t> > mintervals_los;
-    std::vector<std::vector<uint64_t> > mintervals_ups;
-    uint64_t*                           steps;
-    std::vector<std::vector<uint64_t> > store_trace_ptrs;
-    std::vector<std::vector<uint64_t> > involved_sym_inputs_ast_tcs;
-    uint64_t*                           involved_sym_inputs_cnts;
-    uint8_t*                            theory_type_ast_nodes;
-    BoolectorNode**                     smt_exprs;
+    uint64_t ast_trace_cnt = 0;                                        // ast trace counter
+    struct node*                        ast_nodes;                     // trace of AST nodes
+    std::vector<std::vector<uint64_t> > mintervals_los;                // trace of lower bounds of value intervals
+    std::vector<std::vector<uint64_t> > mintervals_ups;                // trace of upper bounds of value intervals
+    uint64_t*                           steps;                         // trace of steps (strides) of value intervals
+    std::vector<std::vector<uint64_t> > store_trace_ptrs;              // to keep track of the memory addresses in which the AST expression is stored/assigned
+    std::vector<std::vector<uint64_t> > involved_sym_inputs_ast_tcs;   // trace of involved symbolic input variables for AST nodes
+    uint64_t*                           involved_sym_inputs_cnts;      // trace of number of involved symbolic input variables for AST nodes
+    uint8_t*                            theory_type_ast_nodes;         // trace of used abstractions
+    BoolectorNode**                     smt_exprs;                     // trace of SMT expressions
 
     uint64_t zero_node;
     uint64_t one_node;
 
-    // detection of symbolic operand in an expression
+    // determines which operand is symbolic in an expression
     enum symbolic_operands_in_an_expression : uint8_t {
       LEFT = 10, RIGHT = 20, BOTH = 30
     };

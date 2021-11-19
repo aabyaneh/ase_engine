@@ -40,7 +40,7 @@ uint64_t main(uint64_t argc, uint64_t* argv) {
 
   v1 = 0;
   while (v1 < cnt) {
-    interval(arr + v1, 0, 2*cnt, 1);
+    interval(arr + v1, 0, -1, 1);
     v1 = v1 + 1;
   }
 

@@ -24,8 +24,24 @@ void pvi_bvt_engine::merge_arrays(std::vector<uint64_t>& vector_1, std::vector<u
   }
 }
 
-// ------------------------- INITIALIZATION ------------------------
+// ------------------------------ INITIALIZATION -------------------------------
 
+pvi_bvt_engine::pvi_bvt_engine() {
+
+}
+
+pvi_bvt_engine::pvi_bvt_engine(uint64_t max_trace_length, uint64_t max_number_of_intervals, uint64_t max_number_of_involved_inputs, uint64_t max_ast_nodes_trace_length, uint64_t initial_ast_nodes_trace_length, uint64_t memory_allocation_step_ast_nodes_trace) {
+  MAX_TRACE_LENGTH = max_trace_length;
+  MAX_NUM_OF_INTERVALS = max_number_of_intervals;
+  MAX_NUM_OF_INVOLVED_INPUTS = max_number_of_involved_inputs;
+  MAX_AST_NODES_TRACE_LENGTH = max_ast_nodes_trace_length;
+  AST_NODES_TRACE_LENGTH = initial_ast_nodes_trace_length;
+  MEMORY_ALLOCATION_STEP_AST_NODES_TRACE = memory_allocation_step_ast_nodes_trace;
+}
+
+//
+// initializes the engine and the data-structures.
+//
 void pvi_bvt_engine::init_engine(uint64_t peek_argument) {
   init_library();
   init_interpreter();
@@ -159,26 +175,43 @@ void pvi_bvt_engine::init_engine(uint64_t peek_argument) {
   }
 }
 
+//
+// prints witnesses.
+//
 void pvi_bvt_engine::print_input_witness(size_t i, size_t j, uint64_t input, uint64_t lo, uint64_t up, uint64_t step) {
   std::cout << std::left << MAGENTA "--INPUT :=  id: " << std::setw(3) << i+1 << ", #: " << std::setw(2) << j << " , abstraction: " << get_abstraction(theory_type_ast_nodes[input]) << " => [lo: " << std::setw(5) << lo << ", up: " << std::setw(5) << up << ", step: " << step << "]" << RESET << std::endl;
 }
 
+//
+// prints witnesses at end-points.
+//
 void pvi_bvt_engine::witness_profile() {
-  if (IS_PRINT_INPUT_WITNESSES_AT_ENDPOINT) std::cout << "\n-------------------------------------------------------------\n";
+  if (IS_PRINT_INPUT_WITNESSES_AT_ENDPOINT == false)
+    return;
+
+  std::cout << "\n-------------------------------------------------------------\n";
 
   for (size_t i = 0; i < input_table.size(); i++) {
     for (size_t j = 0; j < mintervals_los[input_table[i]].size(); j++) {
-      if (IS_PRINT_INPUT_WITNESSES_AT_ENDPOINT) print_input_witness(i, j, input_table[i], mintervals_los[input_table[i]][j], mintervals_ups[input_table[i]][j], steps[input_table[i]]);
+      print_input_witness(i, j, input_table[i], mintervals_los[input_table[i]][j], mintervals_ups[input_table[i]][j], steps[input_table[i]]);
     }
   }
 }
 
+//
+// prints the symbolic execution information (profile).
+//
 void print_execution_info(uint64_t paths, uint64_t total_number_of_generated_witnesses_for_all_paths, uint64_t max_number_of_generated_witnesses_among_all_paths, uint64_t queries_reasoned_by_mit, uint64_t queries_reasoned_by_bvt, bool is_number_of_generated_witnesses_overflowed) {
-  std::cout << "\n\n";
+  std::cout << "\n";
+  std::cout << YELLOW "method:= pvi_bvt" << RESET << std::endl;
   std::cout << YELLOW "number of explored paths:= " << paths << RESET << std::endl;
-  std::cout << GREEN "number of queries:= pvi: " << queries_reasoned_by_mit << ", bvt: " << queries_reasoned_by_bvt << RESET << "\n\n";
+  std::cout << GREEN "number of queries reached to the SMT solver:= " << queries_reasoned_by_bvt << RESET << "\n\n";
 }
 
+//
+// driver for running the engine:
+// execution of instructions, backtracking
+//
 uint64_t pvi_bvt_engine::run_engine(uint64_t* to_context) {
   registers = get_regs(to_context);
   pt        = get_pt(to_context);
@@ -337,7 +370,6 @@ uint64_t pvi_bvt_engine::handle_system_call(uint64_t* context) {
   else if (a7 == SYSCALL_EXIT) {
     implement_exit(context);
 
-    // TODO: exit only if all contexts have exited
     return EXIT;
   }
   else {
@@ -740,7 +772,9 @@ void pvi_bvt_engine::implement_brk(uint64_t* context) {
   set_pc(context, get_pc(context) + INSTRUCTIONSIZE);
 }
 
-// --------------------------- auxiliary functions -----------------------------
+// -----------------------------------------------------------------
+// --------------------- auxiliary functions -----------------------
+// -----------------------------------------------------------------
 
 uint64_t gcd(uint64_t n1, uint64_t n2) {
   if (n1 == 0)
@@ -803,10 +837,16 @@ int remu_condition(uint64_t lo, uint64_t up, uint64_t step, uint64_t k) {
     return -1;
 }
 
+//
+// returns the largest value less than or equal to 'value', denoted as 'lub', which satisfies 'lub = lo + i * step' (i >= 0).
+//
 uint64_t compute_upper_bound_mit(uint64_t lo, uint64_t step, uint64_t value) {
   return lo + ((value - lo) / step) * step;
 }
 
+//
+// returns the smallest value greater than or equal to 'value', denoted as 'glb', which satisfies 'glb = lo + i * step' (i >= 0).
+//
 uint64_t compute_lower_bound_mit(uint64_t lo, uint64_t step, uint64_t value) {
   if ((value - lo) % step)
     return lo + (((value - lo) / step) + 1) * step;
@@ -821,7 +861,9 @@ uint64_t reverse_division_up(uint64_t up_ast_tc, uint64_t up, uint64_t codiv) {
     return codiv - 1;
 }
 
-// ---------------------------- corrections ------------------------------------
+// -----------------------------------------------------------------
+// ----------------------- constant folding ------------------------
+// -----------------------------------------------------------------
 
 void pvi_bvt_engine::set_correction(uint64_t reg, uint8_t hasmn, uint64_t addsub_corr, uint8_t corr_validity) {
   reg_hasmn[reg]          = hasmn;
@@ -854,6 +896,9 @@ void pvi_bvt_engine::evaluate_correction(uint64_t reg) {
 // ------------------------- INSTRUCTIONS --------------------------
 // -----------------------------------------------------------------
 
+//
+// applies lui instruction.
+//
 void pvi_bvt_engine::apply_lui() {
   do_lui();
 
@@ -874,6 +919,9 @@ void pvi_bvt_engine::apply_lui() {
   }
 }
 
+//
+// applies addi instruction.
+//
 void pvi_bvt_engine::apply_addi() {
   uint64_t crt_ptr;
 
@@ -940,6 +988,9 @@ void pvi_bvt_engine::apply_addi() {
   }
 }
 
+//
+// applies addition for pointers.
+//
 bool pvi_bvt_engine::apply_add_pointer() {
   if (reg_data_type[rs1] == POINTER_T) {
     if (reg_data_type[rs2] == POINTER_T) {
@@ -982,6 +1033,9 @@ bool pvi_bvt_engine::apply_add_pointer() {
   return 0;
 }
 
+//
+// applies add instruction.
+//
 void pvi_bvt_engine::apply_add() {
   uint64_t add_lo;
   uint64_t add_up;
@@ -1005,8 +1059,6 @@ void pvi_bvt_engine::apply_add() {
         evaluate_correction(rs1);
         evaluate_correction(rs2);
         set_correction(rd, 0, 0, 1);
-
-        // TODO: interval semantics of add
 
         reg_mintervals_los[rd][0] = registers[rd]; // one witness
         reg_mintervals_ups[rd][0] = registers[rd]; // one witness
@@ -1080,6 +1132,9 @@ void pvi_bvt_engine::apply_add() {
   }
 }
 
+//
+// applies subtraction for pointers.
+//
 bool pvi_bvt_engine::apply_sub_pointer() {
   if (reg_data_type[rs1] == POINTER_T) {
     if (reg_data_type[rs2] == POINTER_T) {
@@ -1142,6 +1197,9 @@ bool pvi_bvt_engine::apply_sub_pointer() {
   return 0;
 }
 
+//
+// applies sub instruction.
+//
 void pvi_bvt_engine::apply_sub() {
   uint64_t sub_tmp;
 
@@ -1164,8 +1222,6 @@ void pvi_bvt_engine::apply_sub() {
         evaluate_correction(rs1);
         evaluate_correction(rs2);
         set_correction(rd, 0, 0, 1);
-
-        // TODO: interval semantics of sub
 
         reg_mintervals_los[rd][0] = registers[rd]; // one witness
         reg_mintervals_ups[rd][0] = registers[rd]; // one witness
@@ -1258,6 +1314,9 @@ void pvi_bvt_engine::apply_mul_zero() {
   set_correction(rd, 0, 0, 0);
 }
 
+//
+// applies mul instruction.
+//
 void pvi_bvt_engine::apply_mul() {
   uint64_t multiplier;
 
@@ -1439,6 +1498,9 @@ bool pvi_bvt_engine::apply_divu_mit() {
   return true;
 }
 
+//
+// applies divu instruction.
+//
 void pvi_bvt_engine::apply_divu() {
   do_divu();
 
@@ -1560,6 +1622,9 @@ bool pvi_bvt_engine::apply_remu_mit() {
   return true;
 }
 
+//
+// applies remu instruction.
+//
 void pvi_bvt_engine::apply_remu() {
   do_remu();
 
@@ -1628,6 +1693,9 @@ void pvi_bvt_engine::apply_remu() {
   }
 }
 
+//
+// applies sltu instruction.
+//
 void pvi_bvt_engine::apply_sltu() {
   if (backtrack) { backtrack_sltu(); return; }
 
@@ -1696,6 +1764,9 @@ void pvi_bvt_engine::apply_sltu() {
   ic_sltu = ic_sltu + 1;
 }
 
+//
+// applies xor instruction for equality and disequality operations.
+//
 void pvi_bvt_engine::apply_xor() {
   if (backtrack) { backtrack_sltu(); return; }
 
@@ -1786,6 +1857,9 @@ uint64_t pvi_bvt_engine::check_memory_vaddr_whether_represents_most_recent_const
     return mrvc;
 }
 
+//
+// applies ld instruction.
+//
 uint64_t pvi_bvt_engine::apply_ld() {
   uint64_t vaddr;
   uint64_t mrvc;
@@ -1859,6 +1933,9 @@ uint64_t pvi_bvt_engine::apply_ld() {
   return vaddr;
 }
 
+//
+// applies sd instruction.
+//
 uint64_t pvi_bvt_engine::apply_sd() {
   uint64_t vaddr;
   uint64_t a;
@@ -1901,6 +1978,9 @@ uint64_t pvi_bvt_engine::apply_sd() {
   return vaddr;
 }
 
+//
+// applies jal instruction.
+//
 void pvi_bvt_engine::apply_jal() {
   do_jal();
 
@@ -1920,6 +2000,9 @@ void pvi_bvt_engine::apply_jal() {
   }
 }
 
+//
+// applies jalr instruction.
+//
 void pvi_bvt_engine::apply_jalr() {
   do_jalr();
 
@@ -1939,6 +2022,9 @@ void pvi_bvt_engine::apply_jalr() {
   }
 }
 
+//
+// applies ecall instruction.
+//
 void pvi_bvt_engine::apply_ecall() {
   if (backtrack) { backtrack_ecall(); return; }
 
@@ -1949,6 +2035,9 @@ void pvi_bvt_engine::apply_ecall() {
 // ----------------------------- backtracking ----------------------------------
 // -----------------------------------------------------------------------------
 
+//
+// backtracks sltu instruction.
+//
 void pvi_bvt_engine::backtrack_sltu() {
   uint64_t vaddr;
 
@@ -2035,6 +2124,9 @@ void pvi_bvt_engine::backtrack_sltu() {
   efree();
 }
 
+//
+// backtracks sd instruction.
+//
 void pvi_bvt_engine::backtrack_sd() {
   if (theory_types[tc] < BVT) {
     if (store_trace_ptrs[asts[tc]].size() >= 1) {
@@ -2058,6 +2150,9 @@ void pvi_bvt_engine::backtrack_sd() {
   efree();
 }
 
+//
+// backtracks ld instruction.
+//
 void pvi_bvt_engine::backtrack_ld() {
   if (store_trace_ptrs[asts[tc]].size() > 1) {
     store_trace_ptrs[asts[tc]].pop_back();
@@ -2074,6 +2169,9 @@ void pvi_bvt_engine::backtrack_ld() {
   efree();
 }
 
+//
+// backtracks ecall instruction.
+//
 void pvi_bvt_engine::backtrack_ecall() {
   if (vaddrs[tc] == 0) {
     // backtracking malloc
@@ -2096,11 +2194,12 @@ void pvi_bvt_engine::backtrack_ecall() {
     store_virtual_memory(pt, vaddrs[tc], tcs[tc]);
   }
 
-  // TODO: backtracking read
-
   efree();
 }
 
+//
+// backtracks the executed instructions.
+//
 void pvi_bvt_engine::backtrack_trace(uint64_t* context) {
   uint64_t savepc;
 
@@ -2297,6 +2396,9 @@ void pvi_bvt_engine::store_input_record(uint64_t ast_ptr, uint64_t prev_input_re
 // ------------------------ reasoning/decision core ----------------------------
 // -----------------------------------------------------------------------------
 
+//
+// adds an AST entry to the AST trace.
+//
 uint64_t pvi_bvt_engine::add_ast_node(uint8_t typ, uint64_t left_node, uint64_t right_node, uint32_t mints_num, std::vector<uint64_t>& lo, std::vector<uint64_t>& up, uint64_t step, uint64_t sym_input_num, std::vector<uint64_t>& sym_input_ast_tcs, uint8_t theory_type, BoolectorNode* smt_expr) {
   ast_trace_cnt++;
 
@@ -2466,6 +2568,9 @@ bool pvi_bvt_engine::backward_propagation_divu_wrapped_mit(uint64_t sym_operand_
   return true;
 }
 
+//
+// performs backward propagation of value intervals for the MIT abstraction.
+//
 uint64_t pvi_bvt_engine::backward_propagation_of_value_intervals(uint64_t ast_tc, std::vector<uint64_t>& lo, std::vector<uint64_t>& up, size_t mints_num, uint8_t theory_type) {
   std::vector<uint64_t> saved_lo;
   std::vector<uint64_t> saved_up;
@@ -2621,6 +2726,9 @@ uint64_t pvi_bvt_engine::backward_propagation_of_value_intervals(uint64_t ast_tc
   return ast_ptr;
 }
 
+//
+// constrains the memory location with respect to MIT abstraction.
+//
 bool pvi_bvt_engine::constrain_memory_mit(uint64_t reg, std::vector<uint64_t>& lo, std::vector<uint64_t>& up, uint32_t mints_num, uint64_t trb, bool only_reachable_branch) {
   if (reg_symb_type[reg] == SYMBOLIC) {
     if (only_reachable_branch == false) {
@@ -2632,6 +2740,10 @@ bool pvi_bvt_engine::constrain_memory_mit(uint64_t reg, std::vector<uint64_t>& l
   return true;
 }
 
+//
+// evaluates the sltu operation with respect to the MIT abstraction (precise value interval abstraction).
+// returns true if the theory is able to reason about the operation, and otherwise return false.
+//
 bool pvi_bvt_engine::evaluate_sltu_true_false_branch_mit(uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t up2) {
   bool cannot_handle = false;
 
@@ -2832,6 +2944,9 @@ bool pvi_bvt_engine::evaluate_sltu_true_false_branch_mit(uint64_t lo1, uint64_t 
   return cannot_handle;
 }
 
+//
+// evaluates the sltu operation using the two layer abstraction approach: precise value interval, bit-vector
+//
 void pvi_bvt_engine::create_sltu_constraints(std::vector<uint64_t>& lo1_p, std::vector<uint64_t>& up1_p, std::vector<uint64_t>& lo2_p, std::vector<uint64_t>& up2_p, uint64_t trb, bool cannot_handle) {
   bool true_reachable  = false;
   bool false_reachable = false;
@@ -2848,14 +2963,45 @@ void pvi_bvt_engine::create_sltu_constraints(std::vector<uint64_t>& lo1_p, std::
   if (reg_theory_types[rs1] > MIT || reg_theory_types[rs2] > MIT) {
     cannot_handle = true;
   } else if (cannot_handle != true) {
-    for (size_t i = 0; i < reg_mintervals_cnts[rs1]; i++) {
-      lo1 = lo1_p[i];
-      up1 = up1_p[i];
-      for (size_t j = 0; j < reg_mintervals_cnts[rs2]; j++) {
-        lo2 = lo2_p[j];
-        up2 = up2_p[j];
-        cannot_handle = evaluate_sltu_true_false_branch_mit(lo1, up1, lo2, up2);
+    if (reg_mintervals_cnts[rs1] == 1 && reg_mintervals_cnts[rs2] == 1) {
+      lo1 = lo1_p[0];
+      up1 = up1_p[0];
+      lo2 = lo2_p[0];
+      up2 = up2_p[0];
+      cannot_handle = evaluate_sltu_true_false_branch_mit(lo1, up1, lo2, up2);
+
+    } else if (reg_mintervals_cnts[rs1] > 1 && reg_mintervals_cnts[rs2] == 1) {
+      lo2 = lo2_p[0];
+      up2 = up2_p[0];
+      if (lo2 == up2) {
+        for (size_t i = 0; i < reg_mintervals_cnts[rs1]; i++) {
+          lo1 = lo1_p[i];
+          up1 = up1_p[i];
+          cannot_handle = evaluate_sltu_true_false_branch_mit(lo1, up1, lo2, up2);
+          if (cannot_handle == true)
+            break;
+        }
+      } else {
+        cannot_handle = true;
       }
+
+    } else if (reg_mintervals_cnts[rs1] == 1 && reg_mintervals_cnts[rs2] > 1) {
+      lo1 = lo1_p[0];
+      up1 = up1_p[0];
+      if (lo1 == up1) {
+        for (size_t j = 0; j < reg_mintervals_cnts[rs2]; j++) {
+          lo2 = lo2_p[j];
+          up2 = up2_p[j];
+          cannot_handle = evaluate_sltu_true_false_branch_mit(lo1, up1, lo2, up2);
+          if (cannot_handle == true)
+            break;
+        }
+      } else {
+        cannot_handle = true;
+      }
+
+    } else {
+      cannot_handle = true;
     }
   }
 
@@ -2874,7 +3020,7 @@ void pvi_bvt_engine::create_sltu_constraints(std::vector<uint64_t>& lo1_p, std::
           dump_all_input_variables_on_trace_true_branch_bvt();
           take_branch(1, 1);
           asts[tc-2]               = 0; // important for backtracking
-          bvt_false_branches[tc-2] = boolector_ult(btor, reg_bvts[rs1], reg_bvts[rs2]); // careful
+          bvt_false_branches[tc-2] = boolector_ult(btor, reg_bvts[rs1], reg_bvts[rs2]);
 
           // true
           boolector_push(btor, 1);
@@ -2888,7 +3034,7 @@ void pvi_bvt_engine::create_sltu_constraints(std::vector<uint64_t>& lo1_p, std::
           dump_all_input_variables_on_trace_false_branch_bvt();
           take_branch(0, 1);
           asts[tc-2]               = 0; // important for backtracking
-          bvt_false_branches[tc-2] = boolector_ugte(btor, reg_bvts[rs1], reg_bvts[rs2]); // carefull
+          bvt_false_branches[tc-2] = boolector_ugte(btor, reg_bvts[rs1], reg_bvts[rs2]);
 
           // true
           boolector_push(btor, 1);
@@ -2934,7 +3080,7 @@ void pvi_bvt_engine::create_sltu_constraints(std::vector<uint64_t>& lo1_p, std::
         uint64_t false_ast_ptr   = add_ast_node(ILT, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 0, 0, zero_v, MIT, boolector_null);
         take_branch(1, 1);
         asts[tc-2]               = false_ast_ptr;
-        bvt_false_branches[tc-2] = boolector_null; // careful
+        bvt_false_branches[tc-2] = boolector_null;
 
         path_condition.push_back(add_ast_node(IGTE, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 1, 0, zero_v, MIT, boolector_null));
 
@@ -2951,7 +3097,7 @@ void pvi_bvt_engine::create_sltu_constraints(std::vector<uint64_t>& lo1_p, std::
         uint64_t false_ast_ptr   = add_ast_node(IGTE, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 0, 0, zero_v, MIT, boolector_null);
         take_branch(0, 1);
         asts[tc-2]               = false_ast_ptr;
-        bvt_false_branches[tc-2] = boolector_null; // careful
+        bvt_false_branches[tc-2] = boolector_null;
 
         path_condition.push_back(add_ast_node(ILT, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 1, 0, zero_v, MIT, boolector_null));
 
@@ -2976,6 +3122,10 @@ void pvi_bvt_engine::create_sltu_constraints(std::vector<uint64_t>& lo1_p, std::
   }
 }
 
+//
+// evaluates the disequality operation with respect to the MIT abstraction (precise value interval abstraction).
+// returns true if the theory is able to reason about the operation, and otherwise return false.
+//
 bool pvi_bvt_engine::evaluate_xor_true_false_branch_mit(uint64_t lo1, uint64_t up1, uint64_t lo2, uint64_t up2) {
   bool cannot_handle = false;
 
@@ -3137,6 +3287,9 @@ bool pvi_bvt_engine::evaluate_xor_true_false_branch_mit(uint64_t lo1, uint64_t u
   return cannot_handle;
 }
 
+//
+// evaluates the disequality operation using the two layer abstraction approach: precise value interval, bit-vector
+//
 void pvi_bvt_engine::create_xor_constraints(std::vector<uint64_t>& lo1_p, std::vector<uint64_t>& up1_p, std::vector<uint64_t>& lo2_p, std::vector<uint64_t>& up2_p, uint64_t trb, bool cannot_handle) {
   bool true_reachable  = false;
   bool false_reachable = false;
@@ -3153,14 +3306,45 @@ void pvi_bvt_engine::create_xor_constraints(std::vector<uint64_t>& lo1_p, std::v
   if (reg_theory_types[rs1] > MIT || reg_theory_types[rs2] > MIT) {
     cannot_handle = true;
   } else if (cannot_handle != true) {
-    for (size_t i = 0; i < reg_mintervals_cnts[rs1]; i++) {
-      lo1 = lo1_p[i];
-      up1 = up1_p[i];
-      for (size_t j = 0; j < reg_mintervals_cnts[rs2]; j++) {
-        lo2 = lo2_p[j];
-        up2 = up2_p[j];
-        cannot_handle = evaluate_xor_true_false_branch_mit(lo1, up1, lo2, up2);
+    if (reg_mintervals_cnts[rs1] == 1 && reg_mintervals_cnts[rs2] == 1) {
+      lo1 = lo1_p[0];
+      up1 = up1_p[0];
+      lo2 = lo2_p[0];
+      up2 = up2_p[0];
+      cannot_handle = evaluate_xor_true_false_branch_mit(lo1, up1, lo2, up2);
+
+    } else if (reg_mintervals_cnts[rs1] > 1 && reg_mintervals_cnts[rs2] == 1) {
+      lo2 = lo2_p[0];
+      up2 = up2_p[0];
+      if (lo2 == up2) {
+        for (size_t i = 0; i < reg_mintervals_cnts[rs1]; i++) {
+          lo1 = lo1_p[i];
+          up1 = up1_p[i];
+          cannot_handle = evaluate_xor_true_false_branch_mit(lo1, up1, lo2, up2);
+          if (cannot_handle == true)
+            break;
+        }
+      } else {
+        cannot_handle = true;
       }
+
+    } else if (reg_mintervals_cnts[rs1] == 1 && reg_mintervals_cnts[rs2] > 1) {
+      lo1 = lo1_p[0];
+      up1 = up1_p[0];
+      if (lo1 == up1) {
+        for (size_t j = 0; j < reg_mintervals_cnts[rs2]; j++) {
+          lo2 = lo2_p[j];
+          up2 = up2_p[j];
+          cannot_handle = evaluate_xor_true_false_branch_mit(lo1, up1, lo2, up2);
+          if (cannot_handle == true)
+            break;
+        }
+      } else {
+        cannot_handle = true;
+      }
+
+    } else {
+      cannot_handle = true;
     }
   }
 
@@ -3180,7 +3364,7 @@ void pvi_bvt_engine::create_xor_constraints(std::vector<uint64_t>& lo1_p, std::v
           dump_all_input_variables_on_trace_true_branch_bvt();
           take_branch(1, 1);
           asts[tc-2]               = 0; // important for backtracking
-          bvt_false_branches[tc-2] = boolector_ne(btor, reg_bvts[rs1], reg_bvts[rs2]); // carefull
+          bvt_false_branches[tc-2] = boolector_ne(btor, reg_bvts[rs1], reg_bvts[rs2]);
 
           // true
           boolector_push(btor, 1);
@@ -3194,7 +3378,7 @@ void pvi_bvt_engine::create_xor_constraints(std::vector<uint64_t>& lo1_p, std::v
           dump_all_input_variables_on_trace_false_branch_bvt();
           take_branch(0, 1);
           asts[tc-2]               = 0; // important for backtracking
-          bvt_false_branches[tc-2] = boolector_eq(btor, reg_bvts[rs1], reg_bvts[rs2]); // carefull
+          bvt_false_branches[tc-2] = boolector_eq(btor, reg_bvts[rs1], reg_bvts[rs2]);
 
           // true
           boolector_push(btor, 1);
@@ -3240,7 +3424,7 @@ void pvi_bvt_engine::create_xor_constraints(std::vector<uint64_t>& lo1_p, std::v
         uint64_t false_ast_ptr   = add_ast_node(INEQ, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 0, 0, zero_v, MIT, boolector_null);
         take_branch(1, 1);
         asts[tc-2]               = false_ast_ptr;
-        bvt_false_branches[tc-2] = boolector_null; // careful
+        bvt_false_branches[tc-2] = boolector_null;
 
         path_condition.push_back(add_ast_node(IEQ, reg_asts[rs1], reg_asts[rs2], 0, zero_v, zero_v, 1, 0, zero_v, MIT, boolector_null));
 
@@ -3282,6 +3466,10 @@ void pvi_bvt_engine::create_xor_constraints(std::vector<uint64_t>& lo1_p, std::v
   }
 }
 
+//
+// checks satisfiability for the true evaluation of the input constraint, 'assert', using Boolector SMT solver.
+// if satisfiable, it stores the generated witness by Boolector SMT solver.
+//
 bool pvi_bvt_engine::check_sat_true_branch_bvt(BoolectorNode* assert) {
   bool result = false;
   boolector_push(btor, 1);
@@ -3300,6 +3488,10 @@ bool pvi_bvt_engine::check_sat_true_branch_bvt(BoolectorNode* assert) {
   return result;
 }
 
+//
+// checks satisfiability of the false evaluation of the input constraint, 'assert', using Boolector SMT solver.
+// if satisfiable, it stores the generated witness by Boolector SMT solver.
+//
 bool pvi_bvt_engine::check_sat_false_branch_bvt(BoolectorNode* assert) {
   bool result = false;
   boolector_push(btor, 1);
@@ -3318,6 +3510,9 @@ bool pvi_bvt_engine::check_sat_false_branch_bvt(BoolectorNode* assert) {
   return result;
 }
 
+//
+// upgrades the abstraction of the involving input variables to BVT for the true evaluation of the branch.
+//
 void pvi_bvt_engine::dump_involving_input_variables_true_branch_bvt() {
   uint64_t ast_ptr, involved_input_ast_tc, stored_to_tc, mr_stored_to_tc;
   bool is_assigned;
@@ -3373,6 +3568,9 @@ void pvi_bvt_engine::dump_involving_input_variables_true_branch_bvt() {
   }
 }
 
+//
+// upgrades the abstraction of the involving input variables to BVT for the false evaluation of the branch.
+//
 void pvi_bvt_engine::dump_involving_input_variables_false_branch_bvt() {
   uint64_t ast_ptr, involved_input_ast_tc, stored_to_tc, mr_stored_to_tc;
   bool is_assigned;
@@ -3428,6 +3626,9 @@ void pvi_bvt_engine::dump_involving_input_variables_false_branch_bvt() {
   }
 }
 
+//
+// upgrades the abstraction of input variables to BVT for the true evaluation of the branch.
+//
 void pvi_bvt_engine::dump_all_input_variables_on_trace_true_branch_bvt() {
   uint64_t ast_ptr, involved_input_ast_tc, stored_to_tc, mr_stored_to_tc;
   bool is_assigned;
@@ -3457,6 +3658,9 @@ void pvi_bvt_engine::dump_all_input_variables_on_trace_true_branch_bvt() {
 
 }
 
+//
+// upgrades the abstraction of input variables to BVT for the false evaluation of the branch.
+//
 void pvi_bvt_engine::dump_all_input_variables_on_trace_false_branch_bvt() {
   uint64_t ast_ptr, involved_input_ast_tc, stored_to_tc, mr_stored_to_tc;
   bool is_assigned;
@@ -3505,12 +3709,12 @@ void pvi_bvt_engine::refine_abvt_abstraction_by_dumping_all_input_variables_on_t
       mr_stored_to_tc = load_symbolic_memory(pt, vaddrs[stored_to_tc]);
       mr_stored_to_tc = mr_sds[mr_stored_to_tc];
       if (mr_stored_to_tc <= stored_to_tc) {
-        store_symbolic_memory(pt, vaddrs[stored_to_tc], value_v[0], VALUE_T, ast_ptr, tc, 0, BVT); pcs[tc] = sltu_instruction; // careful
+        store_symbolic_memory(pt, vaddrs[stored_to_tc], value_v[0], VALUE_T, ast_ptr, tc, 0, BVT); pcs[tc] = sltu_instruction;
         is_assigned = true;
       }
     }
     if (is_assigned == false) {
-      store_input_record(ast_ptr, input_table.at(ast_nodes[involved_input].right_node), BVT); pcs[tc] = sltu_instruction; // careful
+      store_input_record(ast_ptr, input_table.at(ast_nodes[involved_input].right_node), BVT); pcs[tc] = sltu_instruction;
     }
     input_table.at(ast_nodes[involved_input].right_node) = ast_ptr;
   }
@@ -3668,6 +3872,9 @@ BoolectorNode* pvi_bvt_engine::create_smt_expression(uint64_t ast_tc) {
   return boolector_op(ast_nodes[ast_tc].type, ast_tc);
 }
 
+//
+// creates SMT expressions for the operation operands from their AST expressions (reg_asts[rs1] and reg_asts[rs2]).
+//
 void pvi_bvt_engine::check_operands_smt_expressions() {
   reg_bvts[rs1] = create_smt_expression(reg_asts[rs1]);
   reg_bvts[rs2] = create_smt_expression(reg_asts[rs2]);
@@ -3680,6 +3887,9 @@ BoolectorNode* pvi_bvt_engine::create_smt_expression_of_the_conditional_expressi
   return boolector_op(ast_nodes[ast_tc].type, ast_tc);
 }
 
+//
+// asserts the contraints in the path condition into SMT expressions using their AST expressions.
+//
 void pvi_bvt_engine::assert_path_condition_into_smt_expression() {
   for (size_t i = 0; i < path_condition.size(); i++) {
     if (steps[path_condition[i]] == 1) {
@@ -3724,8 +3934,8 @@ uint64_t pvi_bvt_engine::compute_add(uint64_t left_operand_ast_tc, uint64_t righ
     ast_ptr = add_ast_node(ADD, sym_operand_ast_tc, crt_operand_ast_tc, mintervals_los[sym_operand_ast_tc].size(), propagated_minterval_lo, propagated_minterval_up, steps[old_ast_tc], involved_sym_inputs_cnts[sym_operand_ast_tc], involved_sym_inputs_ast_tcs[sym_operand_ast_tc], theory_type, smt_exprs[old_ast_tc]);
 
   } else {
-    // the result is of either BVT
-    // thus the value interval for the result contain *one* witness.
+    // the result is of BVT abstraction
+    // thus the value interval for the result contains *one* witness.
 
     uint64_t resulting_witness = mintervals_los[left_operand_ast_tc][0] + mintervals_los[right_operand_ast_tc][0];
     propagated_minterval_lo[0] = resulting_witness;
@@ -3772,8 +3982,8 @@ uint64_t pvi_bvt_engine::compute_sub(uint64_t left_operand_ast_tc, uint64_t righ
     ast_ptr = add_ast_node(SUB, left_operand_ast_tc, right_operand_ast_tc, mintervals_los[right_operand_ast_tc].size(), propagated_minterval_lo, propagated_minterval_up, steps[old_ast_tc], involved_sym_inputs_cnts[right_operand_ast_tc], involved_sym_inputs_ast_tcs[right_operand_ast_tc], theory_type, smt_exprs[old_ast_tc]);
 
   } else {
-    // the result is of either BVT
-    // thus the value interval for the result contain *one* witness.
+    // the result is of BVT abstraction
+    // thus the value interval for the result contains *one* witness.
 
     uint64_t resulting_witness = mintervals_los[left_operand_ast_tc][0] - mintervals_los[right_operand_ast_tc][0];
     propagated_minterval_lo[0] = resulting_witness;
@@ -3816,7 +4026,6 @@ uint64_t pvi_bvt_engine::compute_mul(uint64_t left_operand_ast_tc, uint64_t righ
   multiplier = mintervals_los[crt_operand_ast_tc][0];
 
   if (multiplier == 0) {
-    // TODO: handle this case
     std::cout << exe_name << ": multiplier is zero in compute_mul\n";
     exit((int) EXITCODE_SYMBOLICEXECUTIONERROR);
   }
@@ -4056,6 +4265,9 @@ uint64_t pvi_bvt_engine::recompute_operation(uint8_t op, uint64_t left_operand_a
   }
 }
 
+//
+// updates the AST entry at 'ast_tc' based on the recently updated involving input variables.
+//
 uint64_t pvi_bvt_engine::update_current_constraint_on_ast_expression(uint64_t ast_tc) {
   uint64_t left_operand_ast_tc;
   uint64_t right_operand_ast_tc;

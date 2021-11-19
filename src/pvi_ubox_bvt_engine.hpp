@@ -2,6 +2,9 @@
 
 class pvi_ubox_bvt_engine : public pvi_bvt_engine {
   public:
+    pvi_ubox_bvt_engine();
+    pvi_ubox_bvt_engine(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
+
     // ---------------------------
     // run-time functions
     // ---------------------------

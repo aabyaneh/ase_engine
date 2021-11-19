@@ -22,6 +22,15 @@ void bvt_engine::merge_arrays(std::vector<uint64_t>& vector_1, std::vector<uint6
   }
 }
 
+bvt_engine::bvt_engine() {
+
+}
+
+bvt_engine::bvt_engine(uint64_t max_trace_length) {
+  if (max_trace_length > MAX_TRACE_LENGTH)
+    MAX_TRACE_LENGTH = max_trace_length;
+}
+
 void bvt_engine::init_engine(uint64_t peek_argument) {
   init_library();
   init_interpreter();
@@ -145,49 +154,23 @@ void bvt_engine::print_input_witness(size_t i, size_t j, uint64_t lo, uint64_t u
 }
 
 void bvt_engine::witness_profile() {
-  // uint64_t cardinality;
+  if (IS_PRINT_INPUT_WITNESSES_AT_ENDPOINT == false)
+    return;
 
-  current_number_of_witnesses = 1;
-
-  if (IS_PRINT_INPUT_WITNESSES_AT_ENDPOINT) std::cout << "\n-------------------------------------------------------------\n";
+  std::cout << "\n-------------------------------------------------------------\n";
 
   for (size_t i = 0; i < input_table.size(); i++) {
-    // cardinality = 0;
     for (size_t j = 0; j < mintervals_los[input_table[i]].size(); j++) {
-      // cardinality += (mintervals_ups[input_table[i]][j] - mintervals_los[input_table[i]][j] + 1);
-
-      if (IS_PRINT_INPUT_WITNESSES_AT_ENDPOINT) print_input_witness(i, j, mintervals_los[input_table[i]][j], mintervals_ups[input_table[i]][j]);
+      print_input_witness(i, j, mintervals_los[input_table[i]][j], mintervals_ups[input_table[i]][j]);
     }
-
-    // if (cardinality > 0) {
-    //   if (is_number_of_generated_witnesses_overflowed == false) {
-    //     if (current_number_of_witnesses * cardinality > UINT64_MAX_T) // overflow?
-    //       is_number_of_generated_witnesses_overflowed = true;
-    //     else
-    //       current_number_of_witnesses *= cardinality;
-    //   }
-    // } else
-    //   std::cout << exe_name << ": cardinality of an input is == zero! " << std::endl;
   }
-
-  // if (current_number_of_witnesses > max_number_of_generated_witnesses_among_all_paths)
-  //   max_number_of_generated_witnesses_among_all_paths = current_number_of_witnesses;
-  //
-  // total_number_of_generated_witnesses_for_all_paths += current_number_of_witnesses;
-  // if (total_number_of_generated_witnesses_for_all_paths < current_number_of_witnesses) // overflow?
-  //   is_number_of_generated_witnesses_overflowed = true;
 }
 
 void print_execution_info(uint64_t paths, uint64_t total_number_of_generated_witnesses_for_all_paths, uint64_t max_number_of_generated_witnesses_among_all_paths, uint64_t queries_reasoned_by_bvt, bool is_number_of_generated_witnesses_overflowed) {
-  std::cout << "\n\n";
+  std::cout << "\n";
+  std::cout << YELLOW "method:= baseline" << RESET << std::endl;
   std::cout << YELLOW "number of explored paths:= " << paths << RESET << std::endl;
-
-  // if (is_number_of_generated_witnesses_overflowed == false)
-  //   std::cout << "number of witnesses:= total: " << total_number_of_generated_witnesses_for_all_paths << ", max: " << max_number_of_generated_witnesses_among_all_paths << std::endl;
-  // else
-  //   std::cout << "number of witnesses:= total: > " << UINT64_MAX << ", max: !" << std::endl;
-
-  std::cout << GREEN "number of queries:= bvt: " << queries_reasoned_by_bvt << RESET << "\n\n";
+  std::cout << GREEN "number of queries reached to the SMT solver:= " << queries_reasoned_by_bvt << RESET << "\n\n";
 }
 
 uint64_t bvt_engine::run_engine(uint64_t* to_context) {
@@ -345,7 +328,6 @@ uint64_t bvt_engine::handle_system_call(uint64_t* context) {
   else if (a7 == SYSCALL_EXIT) {
     implement_exit(context);
 
-    // TODO: exit only if all contexts have exited
     return EXIT;
   }
   else {
@@ -890,8 +872,6 @@ void bvt_engine::apply_add() {
         evaluate_correction(rs1);
         evaluate_correction(rs2);
         set_correction(rd, 0, 0, 1);
-
-        // TODO: interval semantics of add
 
         reg_mintervals_los[rd][0] = registers[rd];
         reg_mintervals_ups[rd][0] = registers[rd];
@@ -1676,8 +1656,6 @@ void bvt_engine::backtrack_ecall() {
 
     store_virtual_memory(pt, vaddrs[tc], tcs[tc]);
   }
-
-  // TODO: backtracking read
 
   efree();
 }

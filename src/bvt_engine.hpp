@@ -2,6 +2,9 @@
 
 class bvt_engine : public engine {
   public:
+    bvt_engine();
+    bvt_engine(uint64_t);
+
     // extra syscalls
     uint64_t SYSCALL_SYMPOLIC_INPUT = 42;
     uint64_t SYSCALL_PRINTSV        = 43;
